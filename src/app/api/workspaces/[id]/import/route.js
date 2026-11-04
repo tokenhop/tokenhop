@@ -3,6 +3,7 @@
 // passed to the core lane verbatim: ciphertext is never altered here.
 import { NextResponse } from "next/server";
 import { audit } from "@/lib/users/audit.js";
+import { getClientIp } from "@/lib/auth/loginLimiter.js";
 import {
   WORKSPACE_IMPORT_MAX_BODY,
   importWorkspaceSnapshot,
@@ -30,6 +31,7 @@ export async function POST(request, route) {
   try {
     await importWorkspaceSnapshot(principal, workspaceId, body.data, {
       passphrase: body.passphrase,
+      ip: getClientIp(request),
     });
     await audit(
       { principal, request, workspaceId },

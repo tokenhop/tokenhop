@@ -70,7 +70,14 @@ function assertSchemaGate(payload) {
 async function importStaged(
   payload,
   stage,
-  { masterKey = null, force = false, actor = null, passphrase, returnSnapshot = false } = {},
+  {
+    masterKey = null,
+    force = false,
+    actor = null,
+    ip = null,
+    passphrase,
+    returnSnapshot = false,
+  } = {},
 ) {
   assertSnapshotObject(payload);
   assertSchemaGate(payload);
@@ -196,15 +203,28 @@ async function importStaged(
     );
   }
 
+  // Audit actor of rows the apply removes (YAN-1913 orphaned budgets): the
+  // session user like the route's db.import row; the switch-off legacy
+  // stand-in has no user, so it audits as the system.
+  const auditActor = {
+    principal: actor?.userId ? { userId: actor.userId, via: actor.via } : null,
+    ip,
+  };
   if (plan.format === "hashed") {
     db.transaction(() => {
       assertStateCurrent();
-      applyGatewayKeySnapshot(db, payload, plan);
+      applyGatewayKeySnapshot(db, payload, plan, { actor: auditActor });
     });
   } else {
     db.transaction(() => {
       assertStateCurrent();
-      applyLegacySnapshotSync(db, payload, { legacyEncrypted, resolvedMaster, plan, instance });
+      applyLegacySnapshotSync(db, payload, {
+        legacyEncrypted,
+        resolvedMaster,
+        plan,
+        instance,
+        actor: auditActor,
+      });
     });
   }
 

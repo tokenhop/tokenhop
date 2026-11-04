@@ -765,6 +765,38 @@ describe("legacy snapshot into hashed instance (compatibility import)", () => {
     expect(clearApiKeyPrincipalCache).toHaveBeenCalled();
   });
 
+  // YAN-1913: hashed storage follows the API's key rule (the key must live in
+  // the budget's workspace), so a reimported id in Default does not keep a
+  // budget filed under another workspace.
+  it("prunes key budgets whose key is gone or now lives in another workspace", async () => {
+    db.run(
+      `INSERT INTO workspaces(id, name, kind, createdBy, createdAt, updatedAt) VALUES('ws-side', 'Side', 'shared', 'owner', ?, ?)`,
+      [NOW, NOW],
+    );
+    for (const [id, ws, scopeId] of [
+      ["b-default", WS, "legacy-1"],
+      ["b-side", "ws-side", "legacy-2"],
+      ["b-replaced", WS, "hk-1"],
+    ]) {
+      db.run(
+        `INSERT INTO budgets(id, workspaceId, scopeType, scopeId, window, limitUsd, createdAt) VALUES(?, ?, 'key', ?, 'day', 1, ?)`,
+        [id, ws, scopeId, NOW],
+      );
+    }
+    try {
+      await dbApi.importDb(legacyPayload(), { masterKey: MASTER });
+      expect(all(`SELECT id FROM budgets WHERE scopeType = 'key'`)).toEqual([{ id: "b-default" }]);
+      expect(
+        all(
+          `SELECT targetId FROM auditEvents WHERE action = 'budget.delete' AND after LIKE '%target_missing_at_import%' ORDER BY targetId`,
+        ),
+      ).toEqual([{ targetId: "b-replaced" }, { targetId: "b-side" }]);
+    } finally {
+      db.run(`DELETE FROM budgets`);
+      db.run(`DELETE FROM workspaces WHERE id = 'ws-side'`);
+    }
+  });
+
   it("wrong master fails preflight with zero mutation", async () => {
     const before = tableDump();
     await expect(dbApi.importDb(legacyPayload(), { masterKey: OTHER_MASTER })).rejects.toThrow(

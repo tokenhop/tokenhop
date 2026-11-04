@@ -3,6 +3,7 @@
 // db.transaction, after assertStateCurrent().
 import { stringifyJson } from "../helpers/jsonCol.js";
 import { adoptOwnerlessRowsUnscoped } from "../repos/ownership.js";
+import { pruneOrphanedScopeBudgetsUnscoped } from "../repos/budgetOrphansRepo.js";
 import {
   encodeLegacyCredentialRows,
   insertLegacyEncryptedRowsSync,
@@ -16,7 +17,7 @@ import { stripWsKey } from "./legacyKeys.js";
 export function applyLegacySnapshotSync(
   db,
   payload,
-  { legacyEncrypted, resolvedMaster, plan, instance },
+  { legacyEncrypted, resolvedMaster, plan, instance, actor = null },
 ) {
   // Preserve local-only switch and MITM verifier inside this transaction,
   // BEFORE the wipe below (including snapshots without a settings section).
@@ -203,4 +204,9 @@ export function applyLegacySnapshotSync(
   adoptOwnerlessRowsUnscoped(db);
 
   if (instance.storage === "hashed") insertLegacyKeysHashedSync(db, payload, plan);
+  // YAN-1913: budgets is never wiped here, so drop budgets whose target is
+  // gone (keys the replace removed, grants the connection wipe cascaded away)
+  // in this same transaction. The pending Default and its workspace budgets
+  // stay.
+  pruneOrphanedScopeBudgetsUnscoped(db, { legacyStorage: instance.storage === "legacy", actor });
 }

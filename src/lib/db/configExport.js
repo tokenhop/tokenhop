@@ -13,9 +13,16 @@ import { WORKSPACE_KEYS, mergeWorkspaceLayer, pickKeys } from "@/lib/settings/se
 import { getPortableCombosUnscoped } from "./repos/combosRepo.js";
 import { getUserPricing, invalidatePricingCache } from "./repos/pricingRepo.js";
 import {
+  exportPortableBudgetsUnscoped,
+  planPortableBudgetsUnscoped,
+  writePortableBudgetsUnscoped,
+} from "./repos/budgetsRepo.js";
+import { budgetDefinitionError, bumpBudgetsGeneration } from "@/lib/users/budgets.js";
+import {
   buildConfigDocument,
   deriveKnownSettingKeys,
   diffConfig,
+  summarize,
 } from "@/lib/settingsConfigDoc.js";
 import { SETTINGS_SECTIONS } from "@/app/(dashboard)/dashboard/settings/registry.js";
 import { getAppVersion } from "./version.js";
@@ -68,8 +75,38 @@ export async function exportConfig() {
     ),
     combos: await getPortableCombosUnscoped(),
     pricingOverrides: await getUserPricing(),
+    budgets: exportPortableBudgetsUnscoped(db),
     version: getAppVersion(),
   });
+}
+
+/**
+ * Value errors of the document's budget definitions, with the budget API's
+ * rules (YAN-1834). Any error fails the whole import, like combos/pricing.
+ * @param {Array<object>} entries Shape-checked `doc.budgets`.
+ * @returns {string[]} `budgets[i]: <message>` per bad entry.
+ */
+export function configBudgetErrors(entries) {
+  return (entries ?? []).flatMap((entry, i) => {
+    const error = budgetDefinitionError(entry);
+    return error ? [`budgets[${i}]: ${error}`] : [];
+  });
+}
+
+const budgetWarning = (s) => `Budget ${s.key} skipped: ${s.reason}`;
+
+/**
+ * Preview diff: settings/combos/pricing against live state, plus how the
+ * document's budgets map onto this instance (read-only, nothing written).
+ * @returns {Promise<{ diff: object, budgetWarnings: string[] }>}
+ */
+export async function configDiff(doc) {
+  const diff = diffConfig(doc, await getConfigState());
+  // Read-only: no transaction (a no-op transaction still schedules a save on
+  // the sql.js driver).
+  const planned = planPortableBudgetsUnscoped(await getAdapter(), doc.budgets ?? []);
+  diff.budgets = summarize(planned.entries);
+  return { diff, budgetWarnings: planned.skipped.map(budgetWarning) };
 }
 
 /** Current config for diff, including defaults. */
@@ -88,13 +125,15 @@ export async function getConfigState() {
 }
 
 /**
- * Import a validated document atomically. Existing settings and combos not
- * present in the file stay untouched; pricing entries are merged. Any write
- * failure rolls back the settings, combo and pricing changes together.
- * @param {{settings: object, combos: Array, pricingOverrides: object}} doc
- * @returns {{ diff: object, restartRequired: boolean }}
+ * Import a validated document atomically. Existing settings, combos and
+ * budgets not present in the file stay untouched; pricing entries are
+ * merged. Any write failure rolls back the settings, combo, pricing and
+ * budget changes together.
+ * @param {{settings: object, combos: Array, pricingOverrides: object, budgets?: Array}} doc
+ * @param {{ principal?: object|null, ip?: string|null }} [actor] Audit actor of the budget writes.
+ * @returns {{ diff: object, restartRequired: boolean, budgetWarnings: string[], budgetsWritten: number }}
  */
-export async function applyConfig(doc) {
+export async function applyConfig(doc, { principal = null, ip = null } = {}) {
   const db = await getAdapter();
   let result;
   db.transaction(() => {
@@ -178,8 +217,21 @@ export async function applyConfig(doc) {
       );
     }
 
-    result = { diff, restartRequired: diff.restartRequired };
+    // YAN-1834: budgets last, mapped with the budget API's rules; the
+    // in-transaction result is authoritative (preview is advisory).
+    const planned = planPortableBudgetsUnscoped(db, doc.budgets ?? []);
+    const budgetsWritten = writePortableBudgetsUnscoped(db, planned, {
+      actor: { principal, ip },
+    });
+
+    result = {
+      diff,
+      restartRequired: diff.restartRequired,
+      budgetWarnings: planned.skipped.map(budgetWarning),
+      budgetsWritten,
+    };
   });
   invalidatePricingCache();
+  if (result.budgetsWritten) bumpBudgetsGeneration();
   return result;
 }

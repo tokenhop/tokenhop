@@ -1,7 +1,8 @@
 // YAN-375 workspace transfer core: passphrase-protected per-workspace export
 // and import. Scope is exactly one workspace's owned rows (connections, nodes,
-// combos, the three scoped kv maps, workspaceSettings overrides) — never
-// users, memberships, grants, budgets, usage, audit or sibling workspaces.
+// combos, the three scoped kv maps, workspaceSettings overrides, and the
+// workspace's own budget, YAN-1834) — never users, memberships, grants, key,
+// member, grant or user budgets, usage, audit or sibling workspaces.
 //
 // Secret leaves never travel plaintext: they are decrypted with the source
 // workspace DEK (when the instance encrypts), re-sealed under a fresh random
@@ -18,6 +19,8 @@ import { randomUUID } from "node:crypto";
 import { getAdapter } from "./driver.js";
 import { latestVersion } from "./migrations/index.js";
 import { isMultiUserEnabled } from "../users/featureSwitch.js";
+import { auditSync } from "../users/audit.js";
+import { bumpBudgetsGeneration, resetAtIso } from "../users/budgets.js";
 import { decodeCredentialRowSync, encodeCredentialRowSync } from "./helpers/credentialStorage.js";
 import { prepareCredentialCtx, assertCredentialCtxCurrent } from "./repos/connectionsRepo.js";
 import { pickKeys, WORKSPACE_KEYS } from "../settings/settingsScope.js";
@@ -195,6 +198,12 @@ function buildExportDoc(db, credCtx, workspaceId, source, portableDek) {
   const prefsRow = db.get(`SELECT data FROM workspaceSettings WHERE workspaceId = ?`, [
     workspaceId,
   ]);
+  // Limits only: ids, creator, resetAt, spend and notices stay behind.
+  const budgets = db.all(
+    `SELECT window, limitUsd, limitTokens, limitRequests, softLimitPct FROM budgets
+     WHERE workspaceId = ? AND scopeType = 'workspace' AND scopeId = ? ORDER BY createdAt, id`,
+    [workspaceId, workspaceId],
+  );
   return {
     type: WORKSPACE_EXPORT_TYPE,
     version: WORKSPACE_EXPORT_VERSION,
@@ -206,6 +215,7 @@ function buildExportDoc(db, credCtx, workspaceId, source, portableDek) {
     combos,
     kv,
     preferences: pickKeys(parseJson(prefsRow?.data, {}), WORKSPACE_KEYS),
+    budgets,
   };
 }
 
@@ -266,7 +276,7 @@ function mergeWorkspacePreferences(db, workspaceId, prefs) {
 
 // ─── import: apply (single transaction, all-or-nothing) ───────────────────
 
-function applyImport(db, credCtx, ctx, workspaceId, sections) {
+function applyImport(db, credCtx, ctx, workspaceId, sections, { ip = null } = {}) {
   // Re-check in-tx: only a live owner membership of an active, non-pending
   // user may mutate this workspace's rows (defense in depth; the route gate
   // alone is not enough once imports run inside one transaction).
@@ -382,10 +392,41 @@ function applyImport(db, credCtx, ctx, workspaceId, sections) {
      ON CONFLICT(workspaceId) DO UPDATE SET data = excluded.data, updatedAt = excluded.updatedAt`,
     [workspaceId, stringifyJson(mergeWorkspacePreferences(db, workspaceId, prefs)), now],
   );
+  // YAN-1834: the workspace's own budget. A create never raises a limit, and
+  // the owner holds workspace.budgets.lower, so the budget API allows it too.
+  for (const b of sections.budgets) {
+    const row = {
+      id: randomUUID(),
+      workspaceId,
+      scopeType: "workspace",
+      scopeId: workspaceId,
+      window: b.window,
+      limitUsd: b.limitUsd ?? null,
+      limitTokens: b.limitTokens ?? null,
+      limitRequests: b.limitRequests ?? null,
+      softLimitPct: b.softLimitPct ?? null,
+      resetAt: resetAtIso(b.window),
+      createdByUserId: ctx.userId,
+      createdAt: now,
+    };
+    const cols = Object.keys(row);
+    db.run(
+      `INSERT INTO budgets(${cols.join(", ")}) VALUES(${cols.map(() => "?").join(", ")})`,
+      Object.values(row),
+    );
+    auditSync(
+      db,
+      { principal: ctx, ip, workspaceId },
+      "budget.create",
+      { type: "budget", id: row.id },
+      { after: row },
+    );
+  }
   return {
     connections: sections.connections.length,
     nodes: sections.nodes.length,
     combos: sections.combos.length,
+    budgets: sections.budgets.length,
   };
 }
 
@@ -396,9 +437,9 @@ function applyImport(db, credCtx, ctx, workspaceId, sections) {
  * @param {import("../users/principal.js").Principal} ctx
  * @param {string} workspaceId
  * @param {object} payload the parsed export document
- * @param {{ passphrase: string }} opts
+ * @param {{ passphrase: string, ip?: string|null }} opts ip: audit context of written budgets
  */
-export async function importWorkspace(ctx, workspaceId, payload, { passphrase } = {}) {
+export async function importWorkspace(ctx, workspaceId, payload, { passphrase, ip = null } = {}) {
   requirePassphrase(passphrase);
   await authorizeWorkspace(ctx, workspaceId);
   const sections = parseImportPayload(structuredClone(payload));
@@ -408,7 +449,10 @@ export async function importWorkspace(ctx, workspaceId, payload, { passphrase } 
     openAllLeaves(sections, portableDek);
     const db = await getAdapter();
     const credCtx = await prepareCredentialCtx(db);
-    const counts = db.transaction(() => applyImport(db, credCtx, ctx, workspaceId, sections));
+    const counts = db.transaction(() =>
+      applyImport(db, credCtx, ctx, workspaceId, sections, { ip }),
+    );
+    if (counts.budgets) bumpBudgetsGeneration();
     return { success: true, imported: counts };
   } finally {
     zeroBuffer(portableDek);

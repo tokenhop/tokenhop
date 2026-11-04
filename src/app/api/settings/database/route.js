@@ -331,6 +331,8 @@ export async function POST(request) {
       ...(passphrase === undefined ? {} : { passphrase }),
       ...(force === true ? { force: true } : {}),
       actor: actorOf(principal),
+      // Audit context of rows the restore removes (orphaned budgets).
+      ip: getClientIp(request),
     };
     if (raw) {
       // Authenticated: only now may the body be touched. An oversize

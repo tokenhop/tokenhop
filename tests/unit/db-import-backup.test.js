@@ -424,6 +424,93 @@ describe("pre-import backup (hashed instance)", () => {
 // (wrong root, plaintext legacy payload, malformed v3 graph) must create NO
 // pre-import backup dir and mutate nothing; a successful v3 restore backs up
 // the encrypted pre-import state (ciphertext, never decrypted).
+// YAN-1913: a legacy import replaces apiKeys but never wipes budgets; key
+// budgets whose key is gone are pruned in the same transaction.
+describe("legacy import prunes orphaned key budgets", () => {
+  let ws;
+  beforeEach(async () => {
+    seedLegacyInstance();
+    db.run(`DELETE FROM budgets`);
+    db.run(`DELETE FROM auditEvents WHERE action = 'budget.delete'`);
+    db.run(`DELETE FROM workspaces`);
+    db.run(`DELETE FROM _meta WHERE key IN ('defaultWorkspaceId', 'pendingDefaultWorkspaceId')`);
+    const { ensurePendingDefaultWorkspaceUnscoped } = await import("@/lib/db/repos/ownership.js");
+    ws = db.transaction(() => ensurePendingDefaultWorkspaceUnscoped(db));
+    for (const [id, scopeType, scopeId] of [
+      ["b-ws", "workspace", ws],
+      ["b-live", "key", "legacy-live"],
+      ["b-new", "key", "legacy-new"],
+    ]) {
+      db.run(
+        `INSERT INTO budgets(id, workspaceId, scopeType, scopeId, window, limitRequests, createdAt) VALUES(?, ?, ?, ?, 'day', 5, ?)`,
+        [id, ws, scopeType, scopeId, NOW],
+      );
+    }
+    db.run(
+      `INSERT INTO budgetNotices(budgetId, kind, windowStart, signature, notifiedAt) VALUES('b-live', 'soft', ?, 'sig', ?)`,
+      [NOW, NOW],
+    );
+  });
+
+  it("removes the budget of the replaced key; keeps workspace and surviving key budgets", async () => {
+    await dbApi.importDb(legacyPayload());
+    expect(db.all(`SELECT id FROM budgets ORDER BY id`).map((r) => r.id)).toEqual([
+      "b-new",
+      "b-ws",
+    ]);
+    expect(one(`SELECT COUNT(*) AS c FROM budgetNotices WHERE budgetId = 'b-live'`).c).toBe(0);
+    expect(one(`SELECT id FROM workspaces`).id).toBe(ws);
+    const audit = one(
+      `SELECT before, after FROM auditEvents WHERE action = 'budget.delete' AND targetId = 'b-live'`,
+    );
+    expect(JSON.parse(audit.after)).toEqual({
+      reason: "target_missing_at_import",
+      scopeType: "key",
+    });
+    expect(JSON.parse(audit.before)).toMatchObject({ scopeType: "key", scopeId: "legacy-live" });
+  });
+
+  it("removes a grant budget whose grant the connection wipe cascaded away", async () => {
+    db.run(
+      `INSERT INTO connectionGrants(id, connectionId, workspaceId, createdAt) VALUES('grant-live', 'conn-live', ?, ?)`,
+      [ws, Date.parse(NOW)],
+    );
+    db.run(
+      `INSERT INTO budgets(id, workspaceId, scopeType, scopeId, window, limitRequests, createdAt) VALUES('b-grant', ?, 'grant', 'grant-live', 'day', 5, ?)`,
+      [ws, NOW],
+    );
+    await dbApi.importDb(legacyPayload());
+    expect(one(`SELECT COUNT(*) AS c FROM connectionGrants`).c).toBe(0);
+    expect(one(`SELECT COUNT(*) AS c FROM budgets WHERE id = 'b-grant'`).c).toBe(0);
+    const audit = one(
+      `SELECT after FROM auditEvents WHERE action = 'budget.delete' AND targetId = 'b-grant'`,
+    );
+    expect(JSON.parse(audit.after)).toEqual({
+      reason: "target_missing_at_import",
+      scopeType: "grant",
+    });
+  });
+
+  it("rolls the prune back with the import when its audit write fails", async () => {
+    const realRun = db.run.bind(db);
+    db.run = (sql, params) => {
+      if (String(sql).startsWith("INSERT INTO auditEvents")) throw new Error("boom after prune");
+      return realRun(sql, params);
+    };
+    try {
+      await expect(dbApi.importDb(legacyPayload())).rejects.toThrow(/boom after prune/);
+    } finally {
+      db.run = realRun;
+    }
+    expect(db.all(`SELECT id FROM budgets ORDER BY id`).map((r) => r.id)).toEqual([
+      "b-live",
+      "b-new",
+      "b-ws",
+    ]);
+    expect(one(`SELECT id FROM apiKeys`).id).toBe("legacy-live");
+  });
+});
+
 describe("pre-import backup (encrypted instance, YAN-365)", () => {
   const loadActivate = () => import("../../src/lib/db/activateCredentialEncryption.js");
   const SENT = "sk-sent-import-3701";

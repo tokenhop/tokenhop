@@ -255,3 +255,59 @@ describe("YAN-313 config doc pure logic", () => {
     }
   });
 });
+
+// YAN-1834: budgets section (shape only; values are checked server-side).
+describe("config doc budgets section", () => {
+  const BUDGET = {
+    scopeType: "key",
+    scopeId: "k1",
+    window: "day",
+    limitUsd: 5,
+    limitTokens: null,
+    limitRequests: null,
+    softLimitPct: 80,
+  };
+
+  it("projects stored budget rows onto the portable keys only", () => {
+    const row = {
+      ...BUDGET,
+      id: "budget-1",
+      workspaceId: "ws-1",
+      createdByUserId: "user-1",
+      createdAt: "2026-01-01T00:00:00.000Z",
+      resetAt: "2026-01-02T00:00:00.000Z",
+    };
+    const doc = buildConfigDocument({ ...LIVE, budgets: [row], version: "t" });
+    expect(doc.budgets).toEqual([BUDGET]);
+  });
+
+  it("an older document without budgets validates to an empty list", () => {
+    const checked = validateConfigDocument({ schemaVersion: 1, settings: {} }, KNOWN);
+    expect(checked.valid).toBe(true);
+    expect(checked.doc.budgets).toEqual([]);
+  });
+
+  it("ignores unknown budget fields with a warning", () => {
+    const checked = validateConfigDocument(
+      { schemaVersion: 1, settings: {}, budgets: [{ ...BUDGET, id: "smuggled" }] },
+      KNOWN,
+    );
+    expect(checked.valid).toBe(true);
+    expect(checked.warnings).toEqual(["budgets[0]: unknown fields ignored"]);
+    expect(checked.doc.budgets).toEqual([BUDGET]);
+  });
+
+  it("rejects a non-array, a non-object entry and a duplicate scope + window", () => {
+    for (const budgets of [{}, ["x"], [BUDGET, { ...BUDGET, limitUsd: 1 }]]) {
+      const checked = validateConfigDocument({ schemaVersion: 1, settings: {}, budgets }, KNOWN);
+      expect(checked.valid).toBe(false);
+    }
+  });
+
+  it("does not throw on values that can't become strings (left to the value check)", () => {
+    const odd = { ...BUDGET, window: { toString: null } };
+    expect(() =>
+      validateConfigDocument({ schemaVersion: 1, settings: {}, budgets: [odd, odd] }, KNOWN),
+    ).not.toThrow();
+  });
+});

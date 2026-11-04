@@ -16,9 +16,10 @@ const GROUPS = [
   ["settings", "Settings"],
   ["combos", "Combos"],
   ["pricing", "Pricing overrides"],
+  ["budgets", "Budgets"],
 ];
 const SCOPE_NOTE =
-  "Configuration only: settings, combos and pricing overrides. Passwords, secrets and provider accounts are never included. URL credentials are redacted; masked URL settings keep their current values on import. For a full backup, use Data & backup.";
+  "Configuration only: settings, combos, pricing overrides and Default-workspace budgets (limits only; spend and notices are never included). Passwords, secrets and provider accounts are never included. URL credentials are redacted; masked URL settings keep their current values on import. For a full backup, use Data & backup.";
 
 async function postImport(body) {
   const res = await fetch("/api/settings/config/import", {
@@ -170,12 +171,11 @@ export default function ConfigTransfer({ onSettingsChange }) {
       });
       closePreview();
       onSettingsChange?.();
-      setStatus({
-        type: "ok",
-        message: data.restartRequired
-          ? "Configuration imported. Some changes apply after a restart."
-          : "Configuration imported",
-      });
+      const base = data.restartRequired
+        ? "Configuration imported. Some changes apply after a restart."
+        : "Configuration imported";
+      // The apply transaction's own skips (preview is advisory).
+      setStatus({ type: "ok", message: [base, ...(data.warnings ?? [])].join(" · ") });
     } catch (err) {
       setPreview((p) => (p ? { ...p, applyError: err.message } : p));
     } finally {

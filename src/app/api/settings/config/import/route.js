@@ -13,6 +13,8 @@ import {
 import { isMultiUserEnabled } from "@/lib/users/featureSwitch.js";
 import {
   applyConfig,
+  configBudgetErrors,
+  configDiff,
   exportConfig,
   getConfigState,
   getKnownConfigSettingKeys,
@@ -20,12 +22,12 @@ import {
 import {
   MAX_CONFIG_BYTES,
   SECRET_SETTING_KEYS,
-  diffConfig,
   validateConfigDocument,
 } from "@/lib/settingsConfigDoc.js";
 import { audit } from "@/lib/users/audit.js";
 import { getClientIp } from "@/lib/auth/loginLimiter.js";
 import { readPasswordHeader } from "@/lib/users/snapshotUpload.js";
+import { getPrincipal } from "@/lib/users/session";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -75,6 +77,10 @@ export async function POST(request) {
     return NextResponse.json({ error: 'mode must be "preview" or "apply"' }, { status: 400 });
   }
 
+  // Audit actor of the import and of every budget it writes: the session
+  // principal when there is one (password/CLI-token auth has none). Declared
+  // here so the failure audit names it too.
+  let principal = null;
   try {
     // A valid CLI token authenticates on its own. Otherwise the JSON body
     // password wins, then YAN-1248's encoding-safe x-tokenhop-password-b64
@@ -119,13 +125,21 @@ export async function POST(request) {
     }
 
     // An import must never store what the settings UI could not save: run the
-    // same boundary validators as PATCH /api/settings.
+    // same boundary validators as PATCH /api/settings, and the budget API's
+    // value rules for budgets (YAN-1834).
     const settingsError =
       validateSettingsBody(checked.doc.settings) ||
       ssoLockoutError(await getSettings(), checked.doc.settings);
     if (settingsError) {
       return NextResponse.json(
         { error: settingsError, errors: [settingsError], warnings: checked.warnings },
+        { status: 400 },
+      );
+    }
+    const budgetErrors = configBudgetErrors(checked.doc.budgets);
+    if (budgetErrors.length > 0) {
+      return NextResponse.json(
+        { error: budgetErrors[0], errors: budgetErrors, warnings: checked.warnings },
         { status: 400 },
       );
     }
@@ -167,23 +181,39 @@ export async function POST(request) {
     }
 
     if (mode === "preview") {
-      const diff = diffConfig(checked.doc, await getConfigState());
+      const { diff, budgetWarnings } = await configDiff(checked.doc);
       return NextResponse.json({
         valid: true,
-        warnings: checked.warnings,
+        warnings: [...checked.warnings, ...budgetWarnings],
         redactedSettings: checked.redactedSettings,
         diff,
         restartRequired: diff.restartRequired,
       });
     }
 
-    const { restartRequired } = await applyConfig(checked.doc);
+    try {
+      principal = await getPrincipal();
+    } catch (err) {
+      if (err?.code === "API_KEY_STATE_INVALID") {
+        return NextResponse.json({ error: "Service unavailable" }, { status: 503 });
+      }
+    }
+    const ip = getClientIp(request);
+    const { restartRequired, budgetWarnings, budgetsWritten } = await applyConfig(checked.doc, {
+      principal,
+      ip,
+    });
     // YAN-367: audit the applied import (preview mode never writes → no event).
     await audit(
-      { ip: getClientIp(request) },
+      { principal, ip },
       "config.import",
       { type: "config" },
-      { after: { keyNames: Object.keys(checked.doc.settings ?? {}) } },
+      {
+        after: {
+          keyNames: Object.keys(checked.doc.settings ?? {}),
+          count: budgetsWritten,
+        },
+      },
     );
 
     // Re-apply side effects the same way PATCH /api/settings does.
@@ -220,10 +250,12 @@ export async function POST(request) {
         console.warn("[Settings][ConfigImport] quota poller sync failed:", error?.message),
       );
 
-    const after = diffConfig(checked.doc, await getConfigState());
+    // The post-apply diff reflects the committed state; the skips reported are
+    // the apply transaction's own (preview is advisory).
+    const { diff: after } = await configDiff(checked.doc);
     return NextResponse.json({
       valid: true,
-      warnings: checked.warnings,
+      warnings: [...checked.warnings, ...budgetWarnings],
       redactedSettings: checked.redactedSettings,
       diff: after,
       restartRequired: restartRequired || after.restartRequired,
@@ -233,7 +265,7 @@ export async function POST(request) {
     console.log("Error importing config:", error);
     if (mode === "apply") {
       await audit(
-        { ip: getClientIp(request) },
+        { principal, ip: getClientIp(request) },
         "config.import",
         { type: "config" },
         { result: "failure" },

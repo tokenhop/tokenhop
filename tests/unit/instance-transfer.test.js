@@ -805,6 +805,90 @@ describe("instance full-table sections (plain hashed v2)", () => {
     expect(await guard.hasBudgets(principal)).toBe(true);
   });
 
+  // YAN-1913 (§7.4): an older snapshot without a budgets section keeps the
+  // live budgets; a key budget for a key the restore replaced is pruned.
+  it("prunes retained key budgets whose key the restore replaced", async () => {
+    const snapshot = await dbApi.exportDb();
+    delete snapshot.budgets;
+    const RAW_X = "th_EXTRAGATEWAYTOKENxxxxxxxxxxxxxxxx";
+    db.run(
+      `INSERT INTO apiKeys(id, workspaceId, userId, createdByUserId, keyHash, hashKid, prefix, name, machineId, legacy, isActive, allowedModels, createdAt)
+       VALUES('hk-extra', ?, 'owner', 'owner', ?, ?, ?, 'Extra', NULL, 0, 1, '[]', ?)`,
+      [WS, digest(RAW_X), KID, apiKeyPrefix(RAW_X), NOW],
+    );
+    db.run(
+      `INSERT INTO budgets(id, workspaceId, scopeType, scopeId, window, limitUsd, createdAt)
+       VALUES('budget-extra', ?, 'key', 'hk-extra', 'day', 1, ?)`,
+      [WS, NOW],
+    );
+    const kept = dump("SELECT id FROM budgets WHERE id <> 'budget-extra' ORDER BY id");
+    await dbApi.importDb(structuredClone(snapshot), { masterKey: MASTER });
+    expect(dump("SELECT id FROM budgets ORDER BY id")).toEqual(kept);
+    expect(
+      dump(
+        `SELECT targetId FROM auditEvents WHERE action = 'budget.delete' AND after LIKE '%target_missing_at_import%'`,
+      ),
+    ).toEqual([{ targetId: "budget-extra" }]);
+  });
+
+  // YAN-1913: a user and membership added after the export are replaced by
+  // the restore; their retained budgets are pruned, audited as the importing
+  // session actor with the client ip.
+  it("prunes membership and user budgets whose target the restore replaced", async () => {
+    const snapshot = await dbApi.exportDb();
+    delete snapshot.budgets; // older snapshot: live budgets are retained
+    db.run(
+      `INSERT INTO users(id, email, username, displayName, instanceRole, status, passwordHash, mustChangePassword, sessionVersion, createdAt, updatedAt, lastLoginAt)
+       VALUES('late', 'late@x.test', 'late', 'late', 'user', 'active', 'h', 0, 1, ?, ?, NULL)`,
+      [NOW, NOW],
+    );
+    db.run(
+      `INSERT INTO memberships(workspaceId, userId, role, source, createdAt) VALUES(?, 'late', 'member', 'manual', ?)`,
+      [WS, NOW],
+    );
+    for (const [id, workspaceId, scopeType, scopeId] of [
+      ["budget-member-late", WS, "membership", `${WS}:late`],
+      ["budget-member-kept", WS, "membership", `${WS}:member1`],
+      ["budget-user-late", null, "user", "late"],
+    ]) {
+      db.run(
+        `INSERT INTO budgets(id, workspaceId, scopeType, scopeId, window, limitUsd, createdAt)
+         VALUES(?, ?, ?, ?, 'week', 1, ?)`,
+        [id, workspaceId, scopeType, scopeId, NOW],
+      );
+    }
+    await dbApi.importDb(structuredClone(snapshot), {
+      masterKey: MASTER,
+      force: true,
+      actor: { userId: "owner", instanceRole: "owner", via: "session" },
+      ip: "1.2.3.4",
+    });
+    expect(dump("SELECT id FROM users WHERE id = 'late'")).toEqual([]);
+    expect(dump("SELECT id FROM budgets WHERE window = 'week'")).toEqual([
+      { id: "budget-member-kept" },
+    ]);
+    expect(
+      dump(
+        `SELECT targetId, actorUserId, via, ip, after FROM auditEvents WHERE action = 'budget.delete' ORDER BY targetId`,
+      ).map((r) => ({ ...r, after: JSON.parse(r.after) })),
+    ).toEqual([
+      {
+        targetId: "budget-member-late",
+        actorUserId: "owner",
+        via: "session",
+        ip: "1.2.3.4",
+        after: { reason: "target_missing_at_import", scopeType: "membership" },
+      },
+      {
+        targetId: "budget-user-late",
+        actorUserId: "owner",
+        via: "session",
+        ip: "1.2.3.4",
+        after: { reason: "target_missing_at_import", scopeType: "user" },
+      },
+    ]);
+  });
+
   it("wrong master fails preflight on a full snapshot with zero mutation", async () => {
     const snapshot = await dbApi.exportDb();
     const before = fullDump();
