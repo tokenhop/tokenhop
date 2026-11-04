@@ -50,7 +50,10 @@ function scalarEnd(text, i) {
  * max_tokens). Keeps only the values that finished: a cut-off string, literal
  * or key is dropped together with its key. Unlike the Anthropic SDK's
  * partial-JSON parser, a number at the very end is dropped too, since it may be
- * missing digits. An open container is closed. Returns `{}` when nothing
+ * missing digits. An open container keeps its finished elements and is closed;
+ * one opened at the cut with no finished entry is dropped with its key, since
+ * an empty container there is indistinguishable from a cut before its first
+ * element and so is no finished value (YAN-1926). Returns `{}` when nothing
  * finished or the text is not an object. Linear in the input length.
  * @param {string} text
  * @returns {Record<string, unknown>}
@@ -61,7 +64,8 @@ export function parsePartialJSONObject(text) {
   if (typeof text !== "string") return {};
 
   // Last cut point: text up to `cutEnd` plus closers for the first `cutDepth`
-  // stack entries. Every pop records a new cut, so those entries still match.
+  // stack entries. Opening a container is no cut (it has no finished entry
+  // yet); every pop records a new cut, so those entries still match.
   const stack = []; // { close, keyNext }
   let cutEnd = -1;
   let cutDepth = 0;
@@ -84,10 +88,12 @@ export function parsePartialJSONObject(text) {
     } else if (ch === "{" || ch === "[") {
       if (stack.length >= MAX_DEPTH) break;
       stack.push({ close: ch === "{" ? "}" : "]", keyNext: ch === "{" });
-      mark(++i);
+      i++;
     } else if (ch === "}" || ch === "]") {
       stack.pop();
       mark(++i);
+      // The top-level object closed: what follows is not part of it.
+      if (stack.length === 0) break;
     } else {
       const end = scalarEnd(text, i);
       if (end < 0) break;

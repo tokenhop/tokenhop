@@ -29,6 +29,21 @@ describe("parsePartialJSONObject", () => {
     ["leading zero is malformed", '{"a":1,"n":01,"b":2', { a: 1 }],
     ["lone minus is malformed", '{"a":1,"n":-,"b":2', { a: 1 }],
     ["empty text", "", {}],
+    // YAN-1926: a container opened at the cut with no finished entries is
+    // dropped with its key; containers keep their finished elements.
+    ["empty array at the cut", '{"a":[', {}],
+    ["empty array after a finished value", '{"a":1,"b":[', { a: 1 }],
+    ["nested empty containers at the cut", '{"a":{"b":[', {}],
+    ["finished empty object before a cut array", '{"a":{},"b":[', { a: {} }],
+    ["closed empty array at the cut", '{"a":[]', { a: [] }],
+    ["finished inner array before a cut one", '{"a":[[1],[', { a: [[1]] }],
+    ["cut number inside an array", '{"a":[1', {}],
+    ["empty object inside a cut array", '{"a":[{', {}],
+    ["nested empty array after a finished value", '{"a":1,"b":{"c":[', { a: 1 }],
+    // Text after the top-level object closes is ignored.
+    ["second object after the first closes", '{"a":1}{"b":2', { a: 1 }],
+    ["complete second object after the first", '{"a":1}{"b":2}', { a: 1 }],
+    ["stray closer after the object", '{"a":1}]', { a: 1 }],
   ])("%s", (_name, text, expected) => {
     expect(parsePartialJSONObject(text)).toEqual(expected);
   });
@@ -42,7 +57,7 @@ describe("parsePartialJSONObject", () => {
 
   it("bounds nesting depth and keeps what finished above the cap", () => {
     const deep = `{"a":1,"d":${"[".repeat(10_000)}`;
-    expect(parsePartialJSONObject(deep)).toMatchObject({ a: 1 });
+    expect(parsePartialJSONObject(deep)).toEqual({ a: 1 });
   });
 
   it("handles long truncated input", () => {
