@@ -19,6 +19,9 @@ const { handleNonStreamingResponse } = await import(
   "../../open-sse/handlers/chatCore/nonStreamingHandler.js"
 );
 const { saveRequestUsageUnscoped, saveRequestDetailUnscoped } = await import("@/lib/usageDb.js");
+const { openAICompletionToClientFormat } = await import(
+  "../../open-sse/handlers/chatCore/completionToClient.js"
+);
 
 const claudeSse = (events) =>
   `${events.map((e) => `event: ${e.type}\ndata: ${JSON.stringify(e)}`).join("\n\n")}\n\n`;
@@ -372,6 +375,24 @@ describe("YAN-1854: truncated tool arguments under max_tokens", () => {
     expect(json.stop_reason).toBe("max_tokens");
     expect(json.content.at(-1)).toMatchObject({ type: "tool_use", input: { path: "c.md" } });
   });
+
+  it("OpenAI upstream finish length: only the last tool call keeps partial arguments", async () => {
+    const call = (index, id, args) => ({
+      index,
+      id,
+      type: "function",
+      function: { name: "write_file", arguments: args },
+    });
+    const raw = openaiSse([
+      chunk({ tool_calls: [call(0, "call_1", MALFORMED_ARGS)] }),
+      chunk({ tool_calls: [call(1, "call_2", TRUNCATED_ARGS)] }),
+      chunk({}, "length"),
+    ]);
+    const result = await handleForcedSSEToJson(forcedCtx(raw, FORMATS.CLAUDE, FORMATS.OPENAI));
+    const json = await result.response.json();
+    expect(json.stop_reason).toBe("max_tokens");
+    expect(json.content.map((block) => block.input)).toEqual([{}, { path: "c.md" }]);
+  });
 });
 
 describe("PR #1114 review: native Claude aggregation edge cases", () => {
@@ -543,5 +564,186 @@ describe("PR #1114 review: native Claude aggregation edge cases", () => {
     for (const result of await bothPaths(raw)) {
       expect((await result.response.json()).content).toEqual([{ type: "text", text: "Hello" }]);
     }
+  });
+});
+
+describe("YAN-1924/YAN-1926: only the last block of a cut-off message is partial", () => {
+  const start = events("x")[0];
+  const toolStart = (index, id) => ({
+    type: "content_block_start",
+    index,
+    content_block: { type: "tool_use", id, name: "write_file", input: {} },
+  });
+  const inputDelta = (index, partialJson) => ({
+    type: "content_block_delta",
+    index,
+    delta: { type: "input_json_delta", partial_json: partialJson },
+  });
+  const stop = (stopReason) => [
+    { type: "message_delta", delta: { stop_reason: stopReason }, usage: { output_tokens: 9 } },
+    { type: "message_stop" },
+  ];
+  const bothPaths = async (raw) => [
+    await handleForcedSSEToJson(forcedCtx(raw, FORMATS.CLAUDE, FORMATS.CLAUDE)),
+    await handleNonStreamingResponse(nonStreamCtx(raw, FORMATS.CLAUDE, FORMATS.CLAUDE)),
+  ];
+
+  it("max_tokens: a malformed earlier tool block gets {}, the cut last block keeps finished args", async () => {
+    const raw = claudeSse([
+      start,
+      toolStart(0, "toolu_1"),
+      inputDelta(0, '{"a":1,"b":"x'),
+      { type: "content_block_stop", index: 0 },
+      toolStart(1, "toolu_2"),
+      inputDelta(1, '{"path":"c.md","content":"lo'),
+      ...stop("max_tokens"),
+    ]);
+    for (const result of await bothPaths(raw)) {
+      expect(result.success).toBe(true);
+      const json = await result.response.json();
+      expect(json.stop_reason).toBe("max_tokens");
+      expect(json.content.map((block) => block.input)).toEqual([{}, { path: "c.md" }]);
+    }
+  });
+
+  const textStart = (index, value = "") => ({
+    type: "content_block_start",
+    index,
+    content_block: { type: "text", text: value },
+  });
+  const textDelta = (index, value) => ({
+    type: "content_block_delta",
+    index,
+    delta: { type: "text_delta", text: value },
+  });
+  const inputs = async (result) =>
+    (await result.response.json()).content.map((block) => block.input);
+
+  it("max_tokens: a tool block before the cut text block is parsed strictly", async () => {
+    const raw = claudeSse([
+      start,
+      toolStart(0, "toolu_1"),
+      inputDelta(0, '{"a":1,"b":"x'),
+      { type: "content_block_stop", index: 0 },
+      textStart(1),
+      textDelta(1, "and then I wi"),
+      ...stop("max_tokens"),
+    ]);
+    for (const result of await bothPaths(raw)) {
+      expect(await inputs(result)).toEqual([{}, undefined]);
+    }
+  });
+
+  it("max_tokens: sparse block indexes still treat the highest one as last", async () => {
+    const raw = claudeSse([
+      start,
+      toolStart(0, "toolu_1"),
+      inputDelta(0, '{"a":1,"b":"x'),
+      toolStart(2, "toolu_2"),
+      inputDelta(2, '{"path":"c.md","content":"lo'),
+      ...stop("max_tokens"),
+    ]);
+    for (const result of await bothPaths(raw)) {
+      expect(await inputs(result)).toEqual([{}, { path: "c.md" }]);
+    }
+  });
+
+  it("model_context_window_exceeded: only the last of two tool blocks is partial", async () => {
+    const raw = claudeSse([
+      start,
+      toolStart(0, "toolu_1"),
+      inputDelta(0, '{"a":1,"b":"x'),
+      toolStart(1, "toolu_2"),
+      inputDelta(1, '{"path":"c.md","content":"lo'),
+      ...stop("model_context_window_exceeded"),
+    ]);
+    for (const result of await bothPaths(raw)) {
+      expect(await inputs(result)).toEqual([{}, { path: "c.md" }]);
+    }
+  });
+
+  it.each([
+    ["signed empty thinking", { type: "thinking", thinking: "", signature: "sig" }],
+    ["redacted_thinking", { type: "redacted_thinking", data: "opaque" }],
+  ])(
+    "max_tokens: a trailing %s block counts as last, so the tool is strict",
+    async (_name, block) => {
+      const raw = claudeSse([
+        start,
+        toolStart(0, "toolu_1"),
+        inputDelta(0, '{"a":1,"b":"x'),
+        { type: "content_block_start", index: 1, content_block: block },
+        ...stop("max_tokens"),
+      ]);
+      for (const result of await bothPaths(raw)) {
+        expect((await inputs(result))[0]).toEqual({});
+      }
+    },
+  );
+
+  it.each([
+    ["empty text", { type: "text", text: "" }],
+    ["empty thinking", { type: "thinking", thinking: "" }],
+  ])("max_tokens: a trailing %s block does not hide the cut tool block", async (_name, block) => {
+    const raw = claudeSse([
+      start,
+      toolStart(0, "toolu_1"),
+      inputDelta(0, '{"path":"c.md","content":"lo'),
+      { type: "content_block_start", index: 1, content_block: block },
+      ...stop("max_tokens"),
+    ]);
+    for (const result of await bothPaths(raw)) {
+      expect((await inputs(result))[0]).toEqual({ path: "c.md" });
+    }
+  });
+
+  it("a content_block_start without index opens block 0", async () => {
+    const { index: _startIndex, ...unindexedStart } = toolStart(0, "toolu_1");
+    const { index: _deltaIndex, ...unindexedDelta } = inputDelta(0, '{"q":"x"}');
+    const raw = claudeSse([start, unindexedStart, unindexedDelta, ...stop("tool_use")]);
+    for (const result of await bothPaths(raw)) {
+      expect(result.success).toBe(true);
+      expect(await inputs(result)).toEqual([{ q: "x" }]);
+    }
+  });
+
+  it.each(["tool_use", "max_tokens"])(
+    "an input_json_delta without content_block_start fails the stream (%s)",
+    async (stopReason) => {
+      const raw = claudeSse([start, inputDelta(0, '{"q":"x"}'), ...stop(stopReason)]);
+      for (const result of await bothPaths(raw)) {
+        expect(result.success).toBe(false);
+        expect(result.response.status).toBe(502);
+      }
+    },
+  );
+});
+
+describe("OpenAI pivot → Claude: tool_use.input is always an object", () => {
+  it.each([
+    ["array arguments", [1, 2], {}],
+    ["object arguments", { q: "x" }, { q: "x" }],
+  ])("%s", (_name, args, expected) => {
+    const message = openAICompletionToClientFormat(
+      {
+        id: "chatcmpl-1",
+        model: "m",
+        choices: [
+          {
+            index: 0,
+            finish_reason: "tool_calls",
+            message: {
+              role: "assistant",
+              content: null,
+              tool_calls: [
+                { id: "call_1", type: "function", function: { name: "f", arguments: args } },
+              ],
+            },
+          },
+        ],
+      },
+      FORMATS.CLAUDE,
+    );
+    expect(message.content.find((block) => block.type === "tool_use").input).toEqual(expected);
   });
 });

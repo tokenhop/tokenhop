@@ -3,7 +3,7 @@ import { FORMATS } from "../formats.js";
 import { CLAUDE_SYSTEM_PROMPT } from "../../config/appConstants.js";
 import { adjustMaxTokens } from "../formats/maxTokens.js";
 import { normalizeUnionInputSchema } from "../formats/claude.js";
-import { safeParseJSON } from "../concerns/json.js";
+import { isPlainObject, parsePartialJSONObject } from "../concerns/json.js";
 import { parseDataUri } from "../concerns/image.js";
 import { extractTextContent } from "../formats/gemini.js";
 import { ROLE, OPENAI_BLOCK, CLAUDE_BLOCK } from "../schema/index.js";
@@ -278,6 +278,14 @@ function toolResultContentBlocks(content) {
   });
 }
 
+// Claude rejects a tool_use whose input is not an object. A replayed call cut
+// off by max_tokens keeps its finished arguments; anything that is no object
+// becomes `{}` (YAN-1924).
+function toolUseInput(args) {
+  if (isPlainObject(args)) return args;
+  return typeof args === "string" ? parsePartialJSONObject(args) : {};
+}
+
 // Get content blocks from single message
 function getContentBlocksFromMessage(msg, toolNameMap = new Map(), thinkingIntent = null) {
   const blocks = [];
@@ -374,7 +382,7 @@ function getContentBlocksFromMessage(msg, toolNameMap = new Map(), thinkingInten
             type: CLAUDE_BLOCK.TOOL_USE,
             id: part.id,
             name: part.name,
-            input: part.input,
+            input: toolUseInput(part.input),
           });
         } else if (part.type === CLAUDE_BLOCK.THINKING) {
           // Include thinking block but strip cache_control (not allowed on thinking blocks)
@@ -400,7 +408,7 @@ function getContentBlocksFromMessage(msg, toolNameMap = new Map(), thinkingInten
             type: CLAUDE_BLOCK.TOOL_USE,
             id: tc.id,
             name: toolName,
-            input: safeParseJSON(tc.function.arguments, tc.function.arguments),
+            input: toolUseInput(tc.function.arguments),
           });
         }
       }

@@ -203,6 +203,57 @@ describe("openaiToClaudeRequest", () => {
       });
     });
   });
+
+  describe("assistant tool_calls history (YAN-1924)", () => {
+    const toolUseOf = (assistant) => {
+      const result = openaiToClaudeRequest(
+        "claude-sonnet-4.5",
+        {
+          messages: [
+            { role: "user", content: "write it" },
+            { role: "assistant", ...assistant },
+            { role: "tool", tool_call_id: "call_1", content: "ok" },
+          ],
+        },
+        false,
+      );
+      return result.messages
+        .flatMap((message) => (Array.isArray(message.content) ? message.content : []))
+        .find((block) => block.type === "tool_use");
+    };
+    const inputFor = (args) =>
+      toolUseOf({
+        content: null,
+        tool_calls: [
+          { id: "call_1", type: "function", function: { name: "write_file", arguments: args } },
+        ],
+      }).input;
+    const partInputFor = (input) =>
+      toolUseOf({ content: [{ type: "tool_use", id: "call_1", name: "write_file", input }] }).input;
+
+    it.each([
+      ["truncated string keeps finished args", '{"path":"c.md","content":"lo', { path: "c.md" }],
+      ["valid JSON object string", '{"path":"c.md"}', { path: "c.md" }],
+      ["padded JSON object string", '  {"a":1}\n', { a: 1 }],
+      ["empty object string", "{}", {}],
+      ["empty string", "", {}],
+      ["non-object JSON string", "[1,2]", {}],
+      ["plain object passes through", { path: "c.md", n: 1 }, { path: "c.md", n: 1 }],
+      ["undefined", undefined, {}],
+      ["null", null, {}],
+      ["array", [1, 2], {}],
+    ])("%s → object input", (_name, args, expected) => {
+      expect(inputFor(args)).toEqual(expected);
+    });
+
+    it.each([
+      ["truncated string keeps finished args", '{"path":"c.md","content":"lo', { path: "c.md" }],
+      ["plain object passes through", { path: "c.md" }, { path: "c.md" }],
+      ["undefined", undefined, {}],
+    ])("content[] tool_use part: %s → object input", (_name, input, expected) => {
+      expect(partInputFor(input)).toEqual(expected);
+    });
+  });
 });
 
 describe("openaiToClaudeResponse", () => {

@@ -8,15 +8,20 @@ import {
   OPENAI_FINISH,
 } from "../../translator/schema/index.js";
 import { cleanFimOutput, toCompletionId } from "../../translator/concerns/fim.js";
-import { parseJSONObject, parsePartialJSONObject } from "../../translator/concerns/json.js";
+import {
+  isPlainObject,
+  parseJSONObject,
+  parsePartialJSONObject,
+} from "../../translator/concerns/json.js";
 
 // Non-streaming bodies pivot through OpenAI `chat.completion`. This module turns that
 // pivot back into the client's format. It must not import any chatCore handler:
 // sseToJsonHandler.js and nonStreamingHandler.js both import it.
 
-// Claude tool_use.input must be an object. Only a call cut off by a `length`
-// finish (stop_reason max_tokens) keeps its finished arguments and drops the
-// cut-off value (YAN-1854); any other invalid arguments become `{}`, as before.
+// Claude tool_use.input must be an object. Only the last call of a response cut
+// off by a `length` finish (stop_reason max_tokens) keeps its finished
+// arguments and drops the cut-off value (YAN-1854); only that call can be cut
+// off, so any other invalid arguments become `{}`, as before (YAN-1926).
 // Anthropic's docs say a max_tokens response may end in an incomplete tool_use
 // block that the caller detects from stop_reason and retries with a higher
 // max_tokens rather than running
@@ -24,10 +29,10 @@ import { parseJSONObject, parsePartialJSONObject } from "../../translator/concer
 // "Incomplete tool use blocks"). The Anthropic SDK's MessageStream likewise
 // fills `input` from a partial-JSON parse of the streamed arguments; ours also
 // drops a number at the cut (see parsePartialJSONObject).
-function parseToolArguments(value, finishReason) {
+function parseToolArguments(value, finishReason, isLastCall) {
   if (!value) return {};
-  if (typeof value === "object") return value;
-  if (finishReason === OPENAI_FINISH.LENGTH) return parsePartialJSONObject(value);
+  if (typeof value === "object") return isPlainObject(value) ? value : {};
+  if (isLastCall && finishReason === OPENAI_FINISH.LENGTH) return parsePartialJSONObject(value);
   return parseJSONObject(value);
 }
 
@@ -58,13 +63,18 @@ function openAICompletionToClaudeMessage(responseBody) {
   if (typeof message.content === "string" && message.content.length > 0) {
     content.push({ type: "text", text: message.content });
   }
-  for (const toolCall of message.tool_calls || []) {
+  const toolCalls = message.tool_calls || [];
+  for (const [i, toolCall] of toolCalls.entries()) {
     const fn = toolCall.function || {};
     content.push({
       type: "tool_use",
       id: toolCall.id || `toolu_${Date.now()}_${content.length}`,
       name: fn.name || toolCall.name || "",
-      input: parseToolArguments(fn.arguments || toolCall.arguments, choice.finish_reason),
+      input: parseToolArguments(
+        fn.arguments || toolCall.arguments,
+        choice.finish_reason,
+        i === toolCalls.length - 1,
+      ),
     });
   }
   if (content.length === 0) content.push({ type: "text", text: "" });

@@ -242,6 +242,9 @@ export function openaiToClaudeResponse(chunk, state) {
   // Scalars ("12" of a split "1234") never early-emit and keep accumulating
   // until finish, so sanitization always sees full args and no partial is
   // ever emitted twice.
+  // A call cut off by the token limit still streams its raw partial JSON:
+  // Anthropic streams partial JSON in input_json_delta and clients parse it at
+  // content_block_stop, so it is not reparsed here (YAN-1924).
   if (state.toolArgBuffers?.size) {
     for (const [idx, buffered] of state.toolArgBuffers) {
       if (!choice.finish_reason) {

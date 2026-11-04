@@ -120,10 +120,15 @@ function mergeUsage(base, next) {
   return merged;
 }
 
-// Block at `index`; a delta without content_block_start gets an empty block of
-// the delta's kind (index 0 when the event names none).
+// Block index an event names; index 0 when it names none.
+function blockIndex(event) {
+  return Number.isInteger(event.index) ? event.index : 0;
+}
+
+// Block at `index`; a text or thinking delta without content_block_start gets
+// an empty block of its kind, any other delta gets none.
 function blockFor(state, event) {
-  const index = Number.isInteger(event.index) ? event.index : 0;
+  const index = blockIndex(event);
   if (!state.blocks[index]) {
     const type = DELTA_BLOCK[event.delta?.type];
     if (!type) return { index, block: null };
@@ -143,11 +148,16 @@ function applyEvent(state, event) {
       break;
     }
     case "content_block_start":
-      state.blocks[event.index] = { ...event.content_block };
+      state.blocks[blockIndex(event)] = { ...event.content_block };
       break;
     case "content_block_delta": {
       const { index, block } = blockFor(state, event);
-      if (!block) break;
+      if (!block) {
+        // Tool input needs the block content_block_start opened (its id and
+        // name): without one the call cannot be rebuilt (YAN-1926).
+        if (event.delta?.type === "input_json_delta") state.orphanInput = true;
+        break;
+      }
       if (event.delta?.type === "input_json_delta") {
         const prev = state.jsonBuffers.get(index) || "";
         state.jsonBuffers.set(index, prev + (event.delta.partial_json || ""));
@@ -169,13 +179,23 @@ function applyEvent(state, event) {
   }
 }
 
-// Streamed tool input (tool_use, server_tool_use, mcp_tool_use…). Only a
-// response cut off by the token limit or the context window keeps the finished
-// arguments of an unfinished call (YAN-1854, see parseToolArguments in
-// completionToClient.js); otherwise invalid JSON becomes `{}`, as before.
-function toolInput(json, stopReason) {
-  if (CUT_OFF_STOPS.has(stopReason)) return parsePartialJSONObject(json);
+// Streamed tool input (tool_use, server_tool_use, mcp_tool_use…). Only the
+// final content block (trailing empty blocks skipped) of a response cut off by
+// the token limit or the context window keeps the finished arguments of an
+// unfinished call (YAN-1854, see parseToolArguments in completionToClient.js):
+// only that block can be cut off, so invalid JSON in an earlier block is
+// malformed, not truncated, and becomes `{}` like any invalid input (YAN-1926).
+function toolInput(json, stopReason, isLastBlock) {
+  if (isLastBlock && CUT_OFF_STOPS.has(stopReason)) return parsePartialJSONObject(json);
   return parseJSONObject(json);
+}
+
+// A text or thinking block that never received content: an upstream may open
+// one after the block that was cut off, so it does not count as the last block.
+function isEmptyBlock(block) {
+  if (block.type === CLAUDE_BLOCK.TEXT) return !block.text;
+  if (block.type === CLAUDE_BLOCK.THINKING) return !block.thinking && !block.signature;
+  return false;
 }
 
 // message_stop without a stop_reason: infer it like the streaming pivot
@@ -208,8 +228,16 @@ export function claudeSseToMessage(rawSSE, fallbackModel) {
     blocks: [],
     jsonBuffers: new Map(), // block index -> streamed input JSON text
     stopped: false,
+    orphanInput: false, // an input_json_delta named no opened block
   };
   for (const event of events) applyEvent(state, event);
+  if (state.orphanInput) {
+    return {
+      error: {
+        message: "Upstream Claude stream had an input_json_delta without content_block_start",
+      },
+    };
+  }
 
   const { message, blocks } = state;
   if (!message.stop_reason) {
@@ -218,8 +246,9 @@ export function claudeSseToMessage(rawSSE, fallbackModel) {
     }
     message.stop_reason = inferredStopReason(blocks);
   }
+  const lastIndex = blocks.findLastIndex((block) => block && !isEmptyBlock(block));
   for (const [index, json] of state.jsonBuffers) {
-    if (json) blocks[index].input = toolInput(json, message.stop_reason);
+    if (json) blocks[index].input = toolInput(json, message.stop_reason, index === lastIndex);
   }
   const content = blocks.filter(Boolean);
   // An empty message keeps the placeholder the OpenAI pivot produced.
