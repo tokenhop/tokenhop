@@ -19,6 +19,9 @@ const { handleNonStreamingResponse } = await import(
   "../../open-sse/handlers/chatCore/nonStreamingHandler.js"
 );
 const { saveRequestUsageUnscoped, saveRequestDetailUnscoped } = await import("@/lib/usageDb.js");
+const { openAICompletionToClientFormat } = await import(
+  "../../open-sse/handlers/chatCore/completionToClient.js"
+);
 
 const claudeSse = (events) =>
   `${events.map((e) => `event: ${e.type}\ndata: ${JSON.stringify(e)}`).join("\n\n")}\n\n`;
@@ -645,6 +648,39 @@ describe("YAN-1924/YAN-1926: only the last block of a cut-off message is partial
     }
   });
 
+  it("model_context_window_exceeded: only the last of two tool blocks is partial", async () => {
+    const raw = claudeSse([
+      start,
+      toolStart(0, "toolu_1"),
+      inputDelta(0, '{"a":1,"b":"x'),
+      toolStart(1, "toolu_2"),
+      inputDelta(1, '{"path":"c.md","content":"lo'),
+      ...stop("model_context_window_exceeded"),
+    ]);
+    for (const result of await bothPaths(raw)) {
+      expect(await inputs(result)).toEqual([{}, { path: "c.md" }]);
+    }
+  });
+
+  it.each([
+    ["signed empty thinking", { type: "thinking", thinking: "", signature: "sig" }],
+    ["redacted_thinking", { type: "redacted_thinking", data: "opaque" }],
+  ])(
+    "max_tokens: a trailing %s block counts as last, so the tool is strict",
+    async (_name, block) => {
+      const raw = claudeSse([
+        start,
+        toolStart(0, "toolu_1"),
+        inputDelta(0, '{"a":1,"b":"x'),
+        { type: "content_block_start", index: 1, content_block: block },
+        ...stop("max_tokens"),
+      ]);
+      for (const result of await bothPaths(raw)) {
+        expect((await inputs(result))[0]).toEqual({});
+      }
+    },
+  );
+
   it.each([
     ["empty text", { type: "text", text: "" }],
     ["empty thinking", { type: "thinking", thinking: "" }],
@@ -681,4 +717,33 @@ describe("YAN-1924/YAN-1926: only the last block of a cut-off message is partial
       }
     },
   );
+});
+
+describe("OpenAI pivot → Claude: tool_use.input is always an object", () => {
+  it.each([
+    ["array arguments", [1, 2], {}],
+    ["object arguments", { q: "x" }, { q: "x" }],
+  ])("%s", (_name, args, expected) => {
+    const message = openAICompletionToClientFormat(
+      {
+        id: "chatcmpl-1",
+        model: "m",
+        choices: [
+          {
+            index: 0,
+            finish_reason: "tool_calls",
+            message: {
+              role: "assistant",
+              content: null,
+              tool_calls: [
+                { id: "call_1", type: "function", function: { name: "f", arguments: args } },
+              ],
+            },
+          },
+        ],
+      },
+      FORMATS.CLAUDE,
+    );
+    expect(message.content.find((block) => block.type === "tool_use").input).toEqual(expected);
+  });
 });

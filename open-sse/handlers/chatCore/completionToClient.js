@@ -8,7 +8,11 @@ import {
   OPENAI_FINISH,
 } from "../../translator/schema/index.js";
 import { cleanFimOutput, toCompletionId } from "../../translator/concerns/fim.js";
-import { parseJSONObject, parsePartialJSONObject } from "../../translator/concerns/json.js";
+import {
+  isPlainObject,
+  parseJSONObject,
+  parsePartialJSONObject,
+} from "../../translator/concerns/json.js";
 
 // Non-streaming bodies pivot through OpenAI `chat.completion`. This module turns that
 // pivot back into the client's format. It must not import any chatCore handler:
@@ -17,7 +21,7 @@ import { parseJSONObject, parsePartialJSONObject } from "../../translator/concer
 // Claude tool_use.input must be an object. Only the last call of a response cut
 // off by a `length` finish (stop_reason max_tokens) keeps its finished
 // arguments and drops the cut-off value (YAN-1854); only that call can be cut
-// off, so any other invalid arguments become `{}`, as before (YAN-1924).
+// off, so any other invalid arguments become `{}`, as before (YAN-1926).
 // Anthropic's docs say a max_tokens response may end in an incomplete tool_use
 // block that the caller detects from stop_reason and retries with a higher
 // max_tokens rather than running
@@ -27,7 +31,7 @@ import { parseJSONObject, parsePartialJSONObject } from "../../translator/concer
 // drops a number at the cut (see parsePartialJSONObject).
 function parseToolArguments(value, finishReason, isLastCall) {
   if (!value) return {};
-  if (typeof value === "object") return value;
+  if (typeof value === "object") return isPlainObject(value) ? value : {};
   if (isLastCall && finishReason === OPENAI_FINISH.LENGTH) return parsePartialJSONObject(value);
   return parseJSONObject(value);
 }

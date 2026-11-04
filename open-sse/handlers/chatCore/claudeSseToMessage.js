@@ -125,8 +125,8 @@ function blockIndex(event) {
   return Number.isInteger(event.index) ? event.index : 0;
 }
 
-// Block at `index`; a delta without content_block_start gets an empty block of
-// the delta's kind.
+// Block at `index`; a text or thinking delta without content_block_start gets
+// an empty block of its kind, any other delta gets none.
 function blockFor(state, event) {
   const index = blockIndex(event);
   if (!state.blocks[index]) {
@@ -184,7 +184,7 @@ function applyEvent(state, event) {
 // the token limit or the context window keeps the finished arguments of an
 // unfinished call (YAN-1854, see parseToolArguments in completionToClient.js):
 // only that block can be cut off, so invalid JSON in an earlier block is
-// malformed, not truncated, and becomes `{}` like any invalid input (YAN-1924).
+// malformed, not truncated, and becomes `{}` like any invalid input (YAN-1926).
 function toolInput(json, stopReason, isLastBlock) {
   if (isLastBlock && CUT_OFF_STOPS.has(stopReason)) return parsePartialJSONObject(json);
   return parseJSONObject(json);
