@@ -366,7 +366,81 @@ describe("aggregator review follow-ups", () => {
     );
     const json = await result.response.json();
     expect(json.choices[0].finish_reason).toBe(finish);
+    expect(json.choices[0].message.tool_calls[0].function.arguments).toBe('{"q":"par');
+  });
+
+  const jsonCtx = (body, targetFormat) => ({
+    ...nonStreamCtx("", FORMATS.OPENAI, targetFormat),
+    providerResponse: new Response(JSON.stringify(body), {
+      headers: { "content-type": "application/json" },
+    }),
+  });
+
+  it.each([
+    [
+      "Claude max_tokens + tool_use",
+      FORMATS.CLAUDE,
+      {
+        id: "msg_1",
+        type: "message",
+        role: "assistant",
+        model: "claude-x",
+        content: [{ type: "tool_use", id: "toolu_1", name: "lookup", input: { q: "par" } }],
+        stop_reason: "max_tokens",
+        usage: { input_tokens: 3, output_tokens: 9 },
+      },
+    ],
+    [
+      "Gemini MAX_TOKENS + functionCall",
+      FORMATS.GEMINI,
+      {
+        candidates: [
+          {
+            content: { role: "model", parts: [{ functionCall: { name: "lookup", args: {} } }] },
+            finishReason: "MAX_TOKENS",
+            index: 0,
+          },
+        ],
+        usageMetadata: { promptTokenCount: 3, candidatesTokenCount: 9, totalTokenCount: 12 },
+      },
+    ],
+  ])("%s → chat client finish_reason length", async (_name, targetFormat, body) => {
+    const result = await handleNonStreamingResponse(jsonCtx(body, targetFormat));
+    const json = await result.response.json();
+    expect(json.choices[0].finish_reason).toBe("length");
     expect(json.choices[0].message.tool_calls).toHaveLength(1);
+  });
+
+  it("non-standard finish (other) with tool calls still normalizes to tool_calls", async () => {
+    const result = await handleNonStreamingResponse(
+      jsonCtx(
+        {
+          id: "chatcmpl-1",
+          object: "chat.completion",
+          model: "gpt-x",
+          choices: [
+            {
+              index: 0,
+              message: {
+                role: "assistant",
+                content: null,
+                tool_calls: [
+                  {
+                    id: "call_1",
+                    type: "function",
+                    function: { name: "lookup", arguments: '{"q":"x"}' },
+                  },
+                ],
+              },
+              finish_reason: "other",
+            },
+          ],
+        },
+        FORMATS.OPENAI,
+      ),
+    );
+    const json = await result.response.json();
+    expect(json.choices[0].finish_reason).toBe("tool_calls");
   });
 
   it("non-stream SSE path records Claude cache read + write as canonical usage", async () => {

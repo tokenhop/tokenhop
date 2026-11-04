@@ -23,9 +23,8 @@ import { geminiUsageCounts } from "../../translator/concerns/usage.js";
 import { CLAUDE_BLOCK, CLAUDE_STOP, RESPONSES_ITEM } from "../../translator/schema/index.js";
 import { GEMINI_FINISH, OPENAI_FINISH } from "../../translator/schema/finishReasons.js";
 
-// Fix finish_reason for tool_calls: some providers return non-standard values (e.g. "other").
-// A cut-off (length / content_filter) stays: its tool call may carry partial
-// arguments, and the streaming translators report the cut-off too (YAN-1848).
+// Cut-off finishes kept when tool calls are present: a cut-off call may carry
+// partial arguments, and the streaming translators report the cut-off too (YAN-1848).
 const CUT_OFF_FINISH = new Set([OPENAI_FINISH.LENGTH, OPENAI_FINISH.CONTENT_FILTER]);
 
 /**
