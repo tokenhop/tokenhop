@@ -137,7 +137,11 @@ export function captureOffBudgetsUnscoped(db) {
   return db.all(`SELECT ${COLS} FROM budgets WHERE workspaceId = ? AND ${OFF_SCOPE_SQL}`, [ws]);
 }
 
-const slotOf = (row) => OFF_KEY_COLS.map((c) => row[c]).join("\u0000");
+// A budget's slot: what its notice claims are bound to (restoreBudgetNotices
+// checks the same columns). The workspace is not part of it: a kept id moves
+// into the target workspace in place, keeping its claims.
+const SLOT_COLS = ["scopeType", "scopeId", "window"];
+const slotOf = (row) => SLOT_COLS.map((c) => row[c]).join("\u0000");
 
 /**
  * YAN-1934: restore a snapshot's switch-off budgets (`offBudgets`, checked by
@@ -145,8 +149,9 @@ const slotOf = (row) => OFF_KEY_COLS.map((c) => row[c]).join("\u0000");
  * (Default, else the pending Default, created only when there is a row).
  * The snapshot is authoritative for that workspace's workspace/key budgets.
  * Every removal is audited as `budget.delete`:
- *  - `replaced_from_backup`: the backup keeps the id under another scope or
- *    window; the row is deleted first and starts clean (no notice claims);
+ *  - `replaced_from_backup`: the backup keeps the id under another scope,
+ *    target or window; the row is deleted first and starts clean (no notice
+ *    claims);
  *  - `not_in_backup`: a live row the backup lacks, or one holding a restored
  *    row's scope/window slot under an id the backup lacks.
  * Kept rows are updated in place (never REPLACE, which would cascade their
@@ -180,8 +185,8 @@ export function restoreOffBudgetsUnscoped(db, rows, { actor = null, prior = [] }
   }
   if (!ws) return 0;
   // First every live row off its backup slot (ids the backup lacks, or ids it
-  // moved to another scope, window or workspace), so the slot check below
-  // meets only rows under ids the backup lacks.
+  // moved to another scope, target or window), so the slot check below meets
+  // only rows under ids the backup lacks.
   const live = new Map(
     db
       .all(`SELECT ${COLS} FROM budgets WHERE workspaceId = ? AND ${OFF_SCOPE_SQL}`, [ws])
@@ -192,7 +197,7 @@ export function restoreOffBudgetsUnscoped(db, rows, { actor = null, prior = [] }
     if (slots.get(row.id) !== slotOf(row)) deleteAuditedSync(db, [row], actor, reason(row));
   }
   const upsert = `INSERT INTO budgets(${COLS}) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?)
-    ON CONFLICT(id) DO UPDATE SET ${[...OFF_LIMIT_COLS, "resetAt"].map((c) => `${c} = excluded.${c}`).join(", ")}`;
+    ON CONFLICT(id) DO UPDATE SET ${["workspaceId", ...OFF_LIMIT_COLS, "resetAt"].map((c) => `${c} = excluded.${c}`).join(", ")}`;
   for (const row of mapped) {
     const clashes = db.all(
       `SELECT ${COLS} FROM budgets WHERE scopeType = ? AND scopeId = ? AND window = ? AND id <> ?`,

@@ -220,12 +220,54 @@ describe("instance transfer switch gating", () => {
       if (b.id === "b-key")
         Object.assign(b, { scopeType: "workspace", scopeId: "ws", window: "week" });
     }
+    db.run("DELETE FROM auditEvents WHERE action = 'budget.delete'");
     await dbApi.importDb(structuredClone(snapshot), { masterKey: MASTER });
     expect(budgetRows().map((r) => [r.id, r.scopeType, r.window])).toEqual([
       ["b-key", "workspace", "week"],
       ["b-ws", "workspace", "month"],
     ]);
     expect(claimRows()).toEqual([]);
+    expect(
+      db
+        .all(
+          "SELECT targetId, after FROM auditEvents WHERE action = 'budget.delete' ORDER BY targetId",
+        )
+        .map((r) => ({ id: r.targetId, after: JSON.parse(r.after) })),
+    ).toEqual([
+      { id: "b-key", after: { reason: "replaced_from_backup", scopeType: "key" } },
+      { id: "b-ws", after: { reason: "replaced_from_backup", scopeType: "workspace" } },
+    ]);
+  });
+
+  // A kept id at the same scope, target and window but filed under another
+  // workspace moves in place: no removal audit, and its claims stay.
+  it("moves a kept id from another workspace in place, keeping its claims", async () => {
+    enabled = false;
+    seedOffBudgets();
+    const snapshot = await dbApi.exportDb();
+    db.run(
+      "INSERT INTO workspaces(id, name, kind, createdBy, createdAt, updatedAt) VALUES('ws-old', 'Old', 'shared', 'owner', ?, ?)",
+      [NOW, NOW],
+    );
+    try {
+      db.run("UPDATE budgets SET workspaceId = 'ws-old' WHERE id = 'b-key'");
+      db.run(
+        `INSERT INTO budgetNotices(budgetId, kind, windowStart, signature, notifiedAt) VALUES('b-key', 'hard', ?, '||3', ?)`,
+        [NOW, NOW],
+      );
+      const claims = claimRows();
+      db.run("DELETE FROM auditEvents WHERE action = 'budget.delete'");
+      const { restoreOffBudgetsUnscoped } = await import("@/lib/db/repos/budgetOrphansRepo.js");
+      db.transaction(() => restoreOffBudgetsUnscoped(db, snapshot.offBudgets));
+      expect(budgetRows().map((r) => [r.id, r.workspaceId])).toEqual([
+        ["b-key", "ws"],
+        ["b-ws", "ws"],
+      ]);
+      expect(claimRows()).toEqual(claims);
+      expect(db.all("SELECT targetId FROM auditEvents WHERE action = 'budget.delete'")).toEqual([]);
+    } finally {
+      db.run("DELETE FROM workspaces WHERE id = 'ws-old'");
+    }
   });
 
   // YAN-1934: a live row holding a restored row's slot under another id is
