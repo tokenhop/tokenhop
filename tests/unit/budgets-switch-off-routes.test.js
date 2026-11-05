@@ -165,12 +165,9 @@ describe("pristine install, switch off", () => {
   });
 
   // YAN-1935: a legacy key is hard-deleted, so its budgets go with it.
-  const keyBudget = async (cookie) => {
+  const keyBudget = async (cookie, window = "day") => {
     const { budget } = await (
-      await post(
-        { scopeType: "key", scopeId: "legacy-key", window: "day", limitRequests: 3 },
-        { cookie },
-      )
+      await post({ scopeType: "key", scopeId: "legacy-key", window, limitRequests: 3 }, { cookie })
     ).json();
     adapter.run(
       `INSERT INTO budgetNotices(budgetId, kind, windowStart, signature, notifiedAt) VALUES(?, 'soft', ?, 's', ?)`,
@@ -221,6 +218,31 @@ describe("pristine install, switch off", () => {
     expect(adapter.get(`SELECT id FROM apiKeys`).id).toBe("legacy-key");
     expect(adapter.get(`SELECT id FROM budgets`).id).toBe(budget.id);
     expect(adapter.get(`SELECT COUNT(*) AS c FROM budgetNotices`).c).toBe(1);
+  });
+
+  it("a later failed budget audit rolls back every key budget, not just the last", async () => {
+    await load();
+    const cookie = await legacyCookie();
+    const ids = [(await keyBudget(cookie, "day")).id, (await keyBudget(cookie, "week")).id].sort();
+    const realRun = adapter.run.bind(adapter);
+    let audits = 0;
+    adapter.run = (sql, params) => {
+      if (String(sql).startsWith("INSERT INTO auditEvents") && ++audits === 2)
+        throw new Error("boom on the second audit");
+      return realRun(sql, params);
+    };
+    try {
+      expect((await delKey(cookie)).status).toBe(500);
+    } finally {
+      adapter.run = realRun;
+    }
+    expect(audits).toBe(2); // the first budget was deleted and audited before the throw
+    expect(adapter.get(`SELECT id FROM apiKeys`).id).toBe("legacy-key");
+    expect(adapter.all(`SELECT id FROM budgets ORDER BY id`).map((r) => r.id)).toEqual(ids);
+    expect(adapter.get(`SELECT COUNT(*) AS c FROM budgetNotices`).c).toBe(2);
+    expect(
+      adapter.get(`SELECT COUNT(*) AS c FROM auditEvents WHERE action = 'budget.delete'`).c,
+    ).toBe(0);
   });
 
   it("user, membership and grant scopes: 400 scope_unavailable, nothing created", async () => {
