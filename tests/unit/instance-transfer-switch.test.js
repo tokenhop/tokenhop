@@ -184,13 +184,73 @@ describe("instance transfer switch gating", () => {
     expect(claimRows()).toEqual([]);
   });
 
-  it("an explicit empty offBudgets clears the switch-off budgets", async () => {
+  it("an explicit empty offBudgets clears the switch-off budgets, audited", async () => {
     enabled = false;
     seedOffBudgets();
+    db.run("DELETE FROM auditEvents WHERE action = 'budget.delete'");
     const snapshot = await dbApi.exportDb();
     snapshot.offBudgets = [];
     await dbApi.importDb(structuredClone(snapshot), { masterKey: MASTER });
     expect(budgetRows()).toEqual([]);
+    // The workspace cascade removed them; each removal is still audited once.
+    expect(
+      db
+        .all(
+          "SELECT targetId, after FROM auditEvents WHERE action = 'budget.delete' ORDER BY targetId",
+        )
+        .map((r) => ({ id: r.targetId, after: JSON.parse(r.after) })),
+    ).toEqual([
+      { id: "b-key", after: { reason: "not_in_backup", scopeType: "key" } },
+      { id: "b-ws", after: { reason: "not_in_backup", scopeType: "workspace" } },
+    ]);
+  });
+
+  // YAN-1929: a kept id the backup moved to another window or scope starts
+  // clean; its old claim does not come back.
+  it("drops the claim of a kept id whose window or scope changed", async () => {
+    enabled = false;
+    seedOffBudgets();
+    db.run(
+      `INSERT INTO budgetNotices(budgetId, kind, windowStart, signature, notifiedAt) VALUES('b-key', 'hard', ?, '||3', ?)`,
+      [NOW, NOW],
+    );
+    const snapshot = await dbApi.exportDb();
+    for (const b of snapshot.offBudgets) {
+      if (b.id === "b-ws") b.window = "month";
+      if (b.id === "b-key")
+        Object.assign(b, { scopeType: "workspace", scopeId: "ws", window: "week" });
+    }
+    await dbApi.importDb(structuredClone(snapshot), { masterKey: MASTER });
+    expect(budgetRows().map((r) => [r.id, r.scopeType, r.window])).toEqual([
+      ["b-key", "workspace", "week"],
+      ["b-ws", "workspace", "month"],
+    ]);
+    expect(claimRows()).toEqual([]);
+  });
+
+  // YAN-1934: a live row holding a restored row's slot under another id is
+  // replaced (audited), never an idx_budgets_scope_window failure.
+  it("replaces a live budget that holds a restored budget's slot under another id", async () => {
+    enabled = false;
+    seedOffBudgets();
+    const snapshot = await dbApi.exportDb();
+    db.run("DELETE FROM budgets WHERE id = 'b-ws'");
+    db.run(
+      `INSERT INTO budgets(id, workspaceId, scopeType, scopeId, window, limitUsd, createdAt) VALUES('b-squatter', 'ws', 'workspace', 'ws', 'day', 1, ?)`,
+      [NOW],
+    );
+    db.run("DELETE FROM auditEvents WHERE action = 'budget.delete'");
+    const { restoreOffBudgetsUnscoped } = await import("@/lib/db/repos/budgetOrphansRepo.js");
+    db.transaction(() => restoreOffBudgetsUnscoped(db, snapshot.offBudgets));
+    expect(budgetRows().map((r) => r.id)).toEqual(["b-key", "b-ws"]);
+    expect(
+      db.all("SELECT targetId, after FROM auditEvents WHERE action = 'budget.delete'"),
+    ).toEqual([
+      {
+        targetId: "b-squatter",
+        after: JSON.stringify({ reason: "not_in_backup", scopeType: "workspace" }),
+      },
+    ]);
   });
 
   it("rejects invalid offBudgets before any mutation", async () => {

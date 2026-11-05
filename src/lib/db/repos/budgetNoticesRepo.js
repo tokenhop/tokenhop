@@ -42,19 +42,23 @@ export function claimBudgetNoticeUnscoped(
 }
 
 /**
- * YAN-1929: every claim row, captured before a snapshot restore deletes or
- * replaces the budgets (claims never travel in a snapshot). Bounded: at most
- * two rows per budget.
+ * YAN-1929: every claim row with its budget's scope and window, captured
+ * before a snapshot restore deletes or replaces the budgets (claims never
+ * travel in a snapshot). Bounded: at most two rows per budget.
  */
 export function snapshotBudgetNoticesUnscoped(db) {
-  return db.all("SELECT budgetId, kind, windowStart, signature, notifiedAt FROM budgetNotices");
+  return db.all(
+    `SELECT n.budgetId, n.kind, n.windowStart, n.signature, n.notifiedAt, b.scopeType, b.scopeId, b.window
+     FROM budgetNotices n JOIN budgets b ON b.id = n.budgetId`,
+  );
 }
 
 /**
  * YAN-1929: put captured claims back after a restore, only for budgets that
- * still exist under the same id (a dropped budget's claim stays gone). A
- * claim from an older window or for other limits simply loses the next
- * compare-and-set, so it never blocks a due notice.
+ * still exist under the same id, scope and window (a dropped budget, or one
+ * the backup moved to another scope or window, starts clean). A claim from
+ * an older window or for other limits simply loses the next compare-and-set,
+ * so it never blocks a due notice.
  * @returns {number} Claims restored.
  */
 export function restoreBudgetNoticesUnscoped(db, rows) {
@@ -63,8 +67,19 @@ export function restoreBudgetNoticesUnscoped(db, rows) {
     restored += Number(
       db.run(
         `INSERT OR IGNORE INTO budgetNotices(budgetId, kind, windowStart, signature, notifiedAt)
-         SELECT ?, ?, ?, ?, ? WHERE EXISTS (SELECT 1 FROM budgets WHERE id = ?)`,
-        [r.budgetId, r.kind, r.windowStart, r.signature, r.notifiedAt, r.budgetId],
+         SELECT ?, ?, ?, ?, ? WHERE EXISTS (
+           SELECT 1 FROM budgets WHERE id = ? AND scopeType = ? AND scopeId = ? AND window = ?)`,
+        [
+          r.budgetId,
+          r.kind,
+          r.windowStart,
+          r.signature,
+          r.notifiedAt,
+          r.budgetId,
+          r.scopeType,
+          r.scopeId,
+          r.window,
+        ],
       ).changes,
     );
   }

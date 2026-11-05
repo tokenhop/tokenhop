@@ -16,6 +16,7 @@ import { isCredentialMaintenancePoisoned } from "../credentialMaintenance.js";
 import { insertHashedApiKeySync } from "../repos/apiKeysRepo.js";
 import { adoptOwnerlessRowsUnscoped } from "../repos/ownership.js";
 import {
+  captureOffBudgetsUnscoped,
   pruneOrphanedScopeBudgetsUnscoped,
   restoreOffBudgetsUnscoped,
 } from "../repos/budgetOrphansRepo.js";
@@ -1517,8 +1518,11 @@ export function applyGatewayKeySnapshot(db, payload, plan, { actor = null } = {}
   // YAN-375: child-first clear of the complete-table sections (FK-safe).
   // YAN-1929: notice claims never travel in a snapshot; keep the live ones
   // across the destructive replace (budget deletes cascade them) and put
-  // back those whose budget id survives, so a restore repeats no notice.
+  // back those whose budget survives unchanged, so a restore repeats no
+  // notice. YAN-1934: the workspace delete below cascades the switch-off
+  // budgets too; capture them so the removals are still audited.
   const claims = snapshotBudgetNoticesUnscoped(db);
+  const priorOffBudgets = plan.offBudgets ? captureOffBudgetsUnscoped(db) : [];
   if (plan.instanceSections) deleteInstanceTableSections(db);
   db.run(`DELETE FROM settings`);
   db.run(`DELETE FROM apiKeys`);
@@ -1800,7 +1804,7 @@ export function applyGatewayKeySnapshot(db, payload, plan, { actor = null } = {}
     }
   }
   // YAN-1934: switch-off budgets carried in the snapshot (absent: unchanged).
-  restoreOffBudgetsUnscoped(db, plan.offBudgets, { actor });
+  restoreOffBudgetsUnscoped(db, plan.offBudgets, { actor, prior: priorOffBudgets });
   // YAN-1913: an older snapshot without a budgets section retains the live
   // budgets; drop key/grant/membership/user budgets whose target the restore
   // replaced. Idempotent: a snapshot that carried its budgets has no orphans.
