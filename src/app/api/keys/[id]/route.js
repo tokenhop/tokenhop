@@ -161,10 +161,11 @@ export async function DELETE(request, { params }) {
     const blocked = await legacyUnavailable();
     if (blocked) return blocked;
 
-    // Audit actor of the key's removed budgets: the session user, else the
-    // system (pristine legacy session), as in importSnapshot's auditActor.
-    const { resolvePrincipal } = await import("@/lib/users/session");
-    const principal = await resolvePrincipal(request);
+    // Audit actor of the key's removed budgets: the pristine admin's user
+    // (owner/admin session, as budget writes record), else the system (no
+    // user: legacy session, login off, CLI). Audit only; auth is unchanged.
+    const { pristineAdminPrincipal } = await import("@/lib/users/session");
+    const principal = await pristineAdminPrincipal(request);
     const deleted = await deleteApiKey(id, {
       actor: {
         principal: principal?.userId ? { userId: principal.userId, via: principal.via } : null,

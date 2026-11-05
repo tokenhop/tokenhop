@@ -292,6 +292,22 @@ describe("pristine install, switch off", () => {
     ).toEqual({ actorUserId: "u-admin", via: "session" });
   });
 
+  it("a legacy key delete by an admin session audits its budgets as that user", async () => {
+    await load();
+    const { createDashboardAuthToken } = await import("@/lib/auth/dashboardSession.js");
+    adapter.run(
+      `INSERT INTO users(id, email, username, displayName, instanceRole, status, passwordHash, mustChangePassword, sessionVersion, createdAt, updatedAt)
+       VALUES('u-admin', 'a@x.test', 'u-admin', 'u-admin', 'admin', 'active', NULL, 0, 1, ?, ?)`,
+      [NOW, NOW],
+    );
+    const cookie = `auth_token=${await createDashboardAuthToken({ sub: "u-admin", sv: 1 })}`;
+    await keyBudget(cookie);
+    expect((await delKey(cookie)).status).toBe(200);
+    expect(
+      adapter.get(`SELECT actorUserId, via FROM auditEvents WHERE action = 'budget.delete'`),
+    ).toEqual({ actorUserId: "u-admin", via: "session" });
+  });
+
   it("the switch response does not count the pending Default as a shared workspace", async () => {
     await load();
     expect((await post(wsBudget, { cookie: await legacyCookie() })).status).toBe(201);
