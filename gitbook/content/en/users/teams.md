@@ -74,6 +74,8 @@ The **Audit log** page (under **Watch**) records who changed what: user and memb
 
 Audit entries never contain secrets. Only a fixed set of safe fields is stored, and token-like text is redacted. The log is append-only; entries are not edited or purged by the dashboard.
 
+Budget webhook changes are recorded as `budget.webhook.create`, `budget.webhook.update`, `budget.webhook.rotate` and `budget.webhook.delete`. They store the destination host and whether the webhook is enabled, never the URL or the signing secret. See [Budget webhook](/en/users/concepts#budget-webhook).
+
 ---
 
 ## Offboarding

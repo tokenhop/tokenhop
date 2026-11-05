@@ -471,6 +471,22 @@ export const TABLES = {
     },
     primaryKey: "PRIMARY KEY (budgetId, kind)",
   },
+  // Budget webhooks (migration 024, YAN-1831): one optional webhook per
+  // workspace. `data` holds the signing secret as a D10 credential leaf
+  // ({"secret": ...}), encrypted once credential encryption is active. Not
+  // exported; deleted with the workspace, including by a snapshot restore.
+  budgetWebhooks: {
+    columns: {
+      id: "TEXT PRIMARY KEY",
+      workspaceId: "TEXT NOT NULL UNIQUE REFERENCES workspaces(id) ON DELETE CASCADE",
+      url: "TEXT NOT NULL",
+      enabled: "INTEGER NOT NULL DEFAULT 1",
+      data: "TEXT NOT NULL",
+      createdByUserId: "TEXT REFERENCES users(id) ON DELETE SET NULL",
+      createdAt: "TEXT NOT NULL",
+      updatedAt: "TEXT NOT NULL",
+    },
+  },
   // YAN-751: one row per signed-in device, keyed by the non-secret `sid` JWT
   // claim. userAgent/ip hold derived labels only (never the raw UA or full IP).
   // Soft revoke (revokedAt) stays as a tombstone until expiresAt.

@@ -56,6 +56,8 @@ const TOKEN_RULES = [
   ["xai-", /^xai-(?:mgmt-)?[A-Za-z0-9-]{20,}/, false],
   ["hf_", /^hf_(?:jwt_|oauth_)?[A-Za-z0-9]{20,}/, false],
   ["nvapi-", /^nvapi-[A-Za-z0-9-]{40,}/, false],
+  // YAN-1831: budget webhook signing secret (32 bytes base64url).
+  ["whsec_", /^whsec_[A-Za-z0-9_-]{43}/, false],
 ];
 
 const TOKEN_CHAR = /[A-Za-z0-9_.-]/;

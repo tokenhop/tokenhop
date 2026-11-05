@@ -13,6 +13,7 @@ import { Skeleton } from "@/shared/components/Loading";
 import useAuthStatus from "@/shared/hooks/useAuthStatus";
 import { useSettingsField } from "../useSettingsField";
 import PersonalSharingSetting from "./PersonalSharingSetting";
+import BudgetWebhookPrivateNetworksSetting from "./BudgetWebhookPrivateNetworksSetting";
 import UsersTeamsSetting from "./UsersTeamsSetting";
 
 // Mirrors server MIN_PASSWORD_LENGTH (src/lib/auth/userPassword.js); server stays authoritative.
@@ -262,6 +263,11 @@ export default function SecuritySection({ settings, onSettingsChange }) {
         <PersonalSharingSetting
           settings={settings}
           onSaved={onSaved("allowPersonalConnectionGrants")}
+        />
+
+        <BudgetWebhookPrivateNetworksSetting
+          settings={settings}
+          onSaved={onSaved("budgetWebhookAllowPrivateNetworks")}
         />
 
         <SettingRow

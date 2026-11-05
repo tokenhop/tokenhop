@@ -26,6 +26,14 @@ import {
 import { deriveApiKeyHashKey } from "../../security/masterKey.js";
 
 const OWNED_TABLES = ["providerConnections", "providerNodes"];
+// Workspace-scoped tables whose covered leaves activation encrypts. Budget
+// webhooks (YAN-1831) always have a workspace, so they never need adoption.
+const ENCRYPTED_TABLES = [...OWNED_TABLES, "budgetWebhooks"];
+const COUNT_KEYS = {
+  providerConnections: "connections",
+  providerNodes: "nodes",
+  budgetWebhooks: "webhooks",
+};
 const KID_RE = /^[0-9a-f]{16}$/;
 const PSD_PREFIX = "providerSpecificData.";
 const ENVELOPE_KEYS = ["ct", "iv", "kid", "tag", "v"];
@@ -154,14 +162,14 @@ export function encryptCredentialsInTransaction(db, root, { legacyDecrypt } = {}
     fail("API_KEY_STATE_INVALID", "hashed API-key storage required");
 
   const adopted = adoptOwnerless(db, defaultId);
-  const counts = { adopted, connections: 0, nodes: 0, settings: 0 };
+  const counts = { adopted, connections: 0, nodes: 0, webhooks: 0, settings: 0 };
 
-  for (const table of OWNED_TABLES) {
+  for (const table of ENCRYPTED_TABLES) {
     for (const row of db.all(`SELECT id, data, workspaceId FROM ${table}`)) {
       const blob = parseCredentialBlob(row.data);
       if (encryptLeaves(db, ctx, table, row, blob, row.workspaceId)) {
         db.run(`UPDATE ${table} SET data = ? WHERE id = ?`, [JSON.stringify(blob), row.id]);
-        counts[table === "providerConnections" ? "connections" : "nodes"] += 1;
+        counts[COUNT_KEYS[table]] += 1;
       }
     }
   }

@@ -32,6 +32,12 @@ describe("scrub", () => {
     );
   });
 
+  it("keeps a budget webhook host, never its url or secret (YAN-1831)", () => {
+    expect(
+      scrub({ host: "hooks.example.com", enabled: true, url: "https://x/y?t=1", secret: "s" }),
+    ).toEqual({ host: "hooks.example.com", enabled: true });
+  });
+
   it("truncates strings longer than 4096 chars", () => {
     const big = `n${"o".repeat(5000)}`;
     expect(scrub({ name: big }).name).toHaveLength(4096);

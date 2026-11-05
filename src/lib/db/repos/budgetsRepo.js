@@ -39,7 +39,7 @@ export const OFF_WORKSPACE_ALIAS = "default";
 const offMode = (ctx) => ctx?.budgetMode === "off";
 
 /** Session principal, or the pristine switch-off admin (no user row). */
-async function assertActor(ctx) {
+export async function assertBudgetActor(ctx) {
   if (!offMode(ctx)) return assertCtx(ctx);
   if (ctx.userId != null) assertCtx(ctx);
   // Off-mode authority exists only while the switch really is off.
@@ -58,7 +58,7 @@ function requireOffScope(row) {
  * user row. Path id: the alias or the resolved id, else NOT_FOUND.
  * `create` makes the pending Default when no budget workspace exists yet;
  * `list` reads an empty one; anything else needs it (NOT_FOUND).
- * The switch is re-read in the transaction: a flip after assertActor fails.
+ * The switch is re-read in the transaction: a flip after assertBudgetActor fails.
  */
 function offAccess(db, ctx, { workspaceId = null, userId = null } = {}, opts = {}) {
   if (isMultiUserEnabledSync(db)) throw new TenancyError("FORBIDDEN", "Switch is on");
@@ -100,7 +100,17 @@ function validateLimits(row) {
   if (error) throw invalid(error);
 }
 
-function liveAccess(db, ctx, { workspaceId = null, userId = null } = {}, opts = {}) {
+/**
+ * Live budget authority for a target (sync, inside the caller's transaction;
+ * returns `{ raise, allowed(cap), workspaceId }`). Rechecks the live user,
+ * membership and switch. Shared with budget webhooks (YAN-1831).
+ */
+export function budgetWorkspaceAccess(
+  db,
+  ctx,
+  { workspaceId = null, userId = null } = {},
+  opts = {},
+) {
   if (offMode(ctx)) return offAccess(db, ctx, { workspaceId, userId }, opts);
   assertCtx(ctx);
   if (ctx.via !== "session" || ctx.apiKeyId != null) {
@@ -249,10 +259,10 @@ async function committed(ctx, action, before, after) {
 }
 
 export async function listBudgets(ctx, { workspaceId } = {}) {
-  await assertActor(ctx);
+  await assertBudgetActor(ctx);
   const db = await getAdapter();
   return db.transaction(() => {
-    const access = liveAccess(db, ctx, { workspaceId }, { list: true });
+    const access = budgetWorkspaceAccess(db, ctx, { workspaceId }, { list: true });
     if (!access.allowed("workspace.budgets.read"))
       throw new TenancyError("FORBIDDEN", "Budget read forbidden");
     if (offMode(ctx)) {
@@ -278,7 +288,7 @@ export async function listUserBudgets(ctx, { userId } = {}) {
   assertCtx(ctx);
   const db = await getAdapter();
   return db.transaction(() => {
-    liveAccess(db, ctx, { userId });
+    budgetWorkspaceAccess(db, ctx, { userId });
     return db.all(
       `SELECT ${COLS} FROM budgets WHERE scopeType = 'user' AND scopeId = ? AND workspaceId IS NULL ORDER BY createdAt, id`,
       [userId],
@@ -287,7 +297,7 @@ export async function listUserBudgets(ctx, { userId } = {}) {
 }
 
 export async function createBudget(ctx, options = {}) {
-  await assertActor(ctx);
+  await assertBudgetActor(ctx);
   validateBody(options, ["workspaceId", "userId", "scopeType", "scopeId", "window", ...MUTABLE]);
   const { workspaceId = null, userId = null, scopeType, scopeId, window } = options;
   if (!SCOPE_TYPES.includes(scopeType) || !WINDOWS.includes(window))
@@ -309,7 +319,7 @@ export async function createBudget(ctx, options = {}) {
   const db = await getAdapter();
   mapConstraintErrors(() =>
     db.transaction(() => {
-      const access = liveAccess(db, ctx, { workspaceId, userId }, { create: true });
+      const access = budgetWorkspaceAccess(db, ctx, { workspaceId, userId }, { create: true });
       const target = { workspaceId: access.workspaceId ?? workspaceId, userId };
       if (off) {
         // The path alias (or id) names the resolved off workspace.
@@ -336,14 +346,14 @@ export async function updateBudget(
   { workspaceId = null, userId = null, budgetId } = {},
   patch = {},
 ) {
-  await assertActor(ctx);
+  await assertBudgetActor(ctx);
   validateBody(patch, MUTABLE);
   if (Object.keys(patch).length === 0) throw invalid("Empty patch");
   const db = await getAdapter();
   const off = offMode(ctx);
   const { before, after } = mapConstraintErrors(() =>
     db.transaction(() => {
-      const access = liveAccess(db, ctx, { workspaceId, userId });
+      const access = budgetWorkspaceAccess(db, ctx, { workspaceId, userId });
       const target = { workspaceId: access.workspaceId ?? workspaceId, userId };
       const before = scopedBudget(db, budgetId, target);
       if (off) requireOffScope(before);
@@ -362,10 +372,10 @@ export async function updateBudget(
 }
 
 export async function deleteBudget(ctx, { workspaceId = null, userId = null, budgetId } = {}) {
-  await assertActor(ctx);
+  await assertBudgetActor(ctx);
   const db = await getAdapter();
   const before = db.transaction(() => {
-    const access = liveAccess(db, ctx, { workspaceId, userId });
+    const access = budgetWorkspaceAccess(db, ctx, { workspaceId, userId });
     const target = { workspaceId: access.workspaceId ?? workspaceId, userId };
     const row = scopedBudget(db, budgetId, target);
     if (offMode(ctx)) requireOffScope(row);

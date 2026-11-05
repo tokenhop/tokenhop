@@ -52,6 +52,8 @@ function validSecuritySettings(body) {
     "tunnelDashboardAccess",
     // YAN-369: instance ToS override for personal connection grants.
     "allowPersonalConnectionGrants",
+    // YAN-1831: budget webhooks may reach private networks.
+    "budgetWebhookAllowPrivateNetworks",
   ]) {
     if (Object.hasOwn(body, key) && typeof body[key] !== "boolean") {
       return `Invalid ${key}: must be a boolean`;

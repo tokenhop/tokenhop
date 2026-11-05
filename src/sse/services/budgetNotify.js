@@ -13,11 +13,15 @@
 // A DB import/restore keeps the claims of the budget ids it keeps (YAN-1929),
 // so a restore repeats no notice in the same window; restored limits that
 // differ change the signature and re-arm it, like any limit change.
+// A workspace budget webhook (YAN-1831) is scheduled off the request path
+// after the claim, so it inherits the once-per-window guarantee (and the
+// claim-failure duplicate caveat).
 import { claimBudgetNoticeUnscoped } from "@/lib/db/repos/budgetNoticesRepo.js";
 import { statsEmitter } from "@/lib/db/repos/usageLiveFeed.js";
 import { audit } from "@/lib/users/audit.js";
 import { windowEnd } from "@/lib/users/budgets.js";
 import { noticeId, noticeSignature } from "@/shared/utils/budgetNotice.js";
+import { scheduleBudgetWebhook } from "./budgetWebhook.js";
 
 const FIELDS = { usd: "limitUsd", tokens: "limitTokens", requests: "limitRequests" };
 const ACTIONS = { soft: "budget.softLimit", hard: "budget.hardStop" };
@@ -102,6 +106,7 @@ export function notifyOnce(db, state, kind, now = Date.now()) {
   } catch (e) {
     console.warn("[budgetGuard] notice listener failed:", e?.message);
   }
+  scheduleBudgetWebhook(notice);
 }
 
 /** Soft notice when the window's settled spend is past the threshold. */

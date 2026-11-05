@@ -71,7 +71,8 @@ export const KEK_ENV_MANAGED_GUIDANCE =
   "kid and gateway authentication before rotating. Never generate a different file key for " +
   "this conversion. Alternatively, wait for the approved manual two-key protocol.";
 
-const OWNED_TABLES = ["providerConnections", "providerNodes"];
+// Workspace-scoped credential tables re-encrypted by a DEK rotation (YAN-1831 adds webhooks).
+const OWNED_TABLES = ["providerConnections", "providerNodes", "budgetWebhooks"];
 const PSD_PREFIX = "providerSpecificData.";
 const ENVELOPE_KEYS = ["ct", "iv", "kid", "tag", "v"];
 const KID_RE = /^[0-9a-f]{16}$/;

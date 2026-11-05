@@ -21,6 +21,7 @@ export const TABLE_NAMES = Object.freeze({
   providerConnections: "providerConnections",
   providerNodes: "providerNodes",
   settings: "settings",
+  budgetWebhooks: "budgetWebhooks",
 });
 
 // D10 shared allow-list: drives both encryption and metadata redaction. Nested
@@ -48,6 +49,8 @@ export const CREDENTIAL_FIELD_ALLOWLIST = Object.freeze({
     "samlSigningKey",
     "mitmSudoEncrypted",
   ]),
+  // YAN-1831: budget webhook signing secret.
+  budgetWebhooks: Object.freeze(["secret"]),
 });
 
 function fail(code, message) {

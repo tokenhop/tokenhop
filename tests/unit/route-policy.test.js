@@ -151,6 +151,8 @@ const YAN360_SESSION_ONLY_ROUTES = new Set([
   // YAN-372 workspace and user budgets: browser session only.
   "/api/workspaces/[id]/budgets",
   "/api/workspaces/[id]/budgets/[budgetId]",
+  // YAN-1831 budget webhook: browser session only.
+  "/api/workspaces/[id]/budget-webhook",
   // YAN-701 workspace move: browser session only.
   "/api/workspaces/[id]/move",
   "/api/users/[id]/budgets",

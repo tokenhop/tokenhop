@@ -34,6 +34,7 @@ import UsageStatsCards from "./components/UsageStatsCards";
 import UsageBreakdown from "./components/UsageBreakdown";
 import RequestLog from "./components/RequestLog";
 import BudgetsTab from "./components/BudgetsTab";
+import BudgetWebhookCard from "./components/BudgetWebhookCard";
 import UsageFilters from "./components/UsageFilters";
 import UsageExportButton from "./components/UsageExportButton";
 
@@ -313,19 +314,31 @@ function UsageContent() {
             />
           )
         ) : budgetsOff ? (
-          <BudgetsTab
-            workspaceId="default"
-            canManage
-            scopeTypes={status?.principal?.via === "local" ? LOCAL_SCOPE_TYPES : OFF_SCOPE_TYPES}
-            refreshKey={notices.noticeKey}
-          />
+          <div className="flex flex-col gap-4">
+            <BudgetsTab
+              workspaceId="default"
+              canManage
+              scopeTypes={status?.principal?.via === "local" ? LOCAL_SCOPE_TYPES : OFF_SCOPE_TYPES}
+              refreshKey={notices.noticeKey}
+            />
+            <BudgetWebhookCard workspaceId="default" canManage />
+          </div>
         ) : (
-          <BudgetsTab
-            workspaceId={workspaceId}
-            canManage={canManage}
-            canManageUsers={view.can("instance.budgets.raise")}
-            refreshKey={notices.noticeKey}
-          />
+          <div className="flex flex-col gap-4">
+            <BudgetsTab
+              workspaceId={workspaceId}
+              canManage={canManage}
+              canManageUsers={view.can("instance.budgets.raise")}
+              refreshKey={notices.noticeKey}
+            />
+            {/* Webhook needs budgets.lower here; a non-member admin's raise cap would 403. */}
+            <BudgetWebhookCard
+              workspaceId={workspaceId}
+              canManage={Boolean(
+                view.active && workspaceId && view.can("workspace.budgets.lower", workspaceId),
+              )}
+            />
+          </div>
         )
       ) : (
         <RequestLog usageFilters={usageFilters} />

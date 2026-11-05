@@ -25,6 +25,9 @@ const HELPER_ALLOWLIST = new Set([
   "settingsRepo.js:updateSettings",
   "settingsRepo.js:updateComboStrategies",
   "workspaceSettingsRepo.js:mirrorToDefaultWorkspace",
+  // YAN-1831: sync in-tx authority seam; first param `db`, rechecks the live
+  // user, membership and switch.
+  "budgetsRepo.js:budgetWorkspaceAccess",
   // YAN-359 sync in-transaction seams (first param `db`, caller owns the tx).
   // ssoAdmit validates identity, groups and the allow-list, then rechecks the
   // user, role provenance and every mapped workspace inside the tx before
