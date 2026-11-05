@@ -1,10 +1,11 @@
 import { NextResponse } from "next/server";
-import { deleteApiKey, getApiKeyById, updateApiKey } from "@/lib/localDb";
+import { deleteApiKeyUnscoped, getApiKeyById, updateApiKey } from "@/lib/localDb";
 import { validateKeyName } from "@/app/(dashboard)/dashboard/endpoint/endpointLogic";
 
 import { readApiKeyStorageState } from "@/lib/db/apiKeyState";
 import { getAdapter } from "@/lib/db/driver";
 import { isUserSecurityEnforced } from "@/lib/users/securityState";
+import { getClientIp } from "@/lib/auth/loginLimiter";
 
 const NO_STORE = { "Cache-Control": "no-store" };
 
@@ -160,7 +161,17 @@ export async function DELETE(request, { params }) {
     const blocked = await legacyUnavailable();
     if (blocked) return blocked;
 
-    const deleted = await deleteApiKey(id);
+    // Audit actor of the key's removed budgets: the pristine admin's user
+    // (owner/admin session, as budget writes record), else the system (no
+    // user: legacy session, login off, CLI). Audit only; auth is unchanged.
+    const { pristineAdminPrincipal } = await import("@/lib/users/session");
+    const principal = await pristineAdminPrincipal(request);
+    const deleted = await deleteApiKeyUnscoped(id, {
+      actor: {
+        principal: principal?.userId ? { userId: principal.userId, via: principal.via } : null,
+        ip: getClientIp(request),
+      },
+    });
     if (!deleted) {
       return NextResponse.json({ error: "Key not found" }, { status: 404 });
     }

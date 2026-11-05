@@ -304,6 +304,23 @@ describe("hashed routes via session principal", () => {
       revokedAt: tombstone.revokedAt,
     });
   });
+
+  it("revoking a hashed key keeps its key budget (YAN-1935: only legacy hard delete drops it)", async () => {
+    const cookie = await sessionCookie(seeded.ownerId, SHARED);
+    const { id } = await (
+      await callCollection("POST", { cookie, body: { name: "svc", type: "service" } })
+    ).json();
+    db.run(
+      `INSERT INTO budgets(id, workspaceId, scopeType, scopeId, window, limitRequests, createdAt) VALUES('b-key', ?, 'key', ?, 'day', 3, ?)`,
+      [SHARED, id, NOW],
+    );
+    try {
+      expect((await callItem("DELETE", id, { cookie })).status).toBe(200);
+      expect(db.get("SELECT id FROM budgets WHERE id = 'b-key'")).toEqual({ id: "b-key" });
+    } finally {
+      db.run("DELETE FROM budgets WHERE id = 'b-key'");
+    }
+  });
 });
 
 describe("hashed migration acknowledgement via session principal", () => {

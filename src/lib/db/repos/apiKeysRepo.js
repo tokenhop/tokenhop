@@ -1,6 +1,8 @@
 import { v4 as uuidv4 } from "uuid";
 import { getAdapter } from "../driver.js";
 import { readApiKeyStorageState } from "../apiKeyState.js";
+import { deleteKeyBudgetsUnscoped } from "./budgetOrphansRepo.js";
+import { bumpBudgetsGeneration } from "@/lib/users/budgets.js";
 
 function rowToKey(row) {
   if (!row) return null;
@@ -65,10 +67,19 @@ export async function updateApiKey(id, data) {
   return result;
 }
 
-export async function deleteApiKey(id) {
+// Legacy hard delete: the key's budgets go in the same transaction (YAN-1935);
+// `actor` ({ principal, ip }) audits each removed budget.
+export async function deleteApiKeyUnscoped(id, { actor = null } = {}) {
   const db = await getAdapter();
-  const res = db.run(`DELETE FROM apiKeys WHERE id = ?`, [id]);
-  return (res?.changes ?? 0) > 0;
+  let deleted = false;
+  let budgets = 0;
+  db.transaction(() => {
+    const res = db.run(`DELETE FROM apiKeys WHERE id = ?`, [id]);
+    deleted = (res?.changes ?? 0) > 0;
+    if (deleted) budgets = deleteKeyBudgetsUnscoped(db, id, { actor });
+  });
+  if (budgets > 0) bumpBudgetsGeneration();
+  return deleted;
 }
 
 export async function validateApiKey(key) {

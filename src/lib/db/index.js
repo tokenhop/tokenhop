@@ -78,7 +78,7 @@ export {
   getApiKeyById,
   createApiKey,
   updateApiKey,
-  deleteApiKey,
+  deleteApiKeyUnscoped,
   validateApiKey,
 } from "./repos/apiKeysRepo.js";
 
