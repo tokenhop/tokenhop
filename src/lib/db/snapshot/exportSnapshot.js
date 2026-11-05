@@ -11,6 +11,7 @@ import { getAdapter } from "../driver.js";
 import { parseJson } from "../helpers/jsonCol.js";
 import { latestVersion } from "../migrations/index.js";
 import { defaultWorkspaceIdUnscoped } from "../repos/ownership.js";
+import { exportOffModeBudgetsUnscoped } from "../repos/budgetOrphansRepo.js";
 import { makeInstancePortable } from "../helpers/instancePortable.js";
 import {
   TransferError,
@@ -108,12 +109,18 @@ function buildLegacyHead(db, settings) {
 }
 
 // Head with the 9 instance sections deferred (STREAMED_SECTION placeholders).
+// YAN-1934: while switched off, `offBudgets` carries the switch-off budgets
+// (always present then, even `[]`, so a restore can tell "clear" from an
+// older snapshot that has none).
 function buildHead(db, settings, multiUserTransfer) {
-  const out = buildLegacyHead(db, settings);
-  return exportGatewayKeySnapshot(db, out, gatewayKeyStorageSnapshot(db), {
-    multiUserTransfer,
-    deferSections: multiUserTransfer,
-  });
+  const out = exportGatewayKeySnapshot(
+    db,
+    buildLegacyHead(db, settings),
+    gatewayKeyStorageSnapshot(db),
+    { multiUserTransfer, deferSections: multiUserTransfer },
+  );
+  if (!multiUserTransfer) out.offBudgets = exportOffModeBudgetsUnscoped(db);
+  return out;
 }
 
 // The parts of a head a portable bundle is bound to. If they differ between

@@ -428,6 +428,10 @@ describe("YAN-1834 budgets in config export/import", () => {
     ]);
     for (const b of doc.budgets) expect(Object.keys(b).sort()).toEqual(PORTABLE_KEYS);
     expect(JSON.stringify(doc)).not.toContain(ws);
+    // YAN-1929: the seeded claim never leaves the instance (no notice fields).
+    for (const field of ["budgetNotices", "signature", "windowStart", "notifiedAt"]) {
+      expect(JSON.stringify(doc)).not.toContain(field);
+    }
 
     // Fresh instance: no budgets, no budget workspace.
     db.run("DELETE FROM budgets");

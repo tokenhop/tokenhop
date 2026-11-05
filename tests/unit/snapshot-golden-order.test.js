@@ -34,7 +34,7 @@ import {
 import {
   GOLDEN_FIRST_ROWS,
   GOLDEN_HASHED_OFF_TOP,
-  GOLDEN_LEGACY_TOP,
+  GOLDEN_LEGACY_OFF_TOP,
   GOLDEN_V2_TOP,
   GOLDEN_V3_TOP,
   expectedSectionRows,
@@ -142,8 +142,9 @@ describe("golden export order", () => {
     );
     try {
       const snapshot = await dbApi.exportDb();
-      expectShape(snapshot, GOLDEN_LEGACY_TOP, GOLDEN_FIRST_ROWS.legacy);
+      expectShape(snapshot, GOLDEN_LEGACY_OFF_TOP, GOLDEN_FIRST_ROWS.legacy);
       expect(snapshot.formatVersion).toBeUndefined();
+      expect(snapshot.offBudgets).toEqual([]); // no budget workspace yet
     } finally {
       db.exec(
         "DELETE FROM kv; DELETE FROM apiKeys; DELETE FROM combos; DELETE FROM providerNodes; DELETE FROM proxyPools; DELETE FROM providerConnections",
@@ -157,6 +158,8 @@ describe("golden export order", () => {
     const snapshot = await dbApi.exportDb();
     expectShape(snapshot, GOLDEN_HASHED_OFF_TOP, GOLDEN_FIRST_ROWS.hashedOff);
     expect(snapshot.formatVersion).toBe(2);
+    // YAN-1929: notice claims never travel in a snapshot.
+    expect(snapshot).not.toHaveProperty("budgetNotices");
   });
 
   it("v2 shape (plain hashed, switch on): keys, sections and stored values", async () => {

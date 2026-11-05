@@ -15,7 +15,14 @@ import { readCredentialEncryptionState } from "../credentialEncryptionState.js";
 import { isCredentialMaintenancePoisoned } from "../credentialMaintenance.js";
 import { insertHashedApiKeySync } from "../repos/apiKeysRepo.js";
 import { adoptOwnerlessRowsUnscoped } from "../repos/ownership.js";
-import { pruneOrphanedScopeBudgetsUnscoped } from "../repos/budgetOrphansRepo.js";
+import {
+  pruneOrphanedScopeBudgetsUnscoped,
+  restoreOffBudgetsUnscoped,
+} from "../repos/budgetOrphansRepo.js";
+import {
+  restoreBudgetNoticesUnscoped,
+  snapshotBudgetNoticesUnscoped,
+} from "../repos/budgetNoticesRepo.js";
 import { invalidateSessionCache } from "./sessionCache.js";
 import {
   INSTANCE_SNAPSHOT_SECTION_NAMES,
@@ -25,6 +32,7 @@ import {
   readInstanceTableSections,
   STREAMED_SECTION,
   validateInstanceTableSections,
+  validateOffBudgets,
 } from "./instanceSnapshotTables.js";
 import { backfillSavingsComboFromHistory } from "./usageSavingsRollup.js";
 import { getMetaSync, setMetaSync } from "./metaStore.js";
@@ -1214,6 +1222,11 @@ export function preflightGatewayKeyImport(
       }
     }
   }
+  // YAN-1934: switch-off budgets (head key, both formats), checked before any
+  // backup or mutation. A snapshot that also carries the budgets section
+  // (switch on) restores budgets through that section only.
+  let offBudgets = validateOffBudgets(payload);
+  if (Object.hasOwn(payload, "budgets") || stage?.present.has("budgets")) offBudgets = null;
   if (format === "hashed") {
     const kid = payload.apiKeyStorage.hashKid;
     if (instance.storage !== "hashed") {
@@ -1385,13 +1398,14 @@ export function preflightGatewayKeyImport(
       keyIdByHash: new Map(snapshotKeys.map((r) => [r.keyHash, r.id])),
       videoJobs,
       instanceSections,
+      offBudgets,
       needsSavingsRecompute,
       needsComboRecompute,
     };
   }
   // Legacy payload.
   const keys = validateLegacyKeys(payload);
-  if (instance.storage !== "hashed") return { format };
+  if (instance.storage !== "hashed") return { format, offBudgets };
   if (masterKey === null || masterKey === undefined) {
     fail(
       "TRANSFER_MASTER_REQUIRED",
@@ -1430,6 +1444,7 @@ export function preflightGatewayKeyImport(
   }
   return {
     format,
+    offBudgets,
     kid,
     hashKey: legacyHashKey,
     defaultWorkspaceId,
@@ -1500,6 +1515,10 @@ export function applyGatewayKeySnapshot(db, payload, plan, { actor = null } = {}
   db.exec(GATEWAY_VIDEO_JOBS_TABLE_SQL);
   db.run("DELETE FROM gatewayVideoJobs");
   // YAN-375: child-first clear of the complete-table sections (FK-safe).
+  // YAN-1929: notice claims never travel in a snapshot; keep the live ones
+  // across the destructive replace (budget deletes cascade them) and put
+  // back those whose budget id survives, so a restore repeats no notice.
+  const claims = snapshotBudgetNoticesUnscoped(db);
   if (plan.instanceSections) deleteInstanceTableSections(db);
   db.run(`DELETE FROM settings`);
   db.run(`DELETE FROM apiKeys`);
@@ -1780,10 +1799,13 @@ export function applyGatewayKeySnapshot(db, payload, plan, { actor = null } = {}
       db.run("INSERT INTO _meta(key, value) VALUES(?, ?)", [row.key, row.value]);
     }
   }
+  // YAN-1934: switch-off budgets carried in the snapshot (absent: unchanged).
+  restoreOffBudgetsUnscoped(db, plan.offBudgets, { actor });
   // YAN-1913: an older snapshot without a budgets section retains the live
   // budgets; drop key/grant/membership/user budgets whose target the restore
   // replaced. Idempotent: a snapshot that carried its budgets has no orphans.
   pruneOrphanedScopeBudgetsUnscoped(db, { actor });
+  restoreBudgetNoticesUnscoped(db, claims);
   if (db.all(`PRAGMA foreign_key_check`).length) {
     fail("TRANSFER_APPLY_INVALID", "Foreign key violations after snapshot apply");
   }

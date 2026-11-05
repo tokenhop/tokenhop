@@ -40,3 +40,33 @@ export function claimBudgetNoticeUnscoped(
   );
   return Number(changes) === 1;
 }
+
+/**
+ * YAN-1929: every claim row, captured before a snapshot restore deletes or
+ * replaces the budgets (claims never travel in a snapshot). Bounded: at most
+ * two rows per budget.
+ */
+export function snapshotBudgetNoticesUnscoped(db) {
+  return db.all("SELECT budgetId, kind, windowStart, signature, notifiedAt FROM budgetNotices");
+}
+
+/**
+ * YAN-1929: put captured claims back after a restore, only for budgets that
+ * still exist under the same id (a dropped budget's claim stays gone). A
+ * claim from an older window or for other limits simply loses the next
+ * compare-and-set, so it never blocks a due notice.
+ * @returns {number} Claims restored.
+ */
+export function restoreBudgetNoticesUnscoped(db, rows) {
+  let restored = 0;
+  for (const r of rows) {
+    restored += Number(
+      db.run(
+        `INSERT OR IGNORE INTO budgetNotices(budgetId, kind, windowStart, signature, notifiedAt)
+         SELECT ?, ?, ?, ?, ? WHERE EXISTS (SELECT 1 FROM budgets WHERE id = ?)`,
+        [r.budgetId, r.kind, r.windowStart, r.signature, r.notifiedAt, r.budgetId],
+      ).changes,
+    );
+  }
+  return restored;
+}

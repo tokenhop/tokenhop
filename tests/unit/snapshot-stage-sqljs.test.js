@@ -205,4 +205,17 @@ describe("sql.js stage backend vs the original bind path", () => {
     expect(stateDump(db)).toBe(before);
     expect(stagingEntries()).toEqual([]);
   });
+
+  // YAN-1929: the staged sql.js apply keeps the live claims of kept budget ids.
+  it("keeps budget notice claims of kept budget ids through the staged apply", async () => {
+    insertViaOracle(db, insertInstanceTableSections, tricky);
+    db.run(
+      `INSERT INTO budgetNotices(budgetId, kind, windowStart, signature, notifiedAt)
+       VALUES('b-real-5', 'soft', '2026-01-01T00:00:00.000Z', 'sig', '2026-01-01T00:00:00.000Z')`,
+    );
+    const claims = db.all("SELECT * FROM budgetNotices");
+    await dbApi.importDbStream(bodyOf(doc, 509), { masterKey: MASTER });
+    expect(db.all("SELECT * FROM budgetNotices")).toEqual(claims);
+    db.run("DELETE FROM budgetNotices");
+  });
 });

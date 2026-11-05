@@ -10,8 +10,8 @@
 // Fail open: notices never block or fail a gateway request. A claim write
 // error still sends the notice (worst case one duplicate after a restart),
 // except a foreign-key failure: the budget was deleted, so nothing is sent.
-// A DB import/restore replaces the budget rows and their claims together, so
-// at worst one duplicate notice per budget follows a restore.
+// A DB import/restore keeps the claims of the budget ids it keeps (YAN-1929),
+// so a restore repeats no notice in the same window.
 import { claimBudgetNoticeUnscoped } from "@/lib/db/repos/budgetNoticesRepo.js";
 import { statsEmitter } from "@/lib/db/repos/usageLiveFeed.js";
 import { audit } from "@/lib/users/audit.js";

@@ -69,14 +69,37 @@ beforeAll(async () => {
   );
 });
 
+// Switch-off budgets on Default: a workspace and a key budget, plus a live
+// notice claim on the workspace budget.
+function seedOffBudgets() {
+  db.run("DELETE FROM budgets");
+  db.run(
+    `INSERT INTO budgets(id, workspaceId, scopeType, scopeId, window, limitUsd, limitTokens, limitRequests, softLimitPct, resetAt, createdByUserId, createdAt)
+     VALUES('b-ws', 'ws', 'workspace', 'ws', 'day', 10, NULL, NULL, 50, NULL, 'owner', ?),
+           ('b-key', 'ws', 'key', 'key', 'week', NULL, NULL, 3, NULL, NULL, NULL, ?)`,
+    [NOW, NOW],
+  );
+  db.run(
+    `INSERT INTO budgetNotices(budgetId, kind, windowStart, signature, notifiedAt) VALUES('b-ws', 'soft', ?, '10|||50', ?)`,
+    [NOW, NOW],
+  );
+}
+const budgetRows = () =>
+  db.all(
+    "SELECT id, workspaceId, scopeType, scopeId, window, limitUsd, limitTokens, limitRequests, softLimitPct, createdByUserId FROM budgets ORDER BY id",
+  );
+const claimRows = () => db.all("SELECT * FROM budgetNotices ORDER BY budgetId, kind");
+
 describe("instance transfer switch gating", () => {
   it("keeps encrypted export and import on the previous behavior while switched off", async () => {
     enabled = false;
+    seedOffBudgets();
     const snapshot = await dbApi.exportDb();
     expect(snapshot.formatVersion).toBe(3);
     for (const name of ["kv", "metadataCounters", ...INSTANCE_SNAPSHOT_SECTION_NAMES]) {
       expect(snapshot).not.toHaveProperty(name);
     }
+    expect(snapshot).not.toHaveProperty("budgetNotices");
     await dbApi.importDb(structuredClone(snapshot), { masterKey: MASTER });
     // Prior hashed restore replaces users/workspaces; existing FK cascades
     // remove their settings. OFF must not run the new retention/restore lane.
@@ -86,6 +109,144 @@ describe("instance transfer switch gating", () => {
     });
   });
 
+  // YAN-1934 / YAN-1929: budgets are the exception to the cascade above.
+  it("carries switch-off workspace and key budgets through an export and restore", async () => {
+    enabled = false;
+    seedOffBudgets();
+    const claims = claimRows();
+    const snapshot = await dbApi.exportDb();
+    // Limits only: no spend, carry, notices, creator or derived resetAt.
+    expect(snapshot.offBudgets).toEqual([
+      {
+        id: "b-ws",
+        workspaceId: "ws",
+        scopeType: "workspace",
+        scopeId: "ws",
+        window: "day",
+        limitUsd: 10,
+        limitTokens: null,
+        limitRequests: null,
+        softLimitPct: 50,
+        createdAt: NOW,
+      },
+      {
+        id: "b-key",
+        workspaceId: "ws",
+        scopeType: "key",
+        scopeId: "key",
+        window: "week",
+        limitUsd: null,
+        limitTokens: null,
+        limitRequests: 3,
+        softLimitPct: null,
+        createdAt: NOW,
+      },
+    ]);
+    db.run("UPDATE budgets SET limitUsd = 99 WHERE id = 'b-ws'");
+    await dbApi.importDb(structuredClone(snapshot), { masterKey: MASTER });
+    expect(budgetRows()).toEqual([
+      {
+        id: "b-key",
+        workspaceId: "ws",
+        scopeType: "key",
+        scopeId: "key",
+        window: "week",
+        limitUsd: null,
+        limitTokens: null,
+        limitRequests: 3,
+        softLimitPct: null,
+        createdByUserId: null,
+      },
+      {
+        id: "b-ws",
+        workspaceId: "ws",
+        scopeType: "workspace",
+        scopeId: "ws",
+        window: "day",
+        limitUsd: 10,
+        limitTokens: null,
+        limitRequests: null,
+        softLimitPct: 50,
+        createdByUserId: null,
+      },
+    ]);
+    // The live claim of the kept budget id survives the cascade.
+    expect(claimRows()).toEqual(claims);
+  });
+
+  it("an older switch-off snapshot without offBudgets keeps the previous cascade", async () => {
+    enabled = false;
+    seedOffBudgets();
+    const snapshot = await dbApi.exportDb();
+    delete snapshot.offBudgets;
+    await dbApi.importDb(structuredClone(snapshot), { masterKey: MASTER });
+    expect(budgetRows()).toEqual([]);
+    expect(claimRows()).toEqual([]);
+  });
+
+  it("an explicit empty offBudgets clears the switch-off budgets", async () => {
+    enabled = false;
+    seedOffBudgets();
+    const snapshot = await dbApi.exportDb();
+    snapshot.offBudgets = [];
+    await dbApi.importDb(structuredClone(snapshot), { masterKey: MASTER });
+    expect(budgetRows()).toEqual([]);
+  });
+
+  it("rejects invalid offBudgets before any mutation", async () => {
+    enabled = false;
+    seedOffBudgets();
+    const snapshot = await dbApi.exportDb();
+    const [ws, key] = snapshot.offBudgets;
+    const cases = [
+      { ...ws, id: "b-grant", scopeType: "grant", scopeId: "g" },
+      { ...key, id: "b-dup" }, // same key and window as b-key
+      { ...ws, id: "b-neg", window: "month", limitUsd: -1 },
+      { ...ws, id: "b-other", window: "month", workspaceId: "elsewhere", scopeId: "elsewhere" },
+      { ...ws, id: "b-creator", window: "month", createdByUserId: "owner" },
+      { ...ws, id: "b-extra", window: "month", spent: 1 },
+    ];
+    db.run("UPDATE budgets SET limitUsd = 42 WHERE id = 'b-ws'");
+    const before = tableDump();
+    const claims = claimRows();
+    for (const bad of cases) {
+      const doc = structuredClone(snapshot);
+      doc.offBudgets.push(bad);
+      await expect(dbApi.importDb(doc, { masterKey: MASTER })).rejects.toMatchObject({
+        code: expect.stringMatching(/^TRANSFER_(STATE|REF)_INVALID$/),
+      });
+    }
+    await expect(
+      dbApi.importDb({ ...structuredClone(snapshot), offBudgets: {} }, { masterKey: MASTER }),
+    ).rejects.toMatchObject({ code: "TRANSFER_STATE_INVALID" });
+    expect(tableDump()).toBe(before);
+    expect(claimRows()).toEqual(claims);
+  });
+
+  it("a switch-off snapshot restored with the switch on applies its offBudgets", async () => {
+    enabled = false;
+    seedOffBudgets();
+    const snapshot = await dbApi.exportDb();
+    db.run("DELETE FROM budgets");
+    enabled = true;
+    try {
+      await dbApi.importDb(structuredClone(snapshot), { masterKey: MASTER });
+    } finally {
+      enabled = false;
+    }
+    expect(budgetRows().map((r) => r.id)).toEqual(["b-key", "b-ws"]);
+    // With a budgets section (switch-on snapshot) the section wins.
+    enabled = true;
+    try {
+      const full = await dbApi.exportDb();
+      full.budgets = [];
+      full.offBudgets = snapshot.offBudgets;
+      await dbApi.importDb(full, { masterKey: MASTER });
+    } finally {
+      enabled = false;
+    }
+    expect(budgetRows()).toEqual([]);
+  });
   it("rejects new sections while switched off", async () => {
     enabled = true;
     const snapshot = await dbApi.exportDb();
