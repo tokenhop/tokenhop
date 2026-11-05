@@ -43,6 +43,7 @@ async function load({ requireLogin = true, env = "off" } = {}) {
     ws: await import("@/app/api/workspaces/[id]/budgets/route.js"),
     wsOne: await import("@/app/api/workspaces/[id]/budgets/[budgetId]/route.js"),
     user: await import("@/app/api/users/[id]/budgets/route.js"),
+    key: await import("@/app/api/keys/[id]/route.js"),
   };
 }
 
@@ -161,6 +162,65 @@ describe("pristine install, switch off", () => {
       (await call(routes.wsOne.DELETE, url, { method: "DELETE", params, cookie })).status,
     ).toBe(200);
     expect(adapter.get(`SELECT COUNT(*) AS c FROM budgets`).c).toBe(0);
+  });
+
+  // YAN-1935: a legacy key is hard-deleted, so its budgets go with it.
+  const keyBudget = async (cookie) => {
+    const { budget } = await (
+      await post(
+        { scopeType: "key", scopeId: "legacy-key", window: "day", limitRequests: 3 },
+        { cookie },
+      )
+    ).json();
+    adapter.run(
+      `INSERT INTO budgetNotices(budgetId, kind, windowStart, signature, notifiedAt) VALUES(?, 'soft', ?, 's', ?)`,
+      [budget.id, NOW, NOW],
+    );
+    return budget;
+  };
+  const delKey = (cookie) =>
+    call(routes.key.DELETE, "/api/keys/legacy-key", {
+      method: "DELETE",
+      params: { id: "legacy-key" },
+      cookie,
+    });
+
+  it("deleting a legacy key deletes its budgets and notices, audited", async () => {
+    await load();
+    const cookie = await legacyCookie();
+    await post(wsBudget, { cookie });
+    const budget = await keyBudget(cookie);
+    expect((await delKey(cookie)).status).toBe(200);
+    expect(adapter.get(`SELECT COUNT(*) AS c FROM apiKeys`).c).toBe(0);
+    const left = (await (await list({ cookie })).json()).budgets;
+    expect(left.map((b) => b.scopeType)).toEqual(["workspace"]);
+    expect(adapter.get(`SELECT COUNT(*) AS c FROM budgetNotices`).c).toBe(0);
+    const rows = adapter.all(
+      `SELECT targetId, actorUserId, "after" AS afterJson FROM auditEvents WHERE action = 'budget.delete'`,
+    );
+    expect(rows).toHaveLength(1);
+    expect(rows[0].targetId).toBe(budget.id);
+    expect(rows[0].actorUserId).toBeNull();
+    expect(JSON.parse(rows[0].afterJson)).toEqual({ reason: "key_deleted", scopeType: "key" });
+  });
+
+  it("a failed budget audit rolls the key deletion back", async () => {
+    await load();
+    const cookie = await legacyCookie();
+    const budget = await keyBudget(cookie);
+    const realRun = adapter.run.bind(adapter);
+    adapter.run = (sql, params) => {
+      if (String(sql).startsWith("INSERT INTO auditEvents")) throw new Error("boom");
+      return realRun(sql, params);
+    };
+    try {
+      expect((await delKey(cookie)).status).toBe(500);
+    } finally {
+      adapter.run = realRun;
+    }
+    expect(adapter.get(`SELECT id FROM apiKeys`).id).toBe("legacy-key");
+    expect(adapter.get(`SELECT id FROM budgets`).id).toBe(budget.id);
+    expect(adapter.get(`SELECT COUNT(*) AS c FROM budgetNotices`).c).toBe(1);
   });
 
   it("user, membership and grant scopes: 400 scope_unavailable, nothing created", async () => {

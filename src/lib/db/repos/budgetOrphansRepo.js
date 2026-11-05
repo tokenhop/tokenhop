@@ -39,6 +39,21 @@ const SCOPES = [
 const tableExists = (db, name) =>
   Boolean(db.get("SELECT 1 AS x FROM sqlite_master WHERE type = 'table' AND name = ?", [name]));
 
+// Delete each budget row and audit it as `actor` inside the caller's
+// transaction; a failed audit throws and rolls the deletion back.
+function deleteAuditedSync(db, rows, actor, reason) {
+  for (const row of rows) {
+    db.run("DELETE FROM budgets WHERE id = ?", [row.id]);
+    auditSync(
+      db,
+      { principal: actor?.principal ?? null, ip: actor?.ip ?? null, workspaceId: row.workspaceId },
+      "budget.delete",
+      { type: "budget", id: row.id },
+      { before: row, after: { reason, scopeType: row.scopeType } },
+    );
+  }
+}
+
 /**
  * Delete budgets whose target no longer exists: key, grant, membership and
  * user budgets. Audit reason `target_missing_at_import` (with the scopeType):
@@ -54,22 +69,26 @@ export function pruneOrphanedScopeBudgetsUnscoped(
 ) {
   if (!tableExists(db, "budgets")) return 0;
   const doomed = SCOPES.filter((s) => tableExists(db, s.table)).flatMap((s) =>
-    db
-      .all(
-        `SELECT ${COLS} FROM budgets WHERE scopeType = ? AND NOT EXISTS (${s.exists(legacyStorage)})`,
-        [s.scopeType],
-      )
-      .map((row) => ({ row })),
+    db.all(
+      `SELECT ${COLS} FROM budgets WHERE scopeType = ? AND NOT EXISTS (${s.exists(legacyStorage)})`,
+      [s.scopeType],
+    ),
   );
-  for (const { row } of doomed) {
-    db.run("DELETE FROM budgets WHERE id = ?", [row.id]);
-    auditSync(
-      db,
-      { principal: actor?.principal ?? null, ip: actor?.ip ?? null, workspaceId: row.workspaceId },
-      "budget.delete",
-      { type: "budget", id: row.id },
-      { before: row, after: { reason: "target_missing_at_import", scopeType: row.scopeType } },
-    );
-  }
+  deleteAuditedSync(db, doomed, actor, "target_missing_at_import");
   return doomed.length;
+}
+
+/**
+ * YAN-1935: delete every budget on a hard-deleted key (legacy key storage),
+ * audited with reason `key_deleted`. Runs inside the caller's transaction;
+ * notices cascade.
+ * @returns {number} Rows removed.
+ */
+export function deleteKeyBudgetsUnscoped(db, keyId, { actor = null } = {}) {
+  if (!tableExists(db, "budgets")) return 0;
+  const rows = db.all(`SELECT ${COLS} FROM budgets WHERE scopeType = 'key' AND scopeId = ?`, [
+    keyId,
+  ]);
+  deleteAuditedSync(db, rows, actor, "key_deleted");
+  return rows.length;
 }
