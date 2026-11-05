@@ -60,7 +60,7 @@ describe("DB SQLite layer — public API parity", () => {
     expect(await sqliteDb.validateApiKey(k.key)).toBeTruthy();
     expect(await sqliteDb.validateApiKey("invalid")).toBeFalsy();
 
-    const deleted = await sqliteDb.deleteApiKey(k.id);
+    const deleted = await sqliteDb.deleteApiKeyUnscoped(k.id);
     expect(deleted).toBe(true);
     expect(await sqliteDb.getApiKeyById(k.id)).toBeNull();
   });

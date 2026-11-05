@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { deleteApiKey, getApiKeyById, updateApiKey } from "@/lib/localDb";
+import { deleteApiKeyUnscoped, getApiKeyById, updateApiKey } from "@/lib/localDb";
 import { validateKeyName } from "@/app/(dashboard)/dashboard/endpoint/endpointLogic";
 
 import { readApiKeyStorageState } from "@/lib/db/apiKeyState";
@@ -166,7 +166,7 @@ export async function DELETE(request, { params }) {
     // user: legacy session, login off, CLI). Audit only; auth is unchanged.
     const { pristineAdminPrincipal } = await import("@/lib/users/session");
     const principal = await pristineAdminPrincipal(request);
-    const deleted = await deleteApiKey(id, {
+    const deleted = await deleteApiKeyUnscoped(id, {
       actor: {
         principal: principal?.userId ? { userId: principal.userId, via: principal.via } : null,
         ip: getClientIp(request),

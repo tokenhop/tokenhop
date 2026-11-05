@@ -69,7 +69,7 @@ export async function updateApiKey(id, data) {
 
 // Legacy hard delete: the key's budgets go in the same transaction (YAN-1935);
 // `actor` ({ principal, ip }) audits each removed budget.
-export async function deleteApiKey(id, { actor = null } = {}) {
+export async function deleteApiKeyUnscoped(id, { actor = null } = {}) {
   const db = await getAdapter();
   let deleted = false;
   let budgets = 0;

@@ -29,7 +29,7 @@ export {
   getApiKeyById,
   createApiKey,
   updateApiKey,
-  deleteApiKey,
+  deleteApiKeyUnscoped,
   validateApiKey,
   getApiKeyUsage,
   // YAN-364: new *Unscoped names; legacy names alias to the Unscoped twins.
