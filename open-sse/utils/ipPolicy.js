@@ -60,9 +60,10 @@ for (const subnet of [
   blockSubnet(PRIVATE_NETWORK_SUBNETS, subnet, "ipv4");
 for (const subnet of ["::1/128", "fc00::/7"]) blockSubnet(PRIVATE_NETWORK_SUBNETS, subnet, "ipv6");
 
-// Never reachable, opt-in or not: link-local and cloud metadata endpoints.
+// Never reachable, opt-in or not: link-local and cloud metadata endpoints
+// (Alibaba 100.100.100.200, Azure WireServer 168.63.129.16).
 export const ALWAYS_BLOCKED_SUBNETS = new BlockList();
-for (const subnet of ["169.254.0.0/16", "100.100.100.200/32"])
+for (const subnet of ["169.254.0.0/16", "100.100.100.200/32", "168.63.129.16/32"])
   blockSubnet(ALWAYS_BLOCKED_SUBNETS, subnet, "ipv4");
 // IPv6 metadata endpoints: AWS (fd00:ec2::254), GCE (fd20:ce::254), OCI (fd00:c1::a9fe:a9fe).
 for (const subnet of [

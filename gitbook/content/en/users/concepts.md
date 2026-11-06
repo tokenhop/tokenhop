@@ -227,8 +227,8 @@ Delivery:
 Allowed destinations:
 
 - By default only `https` URLs on the public internet. URLs with a username, password or `#fragment` are refused. Saving checks the URL itself: scheme, a literal IP or blocked host name, and userinfo. Before each attempt tokenhop resolves the host name and checks every address it returns; one blocked address refuses the attempt.
-- An instance owner or admin can turn on **Settings → Security & access → Budget webhooks: allow private networks** to also allow private addresses (`10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`, `100.64.0.0/10`), loopback and `localhost`, IPv6 unique local addresses, and plain `http`.
-- Link-local addresses (`169.254.0.0/16`, `fe80::/10`) and cloud metadata endpoints (`169.254.169.254`, `100.100.100.200`, `fd00:ec2::254`, `fd20:ce::254`, `fd00:c1::a9fe:a9fe`, `metadata.google.internal`, `metadata.goog`, `metadata`, `instance-data`) are always blocked, even with that setting on.
+- An instance owner or admin can turn on **Settings → Security & access → Budget webhooks: allow private networks** to also allow private addresses (`10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`, `100.64.0.0/10`), loopback and `localhost`, IPv6 unique local addresses, and plain `http`. With this setting on, tokenhop also asks the system resolver (the hosts file and DNS search domains) when public DNS doesn't know a name, for example `host.docker.internal`; every address it returns is checked the same way. Without the setting, only public DNS answers are used.
+- Link-local addresses (`169.254.0.0/16`, `fe80::/10`) and cloud metadata endpoints (`169.254.169.254`, `100.100.100.200`, `168.63.129.16` (Azure WireServer), `fd00:ec2::254`, `fd20:ce::254`, `fd00:c1::a9fe:a9fe`, `metadata.google.internal`, `metadata.goog`, `metadata`, `instance-data`) are always blocked, even with that setting on.
 
 Webhooks are not part of any export. Restoring an instance snapshot that carries users & teams data (format v2 or v3) removes them; a legacy (v1) restore leaves them.
 

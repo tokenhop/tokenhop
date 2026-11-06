@@ -8,7 +8,15 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 // c-ares Resolver stand-in: `dns.a` / `dns.aaaa` are address lists, an Error
 // (rejects) or "hang" (never answers). Construction options are recorded.
-const dns = vi.hoisted(() => ({ a: [], aaaa: [], options: [], queried: [] }));
+// `dns.system` answers the system resolver (lookup); `lookups` counts calls.
+const dns = vi.hoisted(() => ({
+  a: [],
+  aaaa: [],
+  options: [],
+  queried: [],
+  system: null,
+  lookups: 0,
+}));
 vi.mock("node:dns/promises", () => {
   const answer = (v) =>
     v === "hang"
@@ -30,7 +38,11 @@ vi.mock("node:dns/promises", () => {
     }
     cancel() {}
   }
-  return { Resolver, lookup: () => Promise.reject(new Error("lookup must not be used")) };
+  const lookup = () => {
+    dns.lookups++;
+    return dns.system ? answer(dns.system) : Promise.reject(new Error("no system answer"));
+  };
+  return { Resolver, lookup };
 });
 
 const { egressUrlError, fetchPinned } = await import("../../open-sse/utils/pinnedFetch.js");
@@ -49,7 +61,7 @@ async function serve(handler) {
 }
 
 afterEach(async () => {
-  Object.assign(dns, { a: [], aaaa: [], options: [], queried: [] });
+  Object.assign(dns, { a: [], aaaa: [], options: [], queried: [], system: null, lookups: 0 });
   await Promise.all(
     servers.splice(0).map(
       (s) =>
@@ -74,6 +86,7 @@ const ALWAYS_BLOCKED_IPS = [
   "169.254.169.254",
   "169.254.170.2",
   "100.100.100.200",
+  "168.63.129.16",
   "fe80::1",
   "fd00:ec2::254",
   "fd20:ce::254",
@@ -251,6 +264,49 @@ describe("fetchPinned", () => {
     dns.queried = [];
     expect(await post(`http://localhost:${port}/`, PRIVATE)).toEqual({ ok: true, status: 200 });
     expect(dns.queried).toEqual([]);
+  });
+
+  it("opt-in on: a name c-ares does not know falls back to the system resolver", async () => {
+    const { port, hits } = await serve((_q, s) => s.end("ok"));
+    const nx = Object.assign(new Error("nx"), { code: "ENOTFOUND" });
+    dns.a = nx;
+    dns.aaaa = nx;
+    dns.system = [{ address: "127.0.0.1", family: 4 }];
+    expect(await post(`http://host.docker.internal:${port}/`, PRIVATE)).toEqual({
+      ok: true,
+      status: 200,
+    });
+    expect(dns.lookups).toBe(1);
+    expect(hits.count).toBe(1);
+    // Its answers pass the same policy: metadata stays blocked.
+    dns.system = [{ address: "169.254.169.254", family: 4 }];
+    expect((await post(`http://host.docker.internal:${port}/`, PRIVATE)).reason).toBe(
+      "blocked_destination",
+    );
+    expect(hits.count).toBe(1);
+  });
+
+  it("opt-in off: the system resolver is never consulted", async () => {
+    const nx = Object.assign(new Error("nx"), { code: "ENOTFOUND" });
+    dns.a = nx;
+    dns.aaaa = nx;
+    dns.system = [{ address: "127.0.0.1", family: 4 }];
+    expect((await post("https://host.docker.internal/")).reason).toBe("dns");
+    resolveTo();
+    expect((await post("https://hook.test/")).reason).toBe("dns");
+    expect(dns.lookups).toBe(0);
+  });
+
+  it("a slow second family does not use up the attempt", async () => {
+    const { port } = await serve((_q, s) => s.end("ok"));
+    dns.a = ["127.0.0.1"];
+    dns.aaaa = "hang";
+    const started = Date.now();
+    expect(await post(`http://hook.test:${port}/`, { ...PRIVATE, timeoutMs: 3000 })).toEqual({
+      ok: true,
+      status: 200,
+    });
+    expect(Date.now() - started).toBeLessThan(1500);
   });
 
   it("a resolver that never answers ends the attempt within timeoutMs", async () => {

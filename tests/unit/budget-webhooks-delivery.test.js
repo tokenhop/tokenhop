@@ -225,7 +225,9 @@ describe("once per window crossing, signed", () => {
     expect(verify(ep.got[1]).windowStart).toBe("2026-03-11T00:00:00.000Z");
   });
 
-  it("a limit change in the window re-arms the notice with a new webhook id", async () => {
+  it("every re-arm in the window gets a new webhook id, even back to earlier limits", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-03-10T12:00:00Z"));
     const ep = await endpoint();
     await saveHook(ep.url);
     const id = budget("workspace", t.shared.id, { tokens: 100, soft: 20 });
@@ -234,16 +236,23 @@ describe("once per window crossing, signed", () => {
     await call(who());
     await settled();
     expect(ep.got).toHaveLength(1);
-    // Lower the limit and raise the soft %: 30 of 50 tokens is past 50 %.
-    db.run("UPDATE budgets SET limitTokens = 50, softLimitPct = 50 WHERE id = ?", [id]);
-    budgets.bumpBudgetsGeneration();
-    await call(who());
-    await settled();
+    const rearm = async (limit, pct, at) => {
+      vi.setSystemTime(new Date(at));
+      db.run("UPDATE budgets SET limitTokens = ?, softLimitPct = ? WHERE id = ?", [limit, pct, id]);
+      budgets.bumpBudgetsGeneration();
+      await call(who());
+      await settled();
+    };
+    // A → B: 30 of 50 tokens is past 50 %.
+    await rearm(50, 50, "2026-03-10T12:05:00Z");
     expect(ep.got).toHaveLength(2);
+    // B → A: the original limits again, claimed anew.
+    await rearm(100, 20, "2026-03-10T12:10:00Z");
+    expect(ep.got).toHaveLength(3);
     const ids = ep.got.map((r) => r.headers[WEBHOOK_ID]);
-    expect(new Set(ids).size).toBe(2);
+    expect(new Set(ids).size).toBe(3);
     expect(ep.got.map((r) => verify(r).id)).toEqual(ids);
-    expect(verify(ep.got[1]).limits.tokens).toBe(50);
+    expect(ep.got.map((r) => verify(r).limits.tokens)).toEqual([100, 50, 100]);
   });
 
   it("hard: the first 429 posts once with threshold 100; later 429s do not", async () => {
@@ -349,6 +358,29 @@ describe("concurrency", () => {
     expect(slow.got).toHaveLength(5);
     expect(hook.__test__.inFlight()).toBe(0);
     expect(hook.__test__.pending()).toBe(0);
+  });
+
+  it("the global cap is shared fairly: starts alternate between workspaces", async () => {
+    Object.assign(hook.C, { delaysMs: [0], maxInFlight: 1, perWorkspaceInFlight: 2 });
+    const order = [];
+    const a = await endpoint();
+    const b = await endpoint();
+    await saveHook(a.url);
+    const other = t.a.personal;
+    await repo.saveBudgetWebhook(t.a.ctx, { workspaceId: other, url: b.url });
+    const tag = (ep, name) => {
+      const push = ep.got.push.bind(ep.got);
+      ep.got.push = (r) => {
+        order.push(name);
+        return push(r);
+      };
+    };
+    tag(a, "A");
+    tag(b, "B");
+    for (let n = 0; n < 3; n++) hook.scheduleBudgetWebhook(notice(t.shared.id, n), "sig");
+    for (let n = 0; n < 3; n++) hook.scheduleBudgetWebhook(notice(other, n), "sig");
+    await settled();
+    expect(order).toEqual(["A", "B", "A", "B", "A", "B"]);
   });
 
   it("the global cap queues instead of dropping", async () => {

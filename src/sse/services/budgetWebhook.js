@@ -35,10 +35,14 @@ const lanes = new Map();
 // Scheduled deliveries (queued or running) until they finish.
 const pending = new Set();
 
-/** Delivery id: notice id + 12 hex of sha256(noticeSignature). */
+/**
+ * Delivery id: notice id + 12 hex of sha256(noticeSignature + "|" + claim
+ * time). The claim time (`notice.at`) is fixed for one claim, so retries keep
+ * the id; every re-arm (even back to earlier limits) gets a new one.
+ */
 export function webhookIdFor(notice, signature) {
   const digest = createHash("sha256")
-    .update(String(signature ?? ""))
+    .update(`${signature ?? ""}|${notice.at ?? ""}`)
     .digest("hex")
     .slice(0, 12);
   return `${notice.id}:${digest}`;
@@ -137,19 +141,36 @@ function startDelivery(lane, job) {
       .finally(() => {
         inFlight--;
         lane.active--;
+        // It just used a slot: its next job waits behind other workspaces.
+        const workspaceId = job.notice.workspaceId;
+        if (lanes.get(workspaceId) === lane) {
+          lanes.delete(workspaceId);
+          lanes.set(workspaceId, lane);
+        }
         job.settle();
         pump();
       });
   });
 }
 
-// Start queued deliveries while the global and per-workspace caps allow,
-// oldest workspace lane first; drop idle lanes.
+// Start queued deliveries while the global and per-workspace caps allow:
+// round-robin, one job per lane per round. A lane that just started or
+// finished a job moves to the back of the order, so the next free global slot
+// goes to another workspace. Idle lanes are dropped.
 function pump() {
-  for (const [workspaceId, lane] of lanes) {
-    while (lane.queue.length && lane.active < C.perWorkspaceInFlight && inFlight < C.maxInFlight) {
+  let started = true;
+  while (started && inFlight < C.maxInFlight) {
+    started = false;
+    for (const [workspaceId, lane] of [...lanes]) {
+      if (inFlight >= C.maxInFlight) break;
+      if (!lane.queue.length || lane.active >= C.perWorkspaceInFlight) continue;
       startDelivery(lane, lane.queue.shift());
+      lanes.delete(workspaceId);
+      lanes.set(workspaceId, lane);
+      started = true;
     }
+  }
+  for (const [workspaceId, lane] of [...lanes]) {
     if (!lane.active && !lane.queue.length) lanes.delete(workspaceId);
   }
 }
