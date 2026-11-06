@@ -12,7 +12,7 @@ import { seedTenancy } from "../setup/tenancyHarness.js";
 import { captureConsole } from "../helpers/secretScan.js";
 import { header } from "@/shared/brand/index.js";
 
-// Brand-relative header names (x-tokenhop-* or x-9router-* per CI brand).
+// Header names follow the active brand (CI runs every brand).
 const SIGNATURE = header("signature");
 const WEBHOOK_ID = header("webhook-id");
 
