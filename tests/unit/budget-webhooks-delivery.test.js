@@ -10,6 +10,11 @@ import http from "node:http";
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { seedTenancy } from "../setup/tenancyHarness.js";
 import { captureConsole } from "../helpers/secretScan.js";
+import { header } from "@/shared/brand/index.js";
+
+// Brand-relative header names (x-tokenhop-* or x-9router-* per CI brand).
+const SIGNATURE = header("signature");
+const WEBHOOK_ID = header("webhook-id");
 
 // c-ares Resolver stand-in: `dns.a` / `dns.aaaa` are address lists or
 // "hang" (never answers).
@@ -145,7 +150,7 @@ async function usage(p, extra = {}) {
 const settled = () => hook.__test__.settled();
 
 function verify(req) {
-  const sig = req.headers["x-tokenhop-signature"];
+  const sig = req.headers[SIGNATURE];
   const m = /^t=(\d+),v1=([0-9a-f]{64})$/.exec(sig);
   expect(m, sig).toBeTruthy();
   const expected = createHmac("sha256", secret).update(`${m[1]}.${req.body}`).digest("hex");
@@ -189,7 +194,7 @@ describe("once per window crossing, signed", () => {
     await settled();
     expect(ep.got).toHaveLength(1);
     const body = verify(ep.got[0]);
-    const webhookId = ep.got[0].headers["x-tokenhop-webhook-id"];
+    const webhookId = ep.got[0].headers[WEBHOOK_ID];
     expect(webhookId).toMatch(new RegExp(`^${id}:soft:2026-03-10T00:00:00\\.000Z:[0-9a-f]{12}$`));
     expect(ep.got[0].headers["content-type"]).toBe("application/json");
     expect(body).toMatchObject({
@@ -235,7 +240,7 @@ describe("once per window crossing, signed", () => {
     await call(who());
     await settled();
     expect(ep.got).toHaveLength(2);
-    const ids = ep.got.map((r) => r.headers["x-tokenhop-webhook-id"]);
+    const ids = ep.got.map((r) => r.headers[WEBHOOK_ID]);
     expect(new Set(ids).size).toBe(2);
     expect(ep.got.map((r) => verify(r).id)).toEqual(ids);
     expect(verify(ep.got[1]).limits.tokens).toBe(50);
@@ -373,7 +378,7 @@ describe("retries and stop conditions", () => {
     await saveHook(ep.url);
     await fireHard();
     expect(ep.got).toHaveLength(3);
-    expect(new Set(ep.got.map((r) => r.headers["x-tokenhop-webhook-id"])).size).toBe(1);
+    expect(new Set(ep.got.map((r) => r.headers[WEBHOOK_ID])).size).toBe(1);
   });
 
   it("does not retry other 4xx or redirects", async () => {
