@@ -195,16 +195,19 @@ function insertWrappedDek(db, workspaceId, ctx) {
 }
 
 /**
- * YAN-701 MOVE-ONLY target DEK provisioner (deliberately NOT a general runtime
- * create path; runtime ensureWorkspaceDekSync stays fail-closed). Admits only a
- * genuine runtime context from prepareCredentialContext holding a root for an
- * encrypted instance; rereads the live marker (kid must still match) and the
- * workspace row inside the caller's transaction. An existing DEK is validated
- * through liveDek (unwrap + generation check); a missing one gets a FRESH
- * random DEK — a source DEK is never copied. Not re-exported from any barrel.
+ * Guarded runtime DEK provisioner (deliberately NOT a general runtime create
+ * path). Runtime DEK provisioning has exactly two entry points, each named for
+ * its only caller: move target (YAN-701) and budget webhook secret write
+ * (YAN-1831). `ensureWorkspaceDekSync` stays fail-closed for every other
+ * runtime write (YAN-1055). Admits only a genuine runtime context from
+ * prepareCredentialContext holding a root for an encrypted instance; rereads
+ * the live marker (kid must still match) and the workspace row inside the
+ * caller's transaction. An existing DEK is validated through liveDek (unwrap +
+ * generation check); a missing one gets a FRESH random DEK — a source DEK is
+ * never copied. Not re-exported from any barrel.
  * @returns {{kid:string,dek:Buffer}}
  */
-export function provisionMoveTargetDekSync(db, workspaceId, ctx) {
+function provisionRuntimeDekSync(db, workspaceId, ctx) {
   if (typeof workspaceId !== "string" || workspaceId.length === 0) {
     fail("KEY_MISSING", "workspace id required");
   }
@@ -223,6 +226,16 @@ export function provisionMoveTargetDekSync(db, workspaceId, ctx) {
   if (existing) return existing;
   insertWrappedDek(db, workspaceId, ctx);
   return liveDek(db, workspaceId, ctx);
+}
+
+/** YAN-701 move-target entry point; see provisionRuntimeDekSync. */
+export function provisionMoveTargetDekSync(db, workspaceId, ctx) {
+  return provisionRuntimeDekSync(db, workspaceId, ctx);
+}
+
+/** YAN-1831 budget webhook secret entry point; see provisionRuntimeDekSync. */
+export function provisionBudgetWebhookDekSync(db, workspaceId, ctx) {
+  return provisionRuntimeDekSync(db, workspaceId, ctx);
 }
 
 // ─── strict credential blob parse ────────────────────────────────────────
@@ -314,7 +327,7 @@ function redactForMetadata(obj, fields) {
  * Decode a stored `{data, id, workspaceId, ...}` row into its parsed data
  * object with covered leaves resolved per mode. SQL row coordinates (never
  * envelope contents) feed the AAD.
- * @param {{mode?:'runtime'|'metadata'|'migration', table:'providerConnections'|'providerNodes'|'settings', workspaceId?:string}} opts
+ * @param {{mode?:'runtime'|'metadata'|'migration', table:'providerConnections'|'providerNodes'|'settings'|'budgetWebhooks', workspaceId?:string}} opts
  * @returns {object|{data:object,configured:string[]}} runtime/migration: the plain
  *   blob with covered leaves decrypted. metadata: `{data, configured}` where `data`
  *   is the blob with covered leaves removed (never decrypted) and `configured` is the

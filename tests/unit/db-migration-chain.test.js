@@ -496,8 +496,9 @@ describe("Schema migrations", () => {
       get.mockClear();
       all.mockClear();
       readCredentialEncryptionState(db, { strict: true });
-      // One batched marker read plus one envelope-sniff scan per credential table.
-      expect(all).toHaveBeenCalledTimes(4);
+      // One batched marker read plus one envelope-sniff scan per credential
+      // table (providerConnections, providerNodes, settings, budgetWebhooks).
+      expect(all).toHaveBeenCalledTimes(5);
       expect(all.mock.calls[0][0]).toMatch(/FROM _meta WHERE key IN/);
     } finally {
       get.mockRestore();

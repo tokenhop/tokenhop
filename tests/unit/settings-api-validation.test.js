@@ -62,11 +62,19 @@ describe("PATCH /api/settings validation for YAN-309 keys", () => {
     await settingsPatch({ requireLogin: true, requireApiKey: true, tunnelDashboardAccess: true });
   });
 
+  it("accepts the budget webhook private-network opt-in (YAN-1831)", async () => {
+    const res = await settingsPatch({ budgetWebhookAllowPrivateNetworks: true });
+    expect(res.status).toBe(200);
+    expect((await res.json()).budgetWebhookAllowPrivateNetworks).toBe(true);
+    await settingsPatch({ budgetWebhookAllowPrivateNetworks: false });
+  });
+
   it("rejects non-boolean security toggles", async () => {
     for (const body of [
       { requireLogin: "yes" },
       { requireApiKey: 1 },
       { tunnelDashboardAccess: "x" },
+      { budgetWebhookAllowPrivateNetworks: "yes" },
     ]) {
       const res = await settingsPatch(body);
       expect(res.status).toBe(400);

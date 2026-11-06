@@ -12,7 +12,7 @@ import {
 import { resolveCursorImages, CursorImageError } from "../../open-sse/utils/cursorImages.js";
 import { checkFallbackError } from "../../open-sse/services/accountFallback.js";
 import { convertMessages } from "../../open-sse/translator/request/openai-to-cursor.js";
-import { isPrivateIp } from "../../open-sse/translator/concerns/image.js";
+import { isPrivateIp } from "../../open-sse/utils/ipPolicy.js";
 
 // Minimal 1x1 PNG header — signature + IHDR width/height are what we parse.
 const PNG_BYTES = Buffer.from([

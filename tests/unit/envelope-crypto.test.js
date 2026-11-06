@@ -116,6 +116,11 @@ describe("D1 frozen AAD vectors", () => {
       "mitmSudoEncrypted",
     ]);
     expect(CREDENTIAL_FIELD_ALLOWLIST.providerNodes).toContain("apiKey");
+    expect(CREDENTIAL_FIELD_ALLOWLIST.budgetWebhooks).toEqual(["secret"]);
+    const hookAad = (field) => () =>
+      buildAad({ table: "budgetWebhooks", rowId: "hook-1", workspaceId: WS_A, field });
+    expect(hookAad("secret")).not.toThrow();
+    expect(hookAad("url")).toThrow(/allow-list/);
   });
 });
 

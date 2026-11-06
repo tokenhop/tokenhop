@@ -157,14 +157,80 @@ A **budget** caps cost, tokens or requests for a time window. You manage them in
 - **Windows:** daily, weekly or monthly on UTC calendar boundaries, or total (never resets).
 - **Limits:** cost in USD, tokens, requests. A budget needs at least one. An optional **soft limit** percentage only warns.
 - **Notices:** tokenhop sends one notice per budget per window when spend crosses the soft limit, and one when the budget first rejects a request. A rejection can happen before the limit is fully spent, because the check counts the request's estimate and requests still in flight, so smaller requests may still pass until the window resets. People who can see the budget get a toast while the Usage page is open, and **Usage → Budgets** marks the budget **Soft limit reached** or **Limit hit** until the window resets. Each notice is also recorded in the audit log. A restart or a backup restore does not repeat a notice in the same window, unless the restore changes the budget's limits: like any limit change, that re-arms its notices. Changing the budget's limits or soft limit percentage during a window re-arms its notices, so they can fire again for the new limits.
+- **Webhook:** each workspace can also send its notices to one URL of your own. See [Budget webhook](#budget-webhook) below.
 - **Every level counts.** A request must pass the key, user, member and workspace budgets, plus the grant budget when it is routed through a grant. If any level is over, the request is rejected.
 - **Reservation before the call.** Before sending anything upstream, tokenhop estimates the request's cost and reserves it at every level. If the reservation does not fit, the client gets an HTTP `429` with an OpenAI-style error: `code: "budget_exceeded"`, plus the `level` and `window` that tripped. After the response, the reservation is replaced with recorded usage; if the request ends without recorded usage, the hold is released. The estimate uses input plus `max_tokens`, or a small fixed amount for models without pricing and non-token requests, so actual spend can exceed a limit. Budgets are tokenhop's own accounting, a guardrail, not a billing guarantee: for a hard cap, also set a spending limit at the provider.
 - **Who can change what:** managers can add budgets and lower them. **Raising or removing** a limit needs an instance owner or admin. A key budget cannot exceed the workspace budget for the same window.
 - **Without Users & teams:** the dashboard admin can set **Workspace** and **API key** budgets on the Default workspace. Enforcement and the 429 are the same. User, member and grant budgets need Users & teams. Turning it on later keeps these budgets. Once accounts exist, an owner or admin needs a membership in Default to manage them. With login turned off, only workspace budgets can be added from the dashboard (API key budgets need a signed-in session).
-- **Moving budgets:** the config export (**Settings → Data & backup**) carries the Default workspace's budgets: workspace, API key, member and grant budgets, or only workspace and API key budgets while Users & teams is off. A workspace export carries only that workspace's own budget. Both carry limits only, never spend or notices. On import, a budget whose key, member or grant doesn't exist on this instance is skipped and listed in the import preview; it is never attached to something else. In a config import, a budget that matches an existing one (same level, target and window) is updated in place, and an API key budget above the workspace budget for its window is skipped unless it raises an existing key budget (the same rule as **Usage → Budgets**). A workspace import never merges: if the destination already has a workspace budget for that window, the whole import is refused (`TRANSFER_CONFLICT`). Invalid limits fail the whole import; unknown fields in a budget entry are ignored with a warning. Files from older versions, which have no budgets, import as before. A full instance backup carries every budget while Users & teams is on, and the Default workspace's workspace and API key budgets while it is off (limits only, never spend or notices). Restoring an older backup that has no budgets keeps the current budgets while Users & teams is on, or with plain (legacy) key storage; with Users & teams off and hashed keys, it removes them.
+- **Moving budgets:** the config export (**Settings → Data & backup**) carries the Default workspace's budgets: workspace, API key, member and grant budgets, or only workspace and API key budgets while Users & teams is off. A workspace export carries only that workspace's own budget. Both carry limits only, never spend or notices. On import, a budget whose key, member or grant doesn't exist on this instance is skipped and listed in the import preview; it is never attached to something else. In a config import, a budget that matches an existing one (same level, target and window) is updated in place, and an API key budget above the workspace budget for its window is skipped unless it raises an existing key budget (the same rule as **Usage → Budgets**). A workspace import never merges: if the destination already has a workspace budget for that window, the whole import is refused (`TRANSFER_CONFLICT`). Invalid limits fail the whole import; unknown fields in a budget entry are ignored with a warning. Files from older versions, which have no budgets, import as before. A full instance backup carries every budget while Users & teams is on, and the Default workspace's workspace and API key budgets while it is off (limits only, never spend or notices). Restoring an older backup that has no budgets keeps the current budgets while Users & teams is on, or with plain (legacy) key storage; with Users & teams off and hashed keys, it removes them. Budget webhooks are never included in a config, workspace or instance export.
 - **Deleting a key:** deleting an API key without Users & teams (legacy key storage) also deletes its budgets, and each removal is recorded in the audit log. Once keys use hashed storage (Users & teams), deleting a key revokes it and keeps its budgets.
-- **Restores:** restoring a backup removes budgets whose target the restore replaced: API key, grant, member and user budgets whose key, grant, membership or user no longer exists. Each of these removals is recorded in the audit log. A backup made while Users & teams is off also replaces the Default workspace's workspace and API key budgets: those it doesn't have are removed, and each removal is recorded in the audit log. Restoring an older backup that has no budgets with Users & teams off and hashed keys removes them through the workspace replace, without an audit entry per budget (see above).
+- **Restores:** restoring a backup removes budgets whose target the restore replaced: API key, grant, member and user budgets whose key, grant, membership or user no longer exists. Each of these removals is recorded in the audit log. A backup made while Users & teams is off also replaces the Default workspace's workspace and API key budgets: those it doesn't have are removed, and each removal is recorded in the audit log. Restoring an older backup that has no budgets with Users & teams off and hashed keys removes them through the workspace replace, without an audit entry per budget (see above). Restoring an instance snapshot that carries users & teams data (format v2 or v3) removes every budget webhook; add them again afterwards. A legacy (v1) snapshot restore leaves them in place.
 - Subscription traffic has no per-token bill. Its spend is shown as an estimate ("Notional spend … estimate, not billing").
+
+### Budget webhook
+
+A workspace can have one optional webhook, set in **Usage → Budgets** below the budget list. tokenhop sends it a signed `POST` for the same two events as the notices above: the soft limit crossing and the first rejection, once per budget per window. A restart does not resend them. Changing a limit or the soft limit % inside the window re-arms the notice, and the next crossing is sent with a new `id`.
+
+- **Who manages it:** with Users & teams on, the workspace's owners and managers (an instance owner or admin needs a membership in the workspace). With Users & teams off, the dashboard admin, for the Default workspace. Every change is recorded in the audit log.
+- **Signing secret:** tokenhop creates a secret (`whsec_…`) when you add the webhook and shows it **once**. Copy it then. **Rotate secret** replaces it at once; the old secret stops working. Once credential encryption is active (it is turned on with Users & teams; see [Security](/en/users/security)), the secret is encrypted at rest; until then it is stored like other provider credentials. It never appears in API responses, logs, audit entries or exports.
+- **Enabled:** turn the webhook off to pause sending without losing the URL or secret.
+
+The request body is JSON:
+
+```json
+{
+  "type": "budget.soft_limit",
+  "id": "<budgetId>:soft:<windowStart>:<12 hex>",
+  "budgetId": "…",
+  "workspaceId": "…",
+  "scope": { "type": "workspace", "id": "…" },
+  "window": "day",
+  "windowStart": "2026-11-05T00:00:00.000Z",
+  "resetAt": "2026-11-06T00:00:00.000Z",
+  "limits": { "usd": 10, "tokens": null, "requests": null },
+  "spent": { "usd": 8.1, "tokens": 0, "requests": 12 },
+  "threshold": { "percent": 80 },
+  "timestamp": "2026-11-05T14:02:11.000Z"
+}
+```
+
+`type` is `budget.soft_limit` or `budget.hard_limit` (the first rejection). `threshold.percent` is the budget's soft limit percentage for a soft notice and `100` for a hard one. `resetAt` is `null` for a total budget.
+
+Headers:
+
+- `x-tokenhop-signature: t=<unix seconds>,v1=<hex>`, where `v1` is the HMAC-SHA256 of `<t>.<raw body>` keyed with the signing secret.
+- `x-tokenhop-webhook-id`: the same value as the body `id`. It stays the same across retries of one notice, so use it to drop duplicates. A notice re-armed by a limit or soft % change gets a new `id`.
+
+To verify a request in Node, use the raw body exactly as received:
+
+```js
+import { createHmac, timingSafeEqual } from "node:crypto";
+
+function verify(rawBody, signatureHeader, secret, toleranceSeconds = 300) {
+  const parts = Object.fromEntries(signatureHeader.split(",").map((p) => p.split("=", 2)));
+  const t = Number(parts.t);
+  if (!Number.isInteger(t) || Math.abs(Date.now() / 1000 - t) > toleranceSeconds) return false;
+  const expected = createHmac("sha256", secret).update(`${t}.${rawBody}`).digest("hex");
+  const given = Buffer.from(parts.v1 ?? "", "hex");
+  const want = Buffer.from(expected, "hex");
+  return given.length === want.length && timingSafeEqual(given, want);
+}
+```
+
+Delivery:
+
+- Sending never slows down or blocks gateway requests: it runs in the background after the notice is recorded.
+- Up to 3 attempts: the first immediately, the second 2 seconds after the first fails, the third 10 seconds after that. Each attempt (DNS lookup, connect and response) has a 5 second deadline. Any `2xx` is success. DNS failures, network errors, timeouts, `5xx`, `408` and `429` are retried; `3xx` and other `4xx` are not. Redirects are never followed.
+- A delivery still pending when tokenhop stops is dropped.
+- Failures are logged with the destination host only, never the full URL or the secret.
+
+Allowed destinations:
+
+- By default only `https` URLs on the public internet. URLs with a username, password or `#fragment` are refused. Saving checks the URL itself: scheme, a literal IP or blocked host name, and userinfo. Before each attempt tokenhop resolves the host name and checks every address it returns; one blocked address refuses the attempt.
+- An instance owner or admin can turn on **Settings → Security & access → Budget webhooks: allow private networks** to also allow private addresses (`10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`, `100.64.0.0/10`), loopback and `localhost`, IPv6 unique local addresses, and plain `http`. With this setting on, tokenhop also asks the system resolver (the hosts file and DNS search domains) when public DNS doesn't know a name, for example `host.docker.internal`; every address it returns is checked the same way. Without the setting, only public DNS answers are used.
+- Link-local addresses (`169.254.0.0/16`, `fe80::/10`) and cloud metadata endpoints (`169.254.169.254`, `100.100.100.200`, `168.63.129.16` (Azure WireServer), `fd00:ec2::254`, `fd20:ce::254`, `fd00:c1::a9fe:a9fe`, `metadata.google.internal`, `metadata.goog`, `metadata`, `instance-data`) are always blocked, even with that setting on.
+
+Webhooks are not part of any export. Restoring an instance snapshot that carries users & teams data (format v2 or v3) removes them; a legacy (v1) restore leaves them.
 
 ---
 

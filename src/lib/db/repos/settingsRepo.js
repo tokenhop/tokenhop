@@ -58,6 +58,9 @@ export const DEFAULT_SETTINGS = {
   // connections. Follows the SSO_POLICY_KEYS rollout-gating pattern (see
   // GRANT_POLICY_KEYS); shape validated in app/api/settings/validateSettings.js.
   allowPersonalConnectionGrants: false,
+  // YAN-1831: budget webhooks may target private networks (RFC1918, CGNAT,
+  // loopback, ULA) and http:. Link-local and metadata stay blocked.
+  budgetWebhookAllowPrivateNetworks: false,
   tunnelDashboardAccess: true,
   requestLogsEnabled: false,
   translatorEnabled: false,

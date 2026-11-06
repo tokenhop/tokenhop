@@ -204,6 +204,16 @@ export const ROUTE_POLICY = {
     cap: { PATCH: "workspace.budgets.lower", DELETE: "workspace.budgets.lower" },
     cliAllowed: false,
   }),
+  // YAN-1831: one optional budget webhook per workspace, managed like budgets
+  // (switch-off actor chosen by the handler gate).
+  "/api/workspaces/[id]/budget-webhook": scoped({
+    cap: {
+      GET: "workspace.budgets.lower",
+      PUT: "workspace.budgets.lower",
+      DELETE: "workspace.budgets.lower",
+    },
+    cliAllowed: false,
+  }),
   "/api/users/[id]/budgets": multiUser({
     cap: { GET: "instance.budgets.raise", POST: "instance.budgets.raise" },
     alwaysProtected: true,

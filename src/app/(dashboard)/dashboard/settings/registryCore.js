@@ -77,6 +77,13 @@ export const CORE_SECTIONS = [
         description: "Serve this dashboard on the public tunnel URL too.",
         keywords: "tunnel tailscale remote access dashboard",
       },
+
+      {
+        key: "budgetWebhookAllowPrivateNetworks",
+        label: "Budget webhooks: allow private networks",
+        description: "Let budget webhooks reach private addresses and http.",
+        keywords: "budget webhook private network ssrf http loopback",
+      },
       {
         key: "AUTH_COOKIE_SECURE",
         label: "Secure session cookie",

@@ -75,6 +75,12 @@ export const TABLE_CLASSES = {
     scopeColumn: "budgetId",
     note: "visible through the budget it belongs to",
   },
+  // YAN-1831: managed through budgetWebhooksRepo with live budgets.lower authority.
+  budgetWebhooks: {
+    class: "scoped",
+    scopeColumn: "workspaceId",
+    note: "one optional webhook per workspace; secret is a D10 credential leaf",
+  },
 };
 
 // Workspace kv scopes take the `ws:<workspaceId>/` key prefix when scoped.

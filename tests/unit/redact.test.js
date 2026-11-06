@@ -156,6 +156,7 @@ describe("redactText token patterns", () => {
     ["hf jwt", `hf_jwt_${A(20)}`],
     ["hf oauth", `hf_oauth_${A(20)}`],
     ["nvidia", `nvapi-${A(40)}`],
+    ["budget webhook secret", `whsec_${A(43)}`],
   ];
 
   it("masks every source-backed provider form whole, incl. escape prefixes", () => {
@@ -189,6 +190,7 @@ describe("redactText token patterns", () => {
       `hf_${A(19)}`,
       `hf_jwt_${A(19)}`,
       `nvapi-${A(39)}`,
+      "whsec_short",
       `x${`ghp_${A(36)}`}`, // glued to prose: documented ceiling, not censored
     ]) {
       assert.equal(redactText(`see ${benign} now`), `see ${benign} now`, benign);

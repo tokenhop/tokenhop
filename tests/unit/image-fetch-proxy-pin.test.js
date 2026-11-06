@@ -11,9 +11,8 @@ import { Agent, MockAgent } from "undici";
 const lookupMock = vi.fn();
 vi.mock("node:dns/promises", () => ({ lookup: (...a) => lookupMock(...a) }));
 
-const { fetchImageAsBase64, isPrivateIp } = await import(
-  "../../open-sse/translator/concerns/image.js"
-);
+const { fetchImageAsBase64 } = await import("../../open-sse/translator/concerns/image.js");
+const { isPrivateIp } = await import("../../open-sse/utils/ipPolicy.js");
 const { proxyAwareFetch } = await import("../../open-sse/utils/proxyFetch.js");
 
 const PNG = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 0]);

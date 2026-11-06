@@ -28,6 +28,7 @@ master key (KEK)
 - Secrets inside provider-specific data, such as `clientSecret`, `copilotToken`, `cookie` and `secretAccessKey`.
 - Custom provider node secrets, such as `apiKey` and `authHeader`.
 - Instance SSO and MITM secrets: `oidcClientSecret`, `samlPrivateKey`, `samlDecryptionKey`, `samlSigningKey`, `mitmSudoEncrypted`.
+- Budget webhook signing secrets.
 
 ### What is not encrypted
 
@@ -172,7 +173,7 @@ Moves one workspace's configuration to another workspace, possibly on another in
 
 **Included:** provider connections, custom provider nodes, combos, model aliases, custom models, disabled models, the workspace's setting overrides, and the workspace's own budget (its limits only).
 
-**Never included:** users, memberships, grants, key, member, grant and user budgets, budget spend and notices, usage, audit records or other workspaces.
+**Never included:** users, memberships, grants, key, member, grant and user budgets, budget spend and notices, budget webhooks, usage, audit records or other workspaces.
 
 How it works:
 
@@ -187,7 +188,7 @@ How it works:
 
 A full backup of the instance, from **Dashboard → Settings → Data & backup** (or `GET` / `POST /api/settings/database`).
 
-**Included:** settings, users and identities, workspaces and memberships, connections, combos, grants, budgets, hashed API keys, invitations, audit events and usage history. It carries **ciphertext and wrapped keys, never the master key.**
+**Included:** settings, users and identities, workspaces and memberships, connections, combos, grants, budgets, hashed API keys, invitations, audit events and usage history. It carries **ciphertext and wrapped keys, never the master key.** Budget webhooks are not included. Restoring a snapshot that carries users & teams data (format v2/v3) removes existing ones; a legacy (v1) restore leaves them in place.
 
 > Treat the file as sensitive: it contains password hashes and provider credentials.
 

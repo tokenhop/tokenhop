@@ -59,6 +59,8 @@ const ALLOWED = new Set([
   "spentRequests",
   // YAN-1830: start of the budget window a soft/hard notice was sent for.
   "windowStart",
+  // YAN-1831: budget webhook target host (never the URL or secret).
+  "host",
 ]);
 
 const TRUNCATE = 4096;
