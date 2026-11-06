@@ -144,7 +144,7 @@ async function importStaged(
   }
   const instance = gatewayKeyStorageSnapshot(db);
   const plan = legacyEncrypted
-    ? preflightLegacyEncryptedImport(payload, { instance, db, masterKey: resolvedMaster })
+    ? preflightLegacyEncryptedImport(payload, { instance, db, masterKey: resolvedMaster, stage })
     : preflightGatewayKeyImport(payload, {
         instance,
         db,

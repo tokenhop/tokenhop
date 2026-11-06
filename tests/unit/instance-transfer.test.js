@@ -805,6 +805,64 @@ describe("instance full-table sections (plain hashed v2)", () => {
     expect(await guard.hasBudgets(principal)).toBe(true);
   });
 
+  // YAN-1929: notice claims are not exported, but a restore that keeps a
+  // budget's id keeps its claim, so the guard does not repeat the notice.
+  describe("budget notice claims across a restore", () => {
+    const claimOf = (budgetId) =>
+      dump(`SELECT * FROM budgetNotices WHERE budgetId = '${budgetId}' ORDER BY kind`);
+    const seedClaim = async (budgetId, row) => {
+      const { windowStart } = await import("@/lib/users/budgets.js");
+      const { noticeSignature } = await import("@/shared/utils/budgetNotice.js");
+      const start = new Date(windowStart(row.window)).toISOString();
+      db.run(
+        `INSERT INTO budgetNotices(budgetId, kind, windowStart, signature, notifiedAt) VALUES(?, 'hard', ?, ?, ?)`,
+        [budgetId, start, noticeSignature(row, "hard"), start],
+      );
+      return Date.parse(start);
+    };
+
+    it("keeps the claim of a kept budget id; notifyOnce does not re-send", async () => {
+      const row = dump("SELECT * FROM budgets WHERE id = 'budget-ws'")[0];
+      const start = await seedClaim("budget-ws", row);
+      const before = claimOf("budget-ws");
+      const snapshot = await dbApi.exportDb();
+      expect(snapshot).not.toHaveProperty("budgetNotices");
+      expect(JSON.stringify(snapshot.budgets)).not.toContain("signature");
+      await dbApi.importDb(structuredClone(snapshot), { masterKey: MASTER });
+      expect(claimOf("budget-ws")).toEqual(before);
+      const { notifyOnce, BUDGET_NOTICE_EVENT } = await import("@/sse/services/budgetNotify.js");
+      const { statsEmitter } = await import("@/lib/db/repos/usageLiveFeed.js");
+      const state = { start, budget: row, spent: { usd: 11, tokens: 0, requests: 1 }, notices: {} };
+      const onNotice = vi.fn();
+      statsEmitter.on(BUDGET_NOTICE_EVENT, onNotice);
+      try {
+        notifyOnce(db, state, "hard");
+        expect(onNotice).not.toHaveBeenCalled();
+        await new Promise((resolve) => setTimeout(resolve, 20)); // audit is fire-and-forget
+        expect(dump("SELECT id FROM auditEvents WHERE action = 'budget.hardStop'")).toEqual([]);
+      } finally {
+        statsEmitter.off(BUDGET_NOTICE_EVENT, onNotice);
+      }
+    });
+
+    it("keeps claims through the staged stream import", async () => {
+      await seedClaim("budget-ws", dump("SELECT * FROM budgets WHERE id = 'budget-ws'")[0]);
+      const before = claimOf("budget-ws");
+      const snapshot = await dbApi.exportDb();
+      await dbApi.importDbStream([Buffer.from(JSON.stringify(snapshot))], { masterKey: MASTER });
+      expect(claimOf("budget-ws")).toEqual(before);
+    });
+
+    it("drops the claim of a budget the snapshot no longer has", async () => {
+      await seedClaim("budget-ws", dump("SELECT * FROM budgets WHERE id = 'budget-ws'")[0]);
+      const snapshot = await dbApi.exportDb();
+      snapshot.budgets = snapshot.budgets.filter((b) => b.id !== "budget-ws");
+      await dbApi.importDb(structuredClone(snapshot), { masterKey: MASTER });
+      expect(dump("SELECT id FROM budgets WHERE id = 'budget-ws'")).toEqual([]);
+      expect(claimOf("budget-ws")).toEqual([]);
+    });
+  });
+
   // YAN-1913 (§7.4): an older snapshot without a budgets section keeps the
   // live budgets; a key budget for a key the restore replaced is pruned.
   it("prunes retained key budgets whose key the restore replaced", async () => {

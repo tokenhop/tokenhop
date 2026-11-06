@@ -105,9 +105,25 @@ describe("hashed v2 shape", () => {
 
   it("matches the in-memory export with the switch off", async () => {
     multiUser = false;
+    db.run(
+      `INSERT INTO budgets(id, workspaceId, scopeType, scopeId, window, limitRequests, createdAt) VALUES('budget-key', ?, 'key', 'hk-1', 'week', 3, ?)`,
+      [WS, NOW],
+    );
     const snap = await expectParity();
     expect(snap.formatVersion).toBe(2);
     expect(Object.hasOwn(snap, "usageHistory")).toBe(false);
+    // YAN-1934: switch-off budgets travel in the head; user/grant ones do not.
+    expect(snap.offBudgets.map((b) => b.id)).toEqual(["budget-ws", "budget-key"]);
+  });
+
+  it("streams switch-off budgets back in with the switch off (staged import)", async () => {
+    multiUser = false;
+    const snap = await exportDb();
+    db.run(`DELETE FROM budgets WHERE id = 'budget-ws'`);
+    await dbApi.importDbStream([Buffer.from(JSON.stringify(snap))], { masterKey: MASTER });
+    expect(
+      db.all(`SELECT id, limitUsd FROM budgets WHERE workspaceId = ? ORDER BY id`, [WS]),
+    ).toEqual([{ id: "budget-ws", limitUsd: 10 }]);
   });
 
   it("pages sections larger than one page and reports progress", async () => {

@@ -509,6 +509,123 @@ describe("legacy import prunes orphaned key budgets", () => {
     ]);
     expect(one(`SELECT id FROM apiKeys`).id).toBe("legacy-live");
   });
+
+  // YAN-1934: a pristine (legacy storage, switch off) export carries the
+  // switch-off budgets; a restore onto a fresh instance recreates them on a
+  // new pending Default with their ids.
+  it("restores switch-off budgets from a pristine export onto a fresh instance", async () => {
+    const snapshot = await dbApi.exportDb();
+    expect(snapshot.formatVersion).toBeUndefined();
+    expect(snapshot.offBudgets.map((b) => [b.id, b.scopeType, b.scopeId])).toEqual([
+      ["b-ws", "workspace", ws],
+      ["b-live", "key", "legacy-live"],
+      ["b-new", "key", "legacy-new"],
+    ]);
+    expect(snapshot).not.toHaveProperty("budgetNotices");
+    db.run(`DELETE FROM budgets`);
+    db.run(`DELETE FROM workspaces`);
+    db.run(`DELETE FROM _meta WHERE key = 'pendingDefaultWorkspaceId'`);
+    await dbApi.importDb(structuredClone(snapshot));
+    const { pendingDefaultWorkspaceIdUnscoped } = await import("@/lib/db/repos/ownership.js");
+    const next = pendingDefaultWorkspaceIdUnscoped(db);
+    expect(next).toEqual(expect.any(String));
+    expect(next).not.toBe(ws);
+    expect(
+      db.all(
+        `SELECT id, workspaceId, scopeType, scopeId, window, limitRequests FROM budgets ORDER BY id`,
+      ),
+    ).toEqual([
+      {
+        id: "b-live",
+        workspaceId: next,
+        scopeType: "key",
+        scopeId: "legacy-live",
+        window: "day",
+        limitRequests: 5,
+      },
+      {
+        id: "b-ws",
+        workspaceId: next,
+        scopeType: "workspace",
+        scopeId: next,
+        window: "day",
+        limitRequests: 5,
+      },
+    ]);
+    // b-new targets a key the snapshot does not carry: pruned as before.
+    expect(one(`SELECT COUNT(*) AS c FROM budgets WHERE id = 'b-new'`).c).toBe(0);
+  });
+
+  it("keeps live budgets and their claims when the snapshot keeps their ids", async () => {
+    const snapshot = await dbApi.exportDb();
+    db.run(
+      `INSERT INTO users(id, email, username, displayName, instanceRole, status, passwordHash, sessionVersion, createdAt, updatedAt)
+       VALUES('creator', 'c@x.test', 'creator', 'C', 'user', 'active', 'h', 1, ?, ?)`,
+      [NOW, NOW],
+    );
+    try {
+      db.run(
+        `UPDATE budgets SET limitRequests = 9, createdByUserId = 'creator' WHERE id = 'b-live'`,
+      );
+      const claims = db.all(`SELECT * FROM budgetNotices`);
+      await dbApi.importDb(structuredClone(snapshot));
+      // Updated in place (claims kept): limits and creator come from the backup.
+      expect(one(`SELECT limitRequests, createdByUserId FROM budgets WHERE id = 'b-live'`)).toEqual(
+        { limitRequests: 5, createdByUserId: null },
+      );
+      expect(db.all(`SELECT * FROM budgetNotices`)).toEqual(claims);
+    } finally {
+      db.run(`DELETE FROM users WHERE id = 'creator'`);
+    }
+  });
+
+  it("an older payload without offBudgets keeps live budgets; [] clears them", async () => {
+    await dbApi.importDb({ ...legacyPayload(), apiKeys: [] });
+    expect(db.all(`SELECT id FROM budgets ORDER BY id`).map((r) => r.id)).toEqual(["b-ws"]);
+    await dbApi.importDb({ ...legacyPayload(), offBudgets: [] });
+    expect(db.all(`SELECT id FROM budgets`)).toEqual([]);
+    const audit = one(
+      `SELECT after FROM auditEvents WHERE action = 'budget.delete' AND targetId = 'b-ws'`,
+    );
+    expect(JSON.parse(audit.after)).toEqual({ reason: "not_in_backup", scopeType: "workspace" });
+  });
+
+  it("rejects invalid offBudgets before any backup or mutation", async () => {
+    const before = tableDump();
+    const budgets = db.all(`SELECT * FROM budgets ORDER BY id`);
+    const backups = preImportDirs().length;
+    const bad = {
+      id: "b-bad",
+      workspaceId: ws,
+      scopeType: "membership",
+      scopeId: `${ws}:u`,
+      window: "day",
+      limitRequests: 1,
+      createdAt: NOW,
+    };
+    await expect(dbApi.importDb({ ...legacyPayload(), offBudgets: [bad] })).rejects.toMatchObject({
+      code: "TRANSFER_STATE_INVALID",
+    });
+    expect(tableDump()).toBe(before);
+    expect(db.all(`SELECT * FROM budgets ORDER BY id`)).toEqual(budgets);
+    expect(preImportDirs()).toHaveLength(backups);
+  });
+
+  // A legacy snapshot never applies a budgets section, so one carrying both
+  // it and offBudgets fails closed instead of silently dropping offBudgets.
+  it("rejects a legacy snapshot carrying both offBudgets and a budgets section", async () => {
+    const snapshot = await dbApi.exportDb();
+    db.run(`UPDATE budgets SET limitRequests = 9 WHERE id = 'b-ws'`);
+    const budgets = db.all(`SELECT * FROM budgets ORDER BY id`);
+    const before = tableDump();
+    const backups = preImportDirs().length;
+    await expect(dbApi.importDb({ ...snapshot, budgets: [] })).rejects.toMatchObject({
+      code: "TRANSFER_FORMAT_INVALID",
+    });
+    expect(tableDump()).toBe(before);
+    expect(db.all(`SELECT * FROM budgets ORDER BY id`)).toEqual(budgets);
+    expect(preImportDirs()).toHaveLength(backups);
+  });
 });
 
 describe("pre-import backup (encrypted instance, YAN-365)", () => {

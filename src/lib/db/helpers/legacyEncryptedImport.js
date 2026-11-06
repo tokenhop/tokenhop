@@ -96,7 +96,7 @@ export function encodeLegacyCredentialRows(db, payload, settings, masterKey, pla
  * hash key, preset conversion, retained video jobs) and dry-encodes every
  * covered row so Default-DEK/shape problems fail BEFORE backup or wipe.
  */
-export function preflightLegacyEncryptedImport(payload, { instance, db, masterKey }) {
+export function preflightLegacyEncryptedImport(payload, { instance, db, masterKey, stage = null }) {
   let live;
   try {
     live = readCredentialEncryptionState(db, { strict: true });
@@ -145,11 +145,14 @@ export function preflightLegacyEncryptedImport(payload, { instance, db, masterKe
   // here is resolveApiKeyHashKeySync inside the plan (authenticated unwrap
   // under the current KEK), so present the shadow instance whose hashKid is
   // the proven root, then restore the frozen kid on the returned plan.
+  // `stage` only lets preflight see staged section names (a legacy plan
+  // never applies a staged section; see the offBudgets/budgets check).
   const plan = preflightGatewayKeyImport(payload, {
     instance: { ...instance, hashKid: live.kekKid },
     db,
     masterKey,
     defaultWorkspaceId,
+    stage,
   });
   if (plan.format !== "legacy" || !plan.hashKey) {
     throw new TransferError("TRANSFER_STATE_INVALID", "Legacy plan unavailable on this instance");

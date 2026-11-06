@@ -58,6 +58,41 @@ export function validateSectionRow(section, row, refs, seen = NOOP_SEEN) {
   section.validate(row, refs, seen);
 }
 
+// YAN-1934: the switch-off budget scopes an `offBudgets` head may carry.
+const OFF_BUDGET_SCOPES = new Set(["workspace", "key"]);
+
+/**
+ * Validate a snapshot's `offBudgets` (switch-off budgets, raw rows with ids)
+ * before any backup or mutation. Absent → null (older snapshot: live budgets
+ * stay as before); an explicit [] is the authoritative clear. Rows follow the
+ * budgets section's rules, on one workspace, workspace/key scopes only, no
+ * creator (exports drop it), unique ids and scope/window slots.
+ * @returns {ReadonlyArray<object>|null} Frozen rows, or null when absent.
+ */
+export function validateOffBudgets(payload) {
+  if (!Object.hasOwn(payload, "offBudgets")) return null;
+  const rows = payload.offBudgets;
+  if (!Array.isArray(rows)) fail("TRANSFER_STATE_INVALID", "offBudgets must be an array");
+  const section = SECTIONS.find((s) => s.name === "budgets");
+  // One workspace: every row must name the first row's (unknown refs fail).
+  const refs = { workspaces: new Set([rows[0]?.workspaceId]), users: new Set() };
+  const seen = new Set();
+  const slots = new Set();
+  for (const row of rows) {
+    validateSectionRow(section, row, refs, seen);
+    if (!OFF_BUDGET_SCOPES.has(row.scopeType)) {
+      fail("TRANSFER_STATE_INVALID", "offBudgets entry has a scope that needs Users & teams");
+    }
+    if (row.scopeType === "workspace" && row.scopeId !== row.workspaceId) {
+      fail("TRANSFER_STATE_INVALID", "offBudgets workspace entry must target its workspace");
+    }
+    const slot = JSON.stringify([row.scopeType, row.scopeId, row.window]);
+    if (slots.has(slot)) fail("TRANSFER_STATE_INVALID", "duplicate offBudgets scope and window");
+    slots.add(slot);
+  }
+  return Object.freeze(rows.map((row) => Object.freeze({ ...row })));
+}
+
 function strKey(value) {
   return typeof value === "string" && value ? value : null;
 }

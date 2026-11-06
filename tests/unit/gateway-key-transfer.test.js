@@ -797,6 +797,45 @@ describe("legacy snapshot into hashed instance (compatibility import)", () => {
     }
   });
 
+  // YAN-1934: a legacy snapshot's switch-off budgets land on Default with
+  // their ids; a key budget for a key the snapshot lacks is pruned, audited.
+  it("restores offBudgets onto Default and prunes those of absent keys", async () => {
+    const row = (id, scopeType, scopeId) => ({
+      id,
+      workspaceId: "ws-source",
+      scopeType,
+      scopeId,
+      window: "day",
+      limitUsd: 2,
+      limitTokens: null,
+      limitRequests: null,
+      softLimitPct: null,
+      createdAt: NOW,
+    });
+    const payload = {
+      ...legacyPayload(),
+      offBudgets: [
+        row("ob-ws", "workspace", "ws-source"),
+        row("ob-key", "key", "legacy-1"),
+        row("ob-gone", "key", "not-carried"),
+      ],
+    };
+    try {
+      await dbApi.importDb(payload, { masterKey: MASTER });
+      expect(all(`SELECT id, workspaceId, scopeType, scopeId FROM budgets ORDER BY id`)).toEqual([
+        { id: "ob-key", workspaceId: WS, scopeType: "key", scopeId: "legacy-1" },
+        { id: "ob-ws", workspaceId: WS, scopeType: "workspace", scopeId: WS },
+      ]);
+      expect(
+        all(
+          `SELECT targetId FROM auditEvents WHERE action = 'budget.delete' AND targetId LIKE 'ob-%' AND after LIKE '%target_missing_at_import%'`,
+        ),
+      ).toEqual([{ targetId: "ob-gone" }]);
+    } finally {
+      db.run(`DELETE FROM budgets`);
+    }
+  });
+
   it("wrong master fails preflight with zero mutation", async () => {
     const before = tableDump();
     await expect(dbApi.importDb(legacyPayload(), { masterKey: OTHER_MASTER })).rejects.toThrow(

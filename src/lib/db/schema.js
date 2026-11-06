@@ -457,9 +457,10 @@ export const TABLES = {
   // Budget notice claims (migration 023, YAN-1832): the last window a soft or
   // hard notice was sent for, per budget and kind. The signature column holds
   // the budget's limits (+ softLimitPct for soft) when claimed: a mismatch
-  // re-arms the notice. Deleted with the budget, including by a snapshot
-  // restore that replaces the budgets section (claims are not exported), so a
-  // restore may repeat each budget's notice once in the current window.
+  // re-arms the notice. Deleted with the budget. Never exported; a snapshot
+  // restore keeps the live claims of every budget id it keeps (YAN-1929), so
+  // a restore repeats no notice in the current window unless it changes the
+  // budget's limits (a new signature re-arms the notice, like any edit).
   budgetNotices: {
     columns: {
       budgetId: "TEXT NOT NULL REFERENCES budgets(id) ON DELETE CASCADE",

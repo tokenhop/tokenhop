@@ -13,7 +13,9 @@ import { STAGING_DIR } from "@/lib/db/paths.js";
 import { assertIsolatedHome } from "../helpers/isolatedHome.js";
 import {
   MASTER,
+  NOW,
   SECTION_TABLES,
+  WS,
   bodyOf,
   clearSections,
   dumpSections,
@@ -204,5 +206,55 @@ describe("sql.js stage backend vs the original bind path", () => {
     }
     expect(stateDump(db)).toBe(before);
     expect(stagingEntries()).toEqual([]);
+  });
+
+  // YAN-1929: the staged sql.js apply keeps the live claims of kept budget ids.
+  it("keeps budget notice claims of kept budget ids through the staged apply", async () => {
+    insertViaOracle(db, insertInstanceTableSections, tricky);
+    db.run(
+      `INSERT INTO budgetNotices(budgetId, kind, windowStart, signature, notifiedAt)
+       VALUES('b-real-5', 'soft', '2026-01-01T00:00:00.000Z', 'sig', '2026-01-01T00:00:00.000Z')`,
+    );
+    const claims = db.all("SELECT * FROM budgetNotices");
+    await dbApi.importDbStream(bodyOf(doc, 509), { masterKey: MASTER });
+    expect(db.all("SELECT * FROM budgetNotices")).toEqual(claims);
+    db.run("DELETE FROM budgetNotices");
+  });
+
+  // YAN-1934 (sql.js lane of the native switch test): a switch-off snapshot
+  // restored with the switch on. The live Default budget it replaces names a
+  // creator the snapshot lacks; the stage must drop it from the retained
+  // budgets instead of failing the restore on that ref.
+  it("switch on: a replaced live budget with an unknown creator does not block the restore", async () => {
+    const { isMultiUserEnabled } = await import("@/lib/users/featureSwitch.js");
+    db.run(
+      `INSERT INTO budgets(id, workspaceId, scopeType, scopeId, window, limitUsd, createdByUserId, createdAt)
+       VALUES('b-off', ?, 'workspace', ?, 'day', 10, 'owner', ?)`,
+      [WS, WS, NOW],
+    );
+    isMultiUserEnabled.mockResolvedValueOnce(false);
+    const snapshot = await dbApi.exportDb();
+    expect(snapshot.offBudgets.map((b) => b.id)).toEqual(["b-off"]);
+    db.run(
+      `INSERT INTO users(id, email, username, displayName, instanceRole, status, passwordHash, mustChangePassword, sessionVersion, createdAt, updatedAt)
+       VALUES('late', 'late@x.test', 'late', 'Late', 'user', 'active', 'h', 0, 1, ?, ?)`,
+      [NOW, NOW],
+    );
+    try {
+      db.run("UPDATE budgets SET createdByUserId = 'late', limitUsd = 77 WHERE id = 'b-off'");
+      // The snapshot lacks the added user: a forced restore by the owner.
+      await dbApi.importDbStream(bodyOf(snapshot, 509), {
+        masterKey: MASTER,
+        force: true,
+        actor: { userId: "owner", instanceRole: "owner", via: "session" },
+      });
+      expect(
+        db.all("SELECT id, limitUsd, createdByUserId FROM budgets WHERE workspaceId = ?", [WS]),
+      ).toEqual([{ id: "b-off", limitUsd: 10, createdByUserId: null }]);
+      expect(stagingEntries()).toEqual([]);
+    } finally {
+      db.run("DELETE FROM budgets");
+      db.run("DELETE FROM users WHERE id = 'late'");
+    }
   });
 });

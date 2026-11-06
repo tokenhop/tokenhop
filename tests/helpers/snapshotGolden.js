@@ -19,6 +19,9 @@ export const GOLDEN_LEGACY_TOP = [
   "pricing",
 ];
 
+// YAN-1934: switch-off exports append the switch-off budgets (`offBudgets`).
+export const GOLDEN_LEGACY_OFF_TOP = [...GOLDEN_LEGACY_TOP, "offBudgets"];
+
 export const GOLDEN_HASHED_OFF_TOP = [
   ...GOLDEN_LEGACY_TOP,
   "formatVersion",
@@ -29,6 +32,7 @@ export const GOLDEN_HASHED_OFF_TOP = [
   "memberships",
   "tenancy",
   "gatewayVideoJobs",
+  "offBudgets",
 ];
 
 export const GOLDEN_V2_TOP = [
@@ -340,6 +344,18 @@ export const GOLDEN_FIRST_ROWS = {
     identities: IDENTITIES_COLS,
     workspaces: WORKSPACES_COLS,
     memberships: MEMBERSHIPS_COLS,
+    offBudgets: [
+      "id",
+      "workspaceId",
+      "scopeType",
+      "scopeId",
+      "window",
+      "limitUsd",
+      "limitTokens",
+      "limitRequests",
+      "softLimitPct",
+      "createdAt",
+    ],
   },
   v2: {
     providerConnections: PLAIN_CONN_V2,
