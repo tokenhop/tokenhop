@@ -188,7 +188,7 @@ How it works:
 
 A full backup of the instance, from **Dashboard → Settings → Data & backup** (or `GET` / `POST /api/settings/database`).
 
-**Included:** settings, users and identities, workspaces and memberships, connections, combos, grants, budgets, hashed API keys, invitations, audit events and usage history. It carries **ciphertext and wrapped keys, never the master key.** Budget webhooks are not included, and restoring a snapshot removes existing ones.
+**Included:** settings, users and identities, workspaces and memberships, connections, combos, grants, budgets, hashed API keys, invitations, audit events and usage history. It carries **ciphertext and wrapped keys, never the master key.** Budget webhooks are not included. Restoring a snapshot that carries users & teams data (format v2/v3) removes existing ones; a legacy (v1) restore leaves them in place.
 
 > Treat the file as sensitive: it contains password hashes and provider credentials.
 

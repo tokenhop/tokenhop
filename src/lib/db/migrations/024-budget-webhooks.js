@@ -1,6 +1,7 @@
 // Budget webhooks (YAN-1831). Additive: one optional webhook per workspace; `data` holds the
 // signing secret as a D10 credential leaf ({"secret": <plaintext|envelope>}). Deleted with the
-// workspace (FK). Not exported; a snapshot restore removes it (cascade from workspaces).
+// workspace (FK). Not exported; a v2/v3 snapshot restore removes it (cascade from workspaces);
+// a legacy v1 restore keeps it.
 // Frozen: literal DDL, kept identical to TABLES.budgetWebhooks in ../schema.js.
 import { tableExists } from "./helpers.js";
 

@@ -474,7 +474,8 @@ export const TABLES = {
   // Budget webhooks (migration 024, YAN-1831): one optional webhook per
   // workspace. `data` holds the signing secret as a D10 credential leaf
   // ({"secret": ...}), encrypted once credential encryption is active. Not
-  // exported; deleted with the workspace, including by a snapshot restore.
+  // exported; deleted with the workspace, including by an instance snapshot
+  // restore that replaces users & teams data (v2/v3; a legacy v1 restore keeps it).
   budgetWebhooks: {
     columns: {
       id: "TEXT PRIMARY KEY",

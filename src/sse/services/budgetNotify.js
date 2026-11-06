@@ -106,7 +106,7 @@ export function notifyOnce(db, state, kind, now = Date.now()) {
   } catch (e) {
     console.warn("[budgetGuard] notice listener failed:", e?.message);
   }
-  scheduleBudgetWebhook(notice);
+  scheduleBudgetWebhook(notice, signature);
 }
 
 /** Soft notice when the window's settled spend is past the threshold. */

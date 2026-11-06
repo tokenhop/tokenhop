@@ -1,9 +1,11 @@
 // Pinned outbound request for operator-configured destinations (budget
-// webhooks, YAN-1831). Resolves the host once, fails closed, rejects the
-// request if any record is blocked, then pins the connection to the validated
-// IP so no second resolution can rebind it. Redirects are never followed.
+// webhooks, YAN-1831). Resolves the host once with c-ares (A + AAAA, off the
+// libuv threadpool, no /etc/hosts), fails closed, rejects the request if any
+// record is blocked, then pins the connection to the validated IP so no
+// second resolution can rebind it. Redirects are never followed. One deadline
+// (`timeoutMs`) bounds the whole attempt: DNS, connect and response.
 // Never throws: callers get `{ ok, status?, reason? }`.
-import { lookup } from "node:dns/promises";
+import { Resolver } from "node:dns/promises";
 import { isIP } from "node:net";
 import { Agent } from "undici";
 import { isEgressAllowedIp } from "./ipPolicy.js";
@@ -52,6 +54,45 @@ export function egressUrlError(raw, { allowPrivate = false } = {}) {
   return null;
 }
 
+// `localhost` never goes to DNS (c-ares has no /etc/hosts): the loopback literals.
+const LOOPBACK = [
+  { address: "127.0.0.1", family: 4 },
+  { address: "::1", family: 6 },
+];
+
+const DNS_TIMEOUT = Symbol("dns-timeout");
+
+/**
+ * A + AAAA for `host` within `ms`. Returns records, `DNS_TIMEOUT`, or null
+ * (resolver error / empty answer: fail closed).
+ */
+async function resolveHost(host, ms) {
+  const resolver = new Resolver({ timeout: Math.max(1, ms), tries: 1 });
+  const settle = (p, family) =>
+    p.then(
+      (list) => ({ list: (list ?? []).map((address) => ({ address, family })) }),
+      (error) => ({ error }),
+    );
+  let timer;
+  const deadline = new Promise((resolve) => {
+    timer = setTimeout(() => resolve(DNS_TIMEOUT), ms);
+    timer.unref?.();
+  });
+  try {
+    const answers = await Promise.race([
+      Promise.all([settle(resolver.resolve4(host), 4), settle(resolver.resolve6(host), 6)]),
+      deadline,
+    ]);
+    if (answers === DNS_TIMEOUT) return DNS_TIMEOUT;
+    const records = answers.flatMap((a) => a.list ?? []);
+    if (records.length) return records;
+    return answers.some((a) => a.error?.code === "ETIMEOUT") ? DNS_TIMEOUT : null;
+  } finally {
+    clearTimeout(timer);
+    resolver.cancel();
+  }
+}
+
 /**
  * @returns {Promise<{ ok: true, status: number } | { ok: false, reason: string, status?: number }>}
  */
@@ -60,6 +101,7 @@ export async function fetchPinned(
   { method = "POST", headers, body } = {},
   { allowPrivate = false, timeoutMs = 5000 } = {},
 ) {
+  const deadline = Date.now() + timeoutMs;
   const invalid = egressUrlError(raw, { allowPrivate });
   if (invalid) return { ok: false, reason: invalid };
   const url = new URL(raw);
@@ -68,13 +110,12 @@ export async function fetchPinned(
   let records;
   if (isIP(host)) {
     records = [{ address: host, family: isIP(host) }];
+  } else if (host === "localhost" || host.endsWith(".localhost")) {
+    records = LOOPBACK;
   } else {
-    try {
-      records = await lookup(host, { all: true });
-    } catch {
-      return { ok: false, reason: "dns" };
-    }
-    if (!records?.length) return { ok: false, reason: "dns" };
+    records = await resolveHost(host, timeoutMs);
+    if (records === DNS_TIMEOUT) return { ok: false, reason: "timeout" };
+    if (!records) return { ok: false, reason: "dns" };
   }
   if (records.some((r) => !isEgressAllowedIp(r.address, { allowPrivate }))) {
     return { ok: false, reason: "blocked_destination" };
@@ -100,7 +141,7 @@ export async function fetchPinned(
         redirect: "manual",
         dispatcher,
         pinnedAddress: pinned,
-        signal: AbortSignal.timeout(timeoutMs),
+        signal: AbortSignal.timeout(Math.max(1, deadline - Date.now())),
       },
       null,
     );

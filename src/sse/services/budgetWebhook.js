@@ -1,5 +1,6 @@
 // Budget webhook delivery (YAN-1831). budgetNotify schedules one delivery per
-// claimed notice (soft crossing, first hard rejection) off the request path:
+// claimed notice (soft crossing, first hard rejection) off the request path
+// (global and per-workspace concurrency caps, bounded per-workspace queue):
 // scheduling is synchronous and never throws, the POST runs on a later tick,
 // and every timer is unref'd. Each attempt re-reads the webhook row (deleted
 // or disabled → stop) and goes through the pinned egress helper (one DNS
@@ -8,26 +9,46 @@
 // Logs carry the destination host and status only — never the URL path,
 // query, body or secret. In-flight deliveries are dropped on shutdown; the
 // notice claim is durable, so a restart loses at most that delivery.
-import { createHmac } from "node:crypto";
+import { createHash, createHmac } from "node:crypto";
 import { fetchPinned } from "open-sse/utils/pinnedFetch.js";
 import { header } from "@/shared/brand";
 import { getBudgetWebhookForDeliveryUnscoped } from "@/lib/db/repos/budgetWebhooksRepo.js";
 import { getSettings } from "@/lib/db/repos/settingsRepo.js";
 
 /** Tunables (tests shrink them). */
-export const C = { delaysMs: [0, 2000, 10000], timeoutMs: 5000, maxInFlight: 64 };
+export const C = {
+  delaysMs: [0, 2000, 10000],
+  timeoutMs: 5000,
+  // Global cap on concurrent deliveries, and per workspace: one slow endpoint
+  // cannot hold every slot. Excess waits in a bounded per-workspace FIFO.
+  maxInFlight: 64,
+  perWorkspaceInFlight: 2,
+  perWorkspaceQueue: 16,
+};
 
 const RETRY_STATUS = new Set([408, 429]);
 const RETRY_REASONS = new Set(["timeout", "network", "dns"]);
 
 let inFlight = 0;
+// workspaceId → { active, queue: [{ notice, webhookId, settle }] }
+const lanes = new Map();
+// Scheduled deliveries (queued or running) until they finish.
 const pending = new Set();
 
-/** Wire payload for a budget notice (pure). */
-export function buildBudgetWebhookPayload(notice) {
+/** Delivery id: notice id + 12 hex of sha256(noticeSignature). */
+export function webhookIdFor(notice, signature) {
+  const digest = createHash("sha256")
+    .update(String(signature ?? ""))
+    .digest("hex")
+    .slice(0, 12);
+  return `${notice.id}:${digest}`;
+}
+
+/** Wire payload for a budget notice (pure); `id` is the delivery id. */
+export function buildBudgetWebhookPayload(notice, id) {
   return {
     type: notice.kind === "hard" ? "budget.hard_limit" : "budget.soft_limit",
-    id: notice.id,
+    id,
     budgetId: notice.budgetId,
     workspaceId: notice.workspaceId,
     scope: { type: notice.scopeType, id: notice.scopeId },
@@ -67,8 +88,8 @@ const retryable = (r) =>
   RETRY_REASONS.has(r.reason) ||
   (r.reason === "http" && (r.status >= 500 || RETRY_STATUS.has(r.status)));
 
-async function deliver(notice) {
-  const body = JSON.stringify(buildBudgetWebhookPayload(notice));
+async function deliver(notice, webhookId) {
+  const body = JSON.stringify(buildBudgetWebhookPayload(notice, webhookId));
   for (let attempt = 1; attempt <= C.delaysMs.length; attempt++) {
     await sleep(C.delaysMs[attempt - 1]);
     let hook;
@@ -90,7 +111,7 @@ async function deliver(notice) {
         headers: {
           "content-type": "application/json",
           [header("signature")]: signBudgetWebhook(hook.secret, body, t),
-          [header("webhook-id")]: notice.id,
+          [header("webhook-id")]: webhookId,
         },
         body,
       },
@@ -107,29 +128,65 @@ async function deliver(notice) {
   }
 }
 
-/** Schedule delivery for a claimed notice. Synchronous; never throws. */
-export function scheduleBudgetWebhook(notice) {
+function startDelivery(lane, job) {
+  inFlight++;
+  lane.active++;
+  setImmediate(() => {
+    deliver(job.notice, job.webhookId)
+      .catch((e) => console.warn("[budgetWebhook] delivery error", { code: e?.code ?? null }))
+      .finally(() => {
+        inFlight--;
+        lane.active--;
+        job.settle();
+        pump();
+      });
+  });
+}
+
+// Start queued deliveries while the global and per-workspace caps allow,
+// oldest workspace lane first; drop idle lanes.
+function pump() {
+  for (const [workspaceId, lane] of lanes) {
+    while (lane.queue.length && lane.active < C.perWorkspaceInFlight && inFlight < C.maxInFlight) {
+      startDelivery(lane, lane.queue.shift());
+    }
+    if (!lane.active && !lane.queue.length) lanes.delete(workspaceId);
+  }
+}
+
+/**
+ * Schedule delivery for a claimed notice. Synchronous; never throws.
+ * `signature` is the claim's noticeSignature: the webhook id is the notice id
+ * plus a digest of it, so a re-armed notice (limit or soft % changed in the
+ * window) gets a new id while retries of one delivery keep theirs.
+ */
+export function scheduleBudgetWebhook(notice, signature) {
   try {
-    if (notice?.workspaceId == null) return;
-    if (inFlight >= C.maxInFlight) {
-      console.warn("[budgetWebhook] dropped: too many deliveries in flight");
+    const workspaceId = notice?.workspaceId;
+    if (workspaceId == null) return;
+    const webhookId = webhookIdFor(notice, signature);
+    const lane = lanes.get(workspaceId) ?? { active: 0, queue: [] };
+    const startsNow =
+      !lane.queue.length && lane.active < C.perWorkspaceInFlight && inFlight < C.maxInFlight;
+    if (!startsNow && lane.queue.length >= C.perWorkspaceQueue) {
+      console.warn("[budgetWebhook] dropped: workspace delivery queue full");
       return;
     }
-    inFlight++;
+    lanes.set(workspaceId, lane);
     let settle;
     const done = new Promise((resolve) => {
       settle = resolve;
     });
     pending.add(done);
-    setImmediate(() => {
-      deliver(notice)
-        .catch((e) => console.warn("[budgetWebhook] delivery error", { code: e?.code ?? null }))
-        .finally(() => {
-          inFlight--;
-          pending.delete(done);
-          settle();
-        });
+    lane.queue.push({
+      notice,
+      webhookId,
+      settle: () => {
+        pending.delete(done);
+        settle();
+      },
     });
+    pump();
   } catch (e) {
     console.warn("[budgetWebhook] schedule failed", { code: e?.code ?? null });
   }
@@ -137,5 +194,8 @@ export function scheduleBudgetWebhook(notice) {
 
 export const __test__ = {
   inFlight: () => inFlight,
-  settled: () => Promise.allSettled([...pending]),
+  pending: () => pending.size,
+  settled: async () => {
+    while (pending.size) await Promise.allSettled([...pending]);
+  },
 };

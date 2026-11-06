@@ -64,7 +64,13 @@ for (const subnet of ["::1/128", "fc00::/7"]) blockSubnet(PRIVATE_NETWORK_SUBNET
 export const ALWAYS_BLOCKED_SUBNETS = new BlockList();
 for (const subnet of ["169.254.0.0/16", "100.100.100.200/32"])
   blockSubnet(ALWAYS_BLOCKED_SUBNETS, subnet, "ipv4");
-for (const subnet of ["fe80::/10", "fd00:ec2::254/128"])
+// IPv6 metadata endpoints: AWS (fd00:ec2::254), GCE (fd20:ce::254), OCI (fd00:c1::a9fe:a9fe).
+for (const subnet of [
+  "fe80::/10",
+  "fd00:ec2::254/128",
+  "fd20:ce::254/128",
+  "fd00:c1::a9fe:a9fe/128",
+])
   blockSubnet(ALWAYS_BLOCKED_SUBNETS, subnet, "ipv6");
 
 // Expand an IPv6 address (optionally with a dotted IPv4 tail) to 8 hextets.
