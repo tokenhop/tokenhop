@@ -337,17 +337,118 @@ describe("instance transfer switch gating", () => {
       enabled = false;
     }
     expect(budgetRows().map((r) => r.id)).toEqual(["b-key", "b-ws"]);
-    // With a budgets section (switch-on snapshot) the section wins.
+    // A file carrying both offBudgets and a budgets section is malformed: no
+    // restore applies both, so it fails closed before any change.
     enabled = true;
     try {
       const full = await dbApi.exportDb();
       full.budgets = [];
       full.offBudgets = snapshot.offBudgets;
-      await dbApi.importDb(full, { masterKey: MASTER });
+      const before = tableDump();
+      await expect(dbApi.importDb(full, { masterKey: MASTER })).rejects.toMatchObject({
+        code: "TRANSFER_FORMAT_INVALID",
+      });
+      expect(tableDump()).toBe(before);
     } finally {
       enabled = false;
     }
-    expect(budgetRows()).toEqual([]);
+  });
+
+  // A live budget the offBudgets restore replaces is not checked as a
+  // retained row: its creator is absent from the backup, which must not
+  // refuse the restore (in-memory and staged paths).
+  it("switch on: a replaced live budget with an unknown creator does not block the restore", async () => {
+    enabled = false;
+    seedOffBudgets();
+    const snapshot = await dbApi.exportDb();
+    // A user added after the backup (a forced owner restore replaces it).
+    const addLate = () =>
+      db.run(
+        `INSERT OR IGNORE INTO users(id, email, username, displayName, instanceRole, status, passwordHash, mustChangePassword, sessionVersion, createdAt, updatedAt)
+         VALUES('late', 'late@x.test', 'late', 'Late', 'admin', 'active', 'hash', 0, 1, ?, ?)`,
+        [NOW, NOW],
+      );
+    // The backup lacks the added user: a forced restore by the owner.
+    const opts = {
+      masterKey: MASTER,
+      force: true,
+      actor: { userId: "owner", instanceRole: "owner", via: "session" },
+    };
+    try {
+      for (const run of [
+        (doc) => dbApi.importDb(doc, opts),
+        (doc) => dbApi.importDbStream([Buffer.from(JSON.stringify(doc))], opts),
+      ]) {
+        addLate();
+        db.run("UPDATE budgets SET createdByUserId = 'late', limitUsd = 77 WHERE id = 'b-ws'");
+        enabled = true;
+        try {
+          await run(structuredClone(snapshot));
+        } finally {
+          enabled = false;
+        }
+        expect(budgetRows().map((r) => [r.id, r.limitUsd, r.createdByUserId])).toEqual([
+          ["b-key", null, null],
+          ["b-ws", 10, null],
+        ]);
+      }
+    } finally {
+      db.run("DELETE FROM users WHERE id = 'late'");
+    }
+  });
+
+  // Switch on: a legacy (pre-encryption) snapshot never applies a budgets
+  // section, so one carrying both it and offBudgets fails closed instead of
+  // silently dropping offBudgets.
+  it("switch on: rejects a legacy snapshot carrying both offBudgets and budgets", async () => {
+    enabled = false;
+    seedOffBudgets();
+    const { offBudgets } = await dbApi.exportDb();
+    const legacy = { schemaVersion: 1, apiKeys: [], offBudgets, budgets: [] };
+    const before = tableDump();
+    enabled = true;
+    try {
+      await expect(dbApi.importDb(legacy, { masterKey: MASTER })).rejects.toMatchObject({
+        code: "TRANSFER_FORMAT_INVALID",
+      });
+    } finally {
+      enabled = false;
+    }
+    expect(tableDump()).toBe(before);
+  });
+
+  // A hashed backup's key budget whose key lives outside Default would
+  // displace a live budget and then be pruned: refused before any change.
+  it("rejects an offBudgets key budget for a key outside Default before mutation", async () => {
+    enabled = false;
+    seedOffBudgets();
+    const snapshot = await dbApi.exportDb();
+    snapshot.workspaces.push({ ...snapshot.workspaces[0], id: "ws-side", name: "Side" });
+    // The key b-key budgets, filed under the side workspace in the backup.
+    snapshot.apiKeys = [
+      ...snapshot.apiKeys.filter((k) => k.id !== "key"),
+      {
+        id: "key",
+        workspaceId: "ws-side",
+        userId: null,
+        createdByUserId: null,
+        keyHash: hashApiKey(RAW, deriveApiKeyHashKey(MASTER)),
+        hashKid: KID,
+        prefix: apiKeyPrefix(RAW),
+        name: "Key",
+        legacy: 0,
+        isActive: 1,
+        allowedModels: [],
+        createdAt: NOW,
+      },
+    ];
+    const before = tableDump();
+    const claims = claimRows();
+    await expect(
+      dbApi.importDb(structuredClone(snapshot), { masterKey: MASTER }),
+    ).rejects.toMatchObject({ code: "TRANSFER_REF_INVALID" });
+    expect(tableDump()).toBe(before);
+    expect(claimRows()).toEqual(claims);
   });
   it("rejects new sections while switched off", async () => {
     enabled = true;

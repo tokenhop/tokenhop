@@ -127,14 +127,37 @@ export function exportOffModeBudgetsUnscoped(db) {
 }
 
 /**
- * Live switch-off budget rows (full columns), captured before a destructive
- * apply whose workspace delete cascades them away, so restoreOffBudgetsUnscoped
- * can still audit the ones the backup does not keep. [] without a workspace.
+ * YAN-1934: live budgets an `offBudgets` restore rewrites: the workspace and
+ * key budgets of the live switch-off workspace and of `targetWs` (the
+ * restored Default), rows under an id the backup keeps, and rows holding a
+ * backup row's scope/window slot. Read before the apply's deletes: preflight
+ * leaves them out of a retained budgets section (validating them against
+ * the incoming graph could refuse a valid restore), and the apply passes
+ * them to restoreOffBudgetsUnscoped as `prior`, which audits the ones a
+ * delete or cascade already removed.
+ * @returns {object[]} Full rows, one per id ([] for null `rows`).
  */
-export function captureOffBudgetsUnscoped(db) {
-  const ws = offBudgetWorkspaceIdUnscoped(db);
-  if (!ws || !tableExists(db, "budgets")) return [];
-  return db.all(`SELECT ${COLS} FROM budgets WHERE workspaceId = ? AND ${OFF_SCOPE_SQL}`, [ws]);
+export function offBudgetsReplacedRowsUnscoped(db, rows, targetWs) {
+  if (!rows || !tableExists(db, "budgets")) return [];
+  const out = new Map();
+  const add = (list) => {
+    for (const row of list) out.set(row.id, row);
+  };
+  for (const ws of new Set([offBudgetWorkspaceIdUnscoped(db), targetWs])) {
+    if (ws) {
+      add(db.all(`SELECT ${COLS} FROM budgets WHERE workspaceId = ? AND ${OFF_SCOPE_SQL}`, [ws]));
+    }
+  }
+  for (const row of rows) {
+    const scopeId = row.scopeType === "workspace" ? (targetWs ?? row.scopeId) : row.scopeId;
+    add(
+      db.all(
+        `SELECT ${COLS} FROM budgets WHERE id = ? OR (scopeType = ? AND scopeId = ? AND window = ?)`,
+        [row.id, row.scopeType, scopeId, row.window],
+      ),
+    );
+  }
+  return [...out.values()];
 }
 
 // A budget's slot: what its notice claims are bound to (restoreBudgetNotices
@@ -196,8 +219,9 @@ export function restoreOffBudgetsUnscoped(db, rows, { actor = null, prior = [] }
   for (const row of live.values()) {
     if (slots.get(row.id) !== slotOf(row)) deleteAuditedSync(db, [row], actor, reason(row));
   }
+  // createdByUserId is cleared on update too: a restored row names no creator.
   const upsert = `INSERT INTO budgets(${COLS}) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?)
-    ON CONFLICT(id) DO UPDATE SET ${["workspaceId", ...OFF_LIMIT_COLS, "resetAt"].map((c) => `${c} = excluded.${c}`).join(", ")}`;
+    ON CONFLICT(id) DO UPDATE SET ${["workspaceId", ...OFF_LIMIT_COLS, "resetAt", "createdByUserId"].map((c) => `${c} = excluded.${c}`).join(", ")}`;
   for (const row of mapped) {
     const clashes = db.all(
       `SELECT ${COLS} FROM budgets WHERE scopeType = ? AND scopeId = ? AND window = ? AND id <> ?`,

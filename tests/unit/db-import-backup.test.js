@@ -558,11 +558,25 @@ describe("legacy import prunes orphaned key budgets", () => {
 
   it("keeps live budgets and their claims when the snapshot keeps their ids", async () => {
     const snapshot = await dbApi.exportDb();
-    db.run(`UPDATE budgets SET limitRequests = 9 WHERE id = 'b-live'`);
-    const claims = db.all(`SELECT * FROM budgetNotices`);
-    await dbApi.importDb(structuredClone(snapshot));
-    expect(one(`SELECT limitRequests FROM budgets WHERE id = 'b-live'`).limitRequests).toBe(5);
-    expect(db.all(`SELECT * FROM budgetNotices`)).toEqual(claims);
+    db.run(
+      `INSERT INTO users(id, email, username, displayName, instanceRole, status, passwordHash, sessionVersion, createdAt, updatedAt)
+       VALUES('creator', 'c@x.test', 'creator', 'C', 'user', 'active', 'h', 1, ?, ?)`,
+      [NOW, NOW],
+    );
+    try {
+      db.run(
+        `UPDATE budgets SET limitRequests = 9, createdByUserId = 'creator' WHERE id = 'b-live'`,
+      );
+      const claims = db.all(`SELECT * FROM budgetNotices`);
+      await dbApi.importDb(structuredClone(snapshot));
+      // Updated in place (claims kept): limits and creator come from the backup.
+      expect(one(`SELECT limitRequests, createdByUserId FROM budgets WHERE id = 'b-live'`)).toEqual(
+        { limitRequests: 5, createdByUserId: null },
+      );
+      expect(db.all(`SELECT * FROM budgetNotices`)).toEqual(claims);
+    } finally {
+      db.run(`DELETE FROM users WHERE id = 'creator'`);
+    }
   });
 
   it("an older payload without offBudgets keeps live budgets; [] clears them", async () => {
@@ -591,6 +605,22 @@ describe("legacy import prunes orphaned key budgets", () => {
     };
     await expect(dbApi.importDb({ ...legacyPayload(), offBudgets: [bad] })).rejects.toMatchObject({
       code: "TRANSFER_STATE_INVALID",
+    });
+    expect(tableDump()).toBe(before);
+    expect(db.all(`SELECT * FROM budgets ORDER BY id`)).toEqual(budgets);
+    expect(preImportDirs()).toHaveLength(backups);
+  });
+
+  // A legacy snapshot never applies a budgets section, so one carrying both
+  // it and offBudgets fails closed instead of silently dropping offBudgets.
+  it("rejects a legacy snapshot carrying both offBudgets and a budgets section", async () => {
+    const snapshot = await dbApi.exportDb();
+    db.run(`UPDATE budgets SET limitRequests = 9 WHERE id = 'b-ws'`);
+    const budgets = db.all(`SELECT * FROM budgets ORDER BY id`);
+    const before = tableDump();
+    const backups = preImportDirs().length;
+    await expect(dbApi.importDb({ ...snapshot, budgets: [] })).rejects.toMatchObject({
+      code: "TRANSFER_FORMAT_INVALID",
     });
     expect(tableDump()).toBe(before);
     expect(db.all(`SELECT * FROM budgets ORDER BY id`)).toEqual(budgets);

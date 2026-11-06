@@ -11,7 +11,8 @@
 // error still sends the notice (worst case one duplicate after a restart),
 // except a foreign-key failure: the budget was deleted, so nothing is sent.
 // A DB import/restore keeps the claims of the budget ids it keeps (YAN-1929),
-// so a restore repeats no notice in the same window.
+// so a restore repeats no notice in the same window; restored limits that
+// differ change the signature and re-arm it, like any limit change.
 import { claimBudgetNoticeUnscoped } from "@/lib/db/repos/budgetNoticesRepo.js";
 import { statsEmitter } from "@/lib/db/repos/usageLiveFeed.js";
 import { audit } from "@/lib/users/audit.js";

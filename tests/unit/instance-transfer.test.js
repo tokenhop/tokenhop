@@ -830,11 +830,19 @@ describe("instance full-table sections (plain hashed v2)", () => {
       expect(JSON.stringify(snapshot.budgets)).not.toContain("signature");
       await dbApi.importDb(structuredClone(snapshot), { masterKey: MASTER });
       expect(claimOf("budget-ws")).toEqual(before);
-      const { notifyOnce } = await import("@/sse/services/budgetNotify.js");
+      const { notifyOnce, BUDGET_NOTICE_EVENT } = await import("@/sse/services/budgetNotify.js");
+      const { statsEmitter } = await import("@/lib/db/repos/usageLiveFeed.js");
       const state = { start, budget: row, spent: { usd: 11, tokens: 0, requests: 1 }, notices: {} };
-      notifyOnce(db, state, "hard");
-      await new Promise((resolve) => setTimeout(resolve, 20)); // audit is fire-and-forget
-      expect(dump("SELECT id FROM auditEvents WHERE action = 'budget.hardStop'")).toEqual([]);
+      const onNotice = vi.fn();
+      statsEmitter.on(BUDGET_NOTICE_EVENT, onNotice);
+      try {
+        notifyOnce(db, state, "hard");
+        expect(onNotice).not.toHaveBeenCalled();
+        await new Promise((resolve) => setTimeout(resolve, 20)); // audit is fire-and-forget
+        expect(dump("SELECT id FROM auditEvents WHERE action = 'budget.hardStop'")).toEqual([]);
+      } finally {
+        statsEmitter.off(BUDGET_NOTICE_EVENT, onNotice);
+      }
     });
 
     it("keeps claims through the staged stream import", async () => {

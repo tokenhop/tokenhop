@@ -305,11 +305,13 @@ function createStage(db, backend) {
     },
 
     /**
-     * Finish staging against the incoming head: typed non-array failure,
-     * retain-fill of absent sections, then paged validation of every staged
-     * row. Returns this handle (the preflight plan's `instanceSections`).
+     * Finish staging the incoming head: typed non-array failure,
+     * retain-fill absent sections, paged validation of every staged
+     * row. Returns the handle (the preflight plan's `instanceSections`).
+     * `dropBudgetIds`: retained live budgets an `offBudgets` restore
+     * replaces; left out so their refs are never checked or re-inserted.
      */
-    prepare(_db, head, refs) {
+    prepare(_db, head, refs, { dropBudgetIds = [] } = {}) {
       let absent = [];
       for (const section of SECTIONS) {
         if (present.has(section.name)) continue;
@@ -339,6 +341,11 @@ function createStage(db, backend) {
         }
         backend.setRefs(refs);
         for (const section of absent) backend.retain(db, section);
+        if (absent.some((s) => s.name === "budgets")) {
+          for (const id of dropBudgetIds) {
+            backend.run(`DELETE FROM ${backend.table("budgets")} WHERE "id" = ?`, [id]);
+          }
+        }
       }
       validateStaged(refs);
       return handle;
