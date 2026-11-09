@@ -350,5 +350,7 @@ export function useHomeBudgets(refreshKey = 0) {
   const { data, loading, error } = useHomeResource(url, refreshKey);
   const rows = Array.isArray(data?.budgets) ? data.budgets : null;
   const budgets = useMemo(() => pickTightestBudgets(rows ?? []), [rows]);
-  return { budgets, loading: Boolean(url) && loading, error: url ? error : null };
+  // A failed refresh keeps the last good rows on screen (the store keeps
+  // them); the error only hides the tile before any rows loaded.
+  return { budgets, loading: Boolean(url) && loading, error: url && !rows ? error : null };
 }

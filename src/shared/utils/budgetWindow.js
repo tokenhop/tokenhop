@@ -2,6 +2,8 @@
 // guard, the budget routes and the dashboard meters (YAN-1833). Pure, no
 // imports, so it is safe in client bundles.
 
+export const WINDOWS = ["day", "week", "month", "total"];
+
 /**
  * Start of the UTC calendar window containing `now`. Weeks start Monday 00:00
  * UTC. `total` starts at the epoch (never resets).

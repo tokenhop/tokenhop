@@ -4,12 +4,11 @@
 
 // UTC window math lives in a pure shared module so client bundles (Home and
 // Usage budget meters) use the same calendar without importing this file.
-import { windowEnd, windowStart } from "../../shared/utils/budgetWindow.js";
+import { WINDOWS, windowEnd, windowStart } from "../../shared/utils/budgetWindow.js";
 
-export { windowEnd, windowStart };
+export { WINDOWS, windowEnd, windowStart };
 
 export const SCOPE_TYPES = ["key", "user", "membership", "workspace", "grant"];
-export const WINDOWS = ["day", "week", "month", "total"];
 export const LIMIT_FIELDS = ["limitUsd", "limitTokens", "limitRequests"];
 
 /** membership scopeId: "<workspaceId>:<userId>". */

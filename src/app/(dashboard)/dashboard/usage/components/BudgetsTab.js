@@ -15,6 +15,7 @@ import {
 import { SCOPE_LABELS, WINDOW_LABELS } from "../lib/budgetLabels";
 import { budgetLimitRows, budgetResetAt, money, pctLeft, pctUsed } from "../lib/budgetMeter";
 import BudgetDialog from "./BudgetDialog";
+import BudgetMarker from "./BudgetMarker";
 
 // Budgets tab (YAN-376): read-only list over GET /api/workspaces/:id/budgets.
 // Rows carry spent{usd,tokens,requests,notionalUsd} for the current window.
@@ -57,7 +58,7 @@ LimitRow.propTypes = {
 };
 
 function BudgetRow({ budget, onEdit }) {
-  const { spent = {}, scopeType, scopeId, window: win, softLimitPct, notices } = budget;
+  const { spent = {}, scopeType, scopeId, window: win, softLimitPct } = budget;
   const resetAt = budgetResetAt(budget);
   const limits = budgetLimitRows(budget);
   return (
@@ -79,15 +80,7 @@ function BudgetRow({ budget, onEdit }) {
             Soft at {softLimitPct}%
           </StatusPill>
         )}
-        {notices?.hard ? (
-          <StatusPill variant="err" size="sm">
-            Limit hit
-          </StatusPill>
-        ) : notices?.soft ? (
-          <StatusPill variant="warn" size="sm">
-            Soft limit reached
-          </StatusPill>
-        ) : null}
+        <BudgetMarker budget={budget} limits={limits} />
         {onEdit && (
           <Button variant="ghost" size="sm" onClick={() => onEdit(budget)}>
             Edit

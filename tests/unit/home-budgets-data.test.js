@@ -1,6 +1,6 @@
 // YAN-1833: the Home budget tile reads the same GET as Usage > Budgets, only
 // when the viewer may read it, and orders budgets closest to their cap first.
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { homeBudgetsUrl } from "@/app/(dashboard)/dashboard/home/useHomeData.js";
 import {
   budgetResetAt,
@@ -93,5 +93,32 @@ describe("isOverCap / budgetResetAt", () => {
       "2026-12-01T00:00:00.000Z",
     );
     expect(budgetResetAt({ window: "total", resetAt: stale }, now)).toBeNull();
+  });
+});
+
+describe("useHomeBudgets", () => {
+  it("keeps the last good rows on a failed refresh; errors only before any rows", async () => {
+    vi.resetModules();
+    const resource = { value: { data: null, loading: false, error: null } };
+    vi.doMock("react", async (orig) => ({ ...(await orig()), useMemo: (fn) => fn() }));
+    vi.doMock("@/shared/hooks/useAuthStatus", () => ({
+      useAuthStatusState: () => ({ status: onStatus("owner"), loaded: true }),
+    }));
+    vi.doMock("@/shared/hooks/useShellStatus", () => ({ default: () => ({ multiUser: true }) }));
+    vi.doMock("@/app/(dashboard)/dashboard/home/useHomeResource", () => ({
+      useHomeResource: () => resource.value,
+    }));
+    const { useHomeBudgets } = await import("@/app/(dashboard)/dashboard/home/useHomeData.js");
+    // biome-ignore lint/correctness/useHookAtTopLevel: hook driven with mocked React.
+    const run = () => useHomeBudgets(0);
+
+    resource.value = { data: null, loading: false, error: "budgets 500" };
+    expect(run()).toMatchObject({ budgets: [], error: "budgets 500" });
+
+    const rows = [{ id: "b1", limitUsd: 10, spent: { usd: 1 } }];
+    resource.value = { data: { budgets: rows }, loading: false, error: "budgets 500" };
+    expect(run()).toMatchObject({ budgets: rows, error: null, loading: false });
+    vi.doUnmock("react");
+    vi.resetModules();
   });
 });

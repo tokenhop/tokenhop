@@ -65,9 +65,11 @@ describe("BudgetWatch", () => {
   });
 
   it("shows a derived reset for calendar windows and none for total", () => {
-    expect(render({ budgets: [budget({ resetAt: "2020-01-01T00:00:00.000Z" })] })).not.toContain(
-      "Reset pending",
-    );
+    for (const window of ["day", "week", "month"]) {
+      const html = render({ budgets: [budget({ window, resetAt: "2020-01-01T00:00:00.000Z" })] });
+      expect(html).not.toContain("Reset pending");
+      expect(html).toMatch(/Resets (in )?[0-9A-Z]/);
+    }
     expect(render({ budgets: [budget({ window: "total" })] })).toContain("Never resets");
   });
 
@@ -83,5 +85,35 @@ describe("BudgetWatch", () => {
       budgets: [budget({ limitUsd: 0, limitTokens: null, spent: { usd: 0.01 } })],
     });
     expect(zeroCap).toContain("Over");
+  });
+});
+
+describe("Usage > Budgets markers (shared BudgetMarker)", () => {
+  let ssr;
+  let BudgetMarker;
+  let helpers;
+  beforeAll(async () => {
+    ssr = await createSsr();
+    ({ default: BudgetMarker } = await ssr.load(
+      "/src/app/(dashboard)/dashboard/usage/components/BudgetMarker.js",
+    ));
+    helpers = await ssr.load("/src/app/(dashboard)/dashboard/usage/lib/budgetMeter.js");
+  });
+  afterAll(async () => {
+    await ssr.close();
+  });
+
+  const mark = (row) =>
+    renderToStaticMarkup(
+      createElement(BudgetMarker, { budget: row, limits: helpers.budgetLimitRows(row) }),
+    );
+
+  it("marks an exact overrun and a zero cap, and prefers the hard notice", () => {
+    expect(mark(budget({ spent: { usd: 50.01 } }))).toContain("Over");
+    expect(mark(budget({ spent: { usd: 50 }, limitTokens: null }))).toBe("");
+    expect(mark(budget({ limitUsd: 0, limitTokens: null, spent: { usd: 0.01 } }))).toContain(
+      "Over",
+    );
+    expect(mark(budget({ notices: { soft: true, hard: true } }))).toContain("Limit hit");
   });
 });
