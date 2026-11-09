@@ -162,6 +162,17 @@ describe("full session without instance.users.manage -> 403, repo untouched", ()
   });
 });
 
+describe("DELETE /api/users/[id] audit actor (YAN-1982)", () => {
+  it("passes the session admin and client IP as the budget-removal actor", async () => {
+    const res = await DELETE(delReq(), PARAMS);
+    expect(res.status).toBe(200);
+    expect(repo.deleteUserUnscoped).toHaveBeenCalledWith("user-1", {
+      actorUserId: "owner-1",
+      actor: { principal: { userId: "owner-1", via: "session" }, ip: expect.anything() },
+    });
+  });
+});
+
 describe("PATCH body allow-list", () => {
   it("unknown keys -> 400 invalid_request, repo untouched", async () => {
     for (const body of [

@@ -105,6 +105,52 @@ export function deleteKeyBudgetsUnscoped(db, keyId, { actor = null } = {}) {
   return rows.length;
 }
 
+const hasColumn = (db, table, column) =>
+  Boolean(db.get("SELECT 1 AS x FROM pragma_table_info(?) WHERE name = ?", [table, column]));
+
+/**
+ * YAN-1982: delete every budget whose target goes with a deleted user: their
+ * user budgets, their membership budgets, budgets on their API keys (hashed
+ * storage: apiKeys.userId cascades; legacy keys have no owner and stay), and
+ * budgets on grants made to them (connectionGrants.userId cascades), and
+ * every budget in their personal workspace (it cascades too). Audited
+ * with reason `user_deleted`. Call inside the user delete transaction, BEFORE
+ * the user and personal-workspace rows go (the key and grant targets are
+ * read through them); notices cascade.
+ * @returns {number} Rows removed.
+ */
+export function deleteUserBudgetsUnscoped(db, userId, { actor = null } = {}) {
+  if (!userId || !tableExists(db, "budgets")) return 0;
+  const where = [
+    "(scopeType = 'user' AND scopeId = ?)",
+    "(scopeType = 'membership' AND workspaceId IS NOT NULL AND scopeId = workspaceId || ':' || ?)",
+  ];
+  const params = [userId, userId];
+  if (tableExists(db, "workspaces")) {
+    // Their personal workspace's own budgets cascade with it.
+    where.push(
+      "workspaceId IN (SELECT id FROM workspaces WHERE createdBy = ? AND kind = 'personal')",
+    );
+    params.push(userId);
+  }
+  if (tableExists(db, "apiKeys") && hasColumn(db, "apiKeys", "userId")) {
+    where.push("(scopeType = 'key' AND scopeId IN (SELECT id FROM apiKeys WHERE userId = ?))");
+    params.push(userId);
+  }
+  if (tableExists(db, "connectionGrants")) {
+    where.push(
+      "(scopeType = 'grant' AND scopeId IN (SELECT id FROM connectionGrants WHERE userId = ?))",
+    );
+    params.push(userId);
+  }
+  const rows = db.all(
+    `SELECT ${COLS} FROM budgets WHERE ${where.join(" OR ")} ORDER BY createdAt, id`,
+    params,
+  );
+  deleteAuditedSync(db, rows, actor, "user_deleted");
+  return rows.length;
+}
+
 const OFF_KEY_COLS = ["workspaceId", "scopeType", "scopeId", "window"];
 const OFF_LIMIT_COLS = ["limitUsd", "limitTokens", "limitRequests", "softLimitPct"];
 const OFF_SCOPE_SQL = "scopeType IN ('workspace', 'key')";

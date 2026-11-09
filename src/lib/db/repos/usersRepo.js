@@ -19,6 +19,8 @@ import {
   USAGE_ADOPTED_AT,
 } from "./ownership.js";
 import { detachBudgetCarryUnscoped } from "./usageBudgetCarryRepo.js";
+import { deleteUserBudgetsUnscoped } from "./budgetOrphansRepo.js";
+import { bumpBudgetsGeneration } from "@/lib/users/budgets.js";
 import { clearCredentialCache } from "../helpers/credentialStorage.js";
 import { audit } from "@/lib/users/audit.js";
 
@@ -562,6 +564,7 @@ export async function revokeUserSessionsUnscoped(id, { actorUserId } = {}) {
 export async function deleteUserUnscoped(id, options = {}) {
   const db = await getAdapter();
   let deletedPersonal = [];
+  let budgetsDeleted = 0;
   const result = db.transaction(() => {
     const row = requireRow(db, id);
     if (options.actorUserId != null) assertActorAuthority(db, options.actorUserId, row);
@@ -580,6 +583,9 @@ export async function deleteUserUnscoped(id, options = {}) {
     // YAN-424: usageHistory FKs go SET NULL; the pruned-spend carry follows.
     for (const { id: wsId } of personal) detachBudgetCarryUnscoped(db, "workspaceId", wsId);
     detachBudgetCarryUnscoped(db, "userId", id);
+    // YAN-1982: budgets on what cascades with the user (keys, memberships,
+    // grants, the user itself) go too, audited; read before the cascade.
+    budgetsDeleted = deleteUserBudgetsUnscoped(db, id, { actor: options.actor ?? null });
     db.run(`DELETE FROM workspaces WHERE createdBy = ? AND kind = 'personal'`, [id]);
     // identities and memberships cascade.
     dropSession(id);
@@ -587,7 +593,9 @@ export async function deleteUserUnscoped(id, options = {}) {
     deletedPersonal = personal.map((p) => p.id);
     return removed;
   });
-  // Post-commit: purge each deleted personal workspace's DEK from the cache.
+  // Post-commit: drop the gateway's budget cache, then purge each deleted
+  // personal workspace's DEK from the cache.
+  if (budgetsDeleted > 0) bumpBudgetsGeneration();
   for (const wsId of deletedPersonal) clearCredentialCache(db, wsId);
   return result;
 }

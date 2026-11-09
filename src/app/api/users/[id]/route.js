@@ -6,6 +6,7 @@ import { requireMultiUser } from "@/lib/users/featureSwitch";
 import { authorize, getPrincipal } from "@/lib/users/session";
 import { isCrossSite, isJson } from "@/lib/auth/sameOrigin.js";
 import { audit } from "@/lib/users/audit.js";
+import { getClientIp } from "@/lib/auth/loginLimiter";
 import { json, PayloadTooLarge, readJsonBody } from "@/lib/users/userManagement.js";
 import {
   deleteUserUnscoped,
@@ -113,7 +114,11 @@ export async function DELETE(request, { params }) {
     const { res, principal } = await guard(request);
     if (res) return res;
     const { id } = await params;
-    if (!(await deleteUserUnscoped(id, { actorUserId: principal.userId }))) {
+    const actor = {
+      principal: { userId: principal.userId, via: principal.via },
+      ip: getClientIp(request),
+    };
+    if (!(await deleteUserUnscoped(id, { actorUserId: principal.userId, actor }))) {
       return json({ error: "Not found", code: "not_found" }, 404);
     }
     audit({ principal, request }, "instance.users.delete", { type: "user", id });
