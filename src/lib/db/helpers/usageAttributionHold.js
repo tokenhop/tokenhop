@@ -24,7 +24,10 @@ const idsOf = (rows) =>
  * @param {{ workspaces?: object[], users?: object[] }} payload snapshot rows
  */
 export function holdUsageAttribution(db, payload) {
-  const params = [idsOf(payload.workspaces), idsOf(payload.users)];
+  const ws = idsOf(payload.workspaces);
+  const users = idsOf(payload.users);
+  // Positional `?` only: better-sqlite3 rejects numbered `?N` with array binds.
+  const params = [ws, users, ws, users];
   for (const { table, hold, idType } of TABLES) {
     db.exec(`DROP TABLE IF EXISTS temp.${hold}`);
     db.exec(
@@ -33,11 +36,11 @@ export function holdUsageAttribution(db, payload) {
     db.run(
       `INSERT INTO temp.${hold}(id, workspaceId, userId)
        SELECT id,
-         CASE WHEN workspaceId IN (SELECT value FROM json_each(?1)) THEN workspaceId END,
-         CASE WHEN userId IN (SELECT value FROM json_each(?2)) THEN userId END
+         CASE WHEN workspaceId IN (SELECT value FROM json_each(?)) THEN workspaceId END,
+         CASE WHEN userId IN (SELECT value FROM json_each(?)) THEN userId END
        FROM main.${table}
-       WHERE workspaceId IN (SELECT value FROM json_each(?1))
-          OR userId IN (SELECT value FROM json_each(?2))`,
+       WHERE workspaceId IN (SELECT value FROM json_each(?))
+          OR userId IN (SELECT value FROM json_each(?))`,
       params,
     );
   }
