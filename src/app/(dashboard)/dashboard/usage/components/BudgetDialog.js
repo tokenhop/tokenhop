@@ -11,8 +11,9 @@ import { WINDOW_LABELS } from "../lib/budgetLabels";
 // so those fields render disabled. Validation mirrors budgetsRepo: at least
 // one limit, nonnegative numbers, tokens/requests/soft% integers (soft 1–100).
 // Server errors render inline; the dialog never closes optimistically.
-// Switch off (YAN-1829): `scopeTypes` narrows to [workspace, key] and
-// `keysWorkspaceId` null lists keys from the legacy GET /api/keys.
+// Switch off (YAN-1829): `scopeTypes` narrows to [workspace, key]. `offKeys`
+// lists keys from GET /api/workspaces/:id/budget-keys (YAN-1912), which also
+// serves login-off local access; GET /api/keys does not.
 
 const SCOPE_TYPES = ["workspace", "key", "membership", "grant"];
 const WINDOWS = ["day", "week", "month", "total"];
@@ -65,7 +66,7 @@ export default function BudgetDialog({
   isOpen,
   onClose,
   workspaceId,
-  keysWorkspaceId,
+  offKeys = false,
   scopeTypes = SCOPE_TYPES,
   userId = null,
   budget,
@@ -118,11 +119,10 @@ export default function BudgetDialog({
       return res.json();
     };
     const ws = encodeURIComponent(workspaceId);
-    const keysWs = keysWorkspaceId === undefined ? workspaceId : keysWorkspaceId;
     const load = async () => {
       if (form.scopeType === "key") {
         const data = await get(
-          keysWs ? `/api/keys?workspaceId=${encodeURIComponent(keysWs)}` : "/api/keys",
+          offKeys ? `/api/workspaces/${ws}/budget-keys` : `/api/keys?workspaceId=${ws}`,
         );
         return (data.keys ?? []).map((k) => ({ value: k.id, label: k.name || k.prefix || k.id }));
       }
@@ -160,7 +160,7 @@ export default function BudgetDialog({
         if (!controller.signal.aborted) setLoadingOptions(false);
       });
     return () => controller.abort();
-  }, [isOpen, editing, form?.scopeType, workspaceId, keysWorkspaceId]);
+  }, [isOpen, editing, form?.scopeType, workspaceId, offKeys]);
 
   const canSubmit = useMemo(() => form && validate(form, editing).payload, [form, editing]);
 
@@ -335,7 +335,7 @@ BudgetDialog.propTypes = {
   onClose: PropTypes.func,
   workspaceId: PropTypes.string.isRequired,
   /** Workspace for the key picker; null = legacy list. Defaults to workspaceId. */
-  keysWorkspaceId: PropTypes.string,
+  offKeys: PropTypes.bool,
   scopeTypes: PropTypes.arrayOf(PropTypes.string),
   userId: PropTypes.string,
   budget: PropTypes.object,

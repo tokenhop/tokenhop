@@ -204,6 +204,12 @@ export const ROUTE_POLICY = {
     cap: { PATCH: "workspace.budgets.lower", DELETE: "workspace.budgets.lower" },
     cliAllowed: false,
   }),
+  // YAN-1912: switch-off key picker for key budgets (404 with the switch on;
+  // the handler gate picks the off-mode actor, like budgets).
+  "/api/workspaces/[id]/budget-keys": scoped({
+    cap: { GET: "workspace.budgets.lower" },
+    cliAllowed: false,
+  }),
   // YAN-1831: one optional budget webhook per workspace, managed like budgets
   // (switch-off actor chosen by the handler gate).
   "/api/workspaces/[id]/budget-webhook": scoped({
