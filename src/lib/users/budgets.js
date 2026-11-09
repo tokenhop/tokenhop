@@ -2,8 +2,13 @@
 // (YAN-372, ADR-0007). Pure: UTC calendar windows, raise/lower diff, the
 // membership scope id, and a change counter the gateway cache keys on.
 
+// UTC window math lives in a pure shared module so client bundles (Home and
+// Usage budget meters) use the same calendar without importing this file.
+import { WINDOWS, windowEnd, windowStart } from "../../shared/utils/budgetWindow.js";
+
+export { WINDOWS, windowEnd, windowStart };
+
 export const SCOPE_TYPES = ["key", "user", "membership", "workspace", "grant"];
-export const WINDOWS = ["day", "week", "month", "total"];
 export const LIMIT_FIELDS = ["limitUsd", "limitTokens", "limitRequests"];
 
 /** membership scopeId: "<workspaceId>:<userId>". */
@@ -49,37 +54,6 @@ export function budgetDefinitionError(entry) {
   if (entry.scopeType === "workspace" ? scopeId !== null : typeof scopeId !== "string" || !scopeId)
     return "Invalid budget scopeId";
   return budgetLimitsError(entry);
-}
-
-/**
- * Start of the UTC calendar window containing `now`. Weeks start Monday 00:00
- * UTC. `total` starts at the epoch (never resets).
- * @param {"day"|"week"|"month"|"total"} window
- * @param {number} [now] epoch ms
- * @returns {number} epoch ms
- */
-export function windowStart(window, now = Date.now()) {
-  const d = new Date(now);
-  const y = d.getUTCFullYear();
-  const m = d.getUTCMonth();
-  const day = d.getUTCDate();
-  if (window === "day") return Date.UTC(y, m, day);
-  if (window === "week") return Date.UTC(y, m, day - ((d.getUTCDay() + 6) % 7));
-  if (window === "month") return Date.UTC(y, m, 1);
-  if (window === "total") return 0;
-  throw new Error(`unknown budget window ${window}`);
-}
-
-/** Next UTC boundary after `now`, or null for `total`. @returns {number|null} */
-export function windowEnd(window, now = Date.now()) {
-  const s = new Date(windowStart(window, now));
-  const y = s.getUTCFullYear();
-  const m = s.getUTCMonth();
-  const day = s.getUTCDate();
-  if (window === "day") return Date.UTC(y, m, day + 1);
-  if (window === "week") return Date.UTC(y, m, day + 7);
-  if (window === "month") return Date.UTC(y, m + 1, 1);
-  return null;
 }
 
 /** ISO string of the next reset (budgets.resetAt), null for `total`. */

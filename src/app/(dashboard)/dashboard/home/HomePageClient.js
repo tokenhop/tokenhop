@@ -16,7 +16,9 @@ import { QuotaWatchCard } from "./QuotaWatch";
 import { CombosTopCard, comboUsageFromByEndpoint } from "./CombosTop";
 import { ProviderHealthCard } from "./ProviderHealth";
 import { onHomeFocus } from "./homeResourceStore";
+import { BudgetWatchCard, hasBudgetsToShow } from "./BudgetWatch";
 import {
+  useHomeBudgets,
   useHomeChart,
   useHomeCombos,
   useHomeKeys,
@@ -65,6 +67,8 @@ export default function HomePageClient() {
   const providers = useHomeProviders(refreshKey);
   const combos = useHomeCombos(refreshKey);
   const quota = useHomeQuota(refreshKey);
+  const budgets = useHomeBudgets(refreshKey);
+  const showBudgets = hasBudgetsToShow(budgets);
   const liveRoutes = useLiveRoutes(refreshKey);
   const recent = useHomeRecentDetails(refreshKey);
   // Idle edges for quiet providers come from mergeRoutes (no traffic in the
@@ -168,7 +172,12 @@ export default function HomePageClient() {
         />
       </div>
 
-      <div className="grid min-w-0 grid-cols-1 items-start gap-5 md:grid-cols-2 xl:grid-cols-3">
+      {/* Four cards when budgets show: stay 2x2 on wide screens (no orphan). */}
+      <div
+        className={`grid min-w-0 grid-cols-1 items-start gap-5 md:grid-cols-2 ${
+          showBudgets ? "" : "xl:grid-cols-3"
+        }`}
+      >
         <QuotaWatchCard
           accounts={quota.accounts}
           loading={quota.loading}
@@ -184,6 +193,11 @@ export default function HomePageClient() {
           loading={combos.loading || usage.loading || summary.loading}
           error={combos.error || usage.error || summary.error}
           onRetry={bump}
+        />
+        <BudgetWatchCard
+          budgets={budgets.budgets}
+          loading={budgets.loading}
+          error={budgets.error}
         />
         <ProviderHealthCard
           connections={providers.connections}

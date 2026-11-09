@@ -1,8 +1,11 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useSettingsScope } from "@/shared/hooks/useSettingsScope";
 import { useAuthStatusState } from "@/shared/hooks/useAuthStatus";
+import useShellStatus from "@/shared/hooks/useShellStatus";
+import { accountView } from "@/shared/utils/account";
+import { pickTightestBudgets } from "../usage/lib/budgetMeter";
 import { STALE_MS, FOCUS_THROTTLE_MS } from "./homeResourceStore";
 import {
   keyIdentity,
@@ -303,4 +306,51 @@ export function useHomeRecentDetails(refreshKey = 0) {
   );
   const details = Array.isArray(data?.details) ? data.details : null;
   return { details, loading, error };
+}
+
+/**
+ * Budgets URL the viewer may read, mirroring Usage > Budgets (YAN-1833).
+ * Switch on: the active workspace's list, only with `workspace.budgets.read`.
+ * Switch off (YAN-1829): the Default workspace's list, for the dashboard
+ * admin only (single-user/login-off installs, or an owner/admin session).
+ * Null while the switch or auth state is unknown (a failed status read is
+ * `{}`), or the viewer can't read.
+ * @param {object} status `/api/auth/status` payload
+ * @param {boolean|null} multiUser the Users & teams switch
+ * @returns {string|null}
+ */
+export function homeBudgetsUrl(status, multiUser) {
+  if (multiUser === null || multiUser === undefined) return null;
+  if (typeof status?.requireLogin !== "boolean") return null;
+  const view = accountView(status);
+  if (multiUser === false) {
+    const role = status?.principal?.role;
+    return !view.active || role === "owner" || role === "admin"
+      ? "/api/workspaces/default/budgets"
+      : null;
+  }
+  const workspaceId = view.active ? (view.activeWorkspace?.id ?? null) : null;
+  if (!workspaceId || !view.can("workspace.budgets.read", workspaceId)) return null;
+  return `/api/workspaces/${encodeURIComponent(workspaceId)}/budgets`;
+}
+
+/**
+ * Up to 3 budgets closest to their cap, from the same GET as the Usage >
+ * Budgets meters (spent is computed server-side; no history read here).
+ * `budgets` stays empty while hidden, loading, or on a failed read, so the
+ * tile renders only when there is something to show. No polling: it refreshes
+ * with Home's refreshKey and the shared stale-on-focus rule.
+ * @param {number} [refreshKey] bump to re-read
+ * @returns {{ budgets: Array<object>, loading: boolean, error: string|null }}
+ */
+export function useHomeBudgets(refreshKey = 0) {
+  const { status, loaded } = useAuthStatusState();
+  const { multiUser } = useShellStatus();
+  const url = loaded ? homeBudgetsUrl(status, multiUser) : null;
+  const { data, loading, error } = useHomeResource(url, refreshKey);
+  const rows = Array.isArray(data?.budgets) ? data.budgets : null;
+  const budgets = useMemo(() => pickTightestBudgets(rows ?? []), [rows]);
+  // A failed refresh keeps the last good rows on screen (the store keeps
+  // them); the error only hides the tile before any rows loaded.
+  return { budgets, loading: Boolean(url) && loading, error: url && !rows ? error : null };
 }

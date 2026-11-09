@@ -13,7 +13,9 @@ import {
   StatusPill,
 } from "@/shared/components";
 import { SCOPE_LABELS, WINDOW_LABELS } from "../lib/budgetLabels";
+import { budgetLimitRows, budgetResetAt, money, pctLeft, pctUsed } from "../lib/budgetMeter";
 import BudgetDialog from "./BudgetDialog";
+import BudgetMarker from "./BudgetMarker";
 
 // Budgets tab (YAN-376): read-only list over GET /api/workspaces/:id/budgets.
 // Rows carry spent{usd,tokens,requests,notionalUsd} for the current window.
@@ -27,16 +29,9 @@ import BudgetDialog from "./BudgetDialog";
 // `scopeTypes` is [workspace, key]; the GET's resolved `workspaceId` (null
 // until the first budget creates the Default row) scopes the key picker.
 
-const money = (n) =>
-  n == null ? "—" : `$${Number(n).toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
-const count = (n) =>
-  n == null ? "—" : Number(n).toLocaleString(undefined, { notation: "compact" });
-const pctLeft = (spent, limit) =>
-  limit > 0 ? Math.max(0, 100 - ((spent ?? 0) / limit) * 100) : null;
-
 function LimitRow({ label, spent, limit, format }) {
   const left = pctLeft(spent, limit);
-  const used = limit > 0 ? Math.round(((spent ?? 0) / limit) * 100) : 0;
+  const used = pctUsed(spent, limit);
   return (
     <div className="flex min-w-0 flex-col gap-1.5">
       <div className="flex items-baseline justify-between gap-2 text-sm">
@@ -63,12 +58,9 @@ LimitRow.propTypes = {
 };
 
 function BudgetRow({ budget, onEdit }) {
-  const { spent = {}, scopeType, scopeId, window: win, softLimitPct, resetAt, notices } = budget;
-  const limits = [
-    { label: "Cost", spent: spent.usd, limit: budget.limitUsd, format: money },
-    { label: "Tokens", spent: spent.tokens, limit: budget.limitTokens, format: count },
-    { label: "Requests", spent: spent.requests, limit: budget.limitRequests, format: count },
-  ].filter((row) => row.limit != null);
+  const { spent = {}, scopeType, scopeId, window: win, softLimitPct } = budget;
+  const resetAt = budgetResetAt(budget);
+  const limits = budgetLimitRows(budget);
   return (
     <li className="flex min-w-0 flex-col gap-4 rounded-xl bg-raised p-4">
       <div className="flex min-w-0 flex-wrap items-center gap-2">
@@ -88,15 +80,7 @@ function BudgetRow({ budget, onEdit }) {
             Soft at {softLimitPct}%
           </StatusPill>
         )}
-        {notices?.hard ? (
-          <StatusPill variant="err" size="sm">
-            Limit hit
-          </StatusPill>
-        ) : notices?.soft ? (
-          <StatusPill variant="warn" size="sm">
-            Soft limit reached
-          </StatusPill>
-        ) : null}
+        <BudgetMarker budget={budget} limits={limits} />
         {onEdit && (
           <Button variant="ghost" size="sm" onClick={() => onEdit(budget)}>
             Edit
