@@ -2,6 +2,7 @@ import { getAdapter, getAdapterSync } from "../driver.js";
 import { parseJson, stringifyJson } from "../helpers/jsonCol.js";
 import { registerShutdownFlusher } from "../shutdownFlushers.js";
 import { scopeSql, whereAll } from "./usageRollupRepo.js";
+import { resolveAbsorbedConnectionId } from "../helpers/absorbedConnections.js";
 
 const DEFAULT_MAX_RECORDS = 200;
 const DEFAULT_BATCH_SIZE = 20;
@@ -178,7 +179,8 @@ function writeBatch(db, items, config) {
         id: item.id,
         provider: item.provider || null,
         model: item.model || null,
-        connectionId: item.connectionId || null,
+        // YAN-1941: buffered on an absorbed codex duplicate → the kept row.
+        connectionId: resolveAbsorbedConnectionId(item.connectionId) || null,
         // Trusted ID-only attribution (keyContext spread): validated
         // string-or-null, never raw credentials or arbitrary objects.
         apiKeyId: typeof item.apiKeyId === "string" ? item.apiKeyId : null,
