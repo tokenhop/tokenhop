@@ -3,7 +3,9 @@
 // it reads only the GET /api/workspaces/:id/budgets row shape
 // ({ limitUsd, limitTokens, limitRequests, spent: { usd, tokens, requests } }).
 
-import { WINDOWS, windowEnd } from "@/lib/users/budgets.js";
+import { windowEnd } from "@/shared/utils/budgetWindow.js";
+
+const WINDOWS = ["day", "week", "month", "total"];
 
 /** Dollar amount, "—" when unknown. */
 export const money = (n) =>
