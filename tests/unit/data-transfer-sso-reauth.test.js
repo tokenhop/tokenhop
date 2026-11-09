@@ -153,8 +153,7 @@ beforeEach(async () => {
   transfer = await import("@/lib/users/databaseTransfer.js");
   slots.resetProofSlots();
   const limiter = await import("@/lib/auth/loginLimiter.js");
-  limiter.clearAccount(limiter.accountKey({ userId: t.a.user.id }));
-  limiter.recordSuccess("unknown");
+  limiter.resetLoginLimiter();
   cookieStore = await (await import("next/headers")).cookies();
   m.verify.mockResolvedValue({
     iss: "https://idp.test",
@@ -476,6 +475,24 @@ describe("export/import with an SSO proof", () => {
     expect(res.status).toBe(401);
     expect(m.exportDb).not.toHaveBeenCalled();
     expect(slots.peekProofSlot(p)).not.toBeNull(); // never consumed
+  });
+});
+
+describe("YAN-1076 proof limiter isolation", () => {
+  it("rejected data-transfer proofs lock the proof flow, not password login", async () => {
+    const limiter = await import("@/lib/auth/loginLimiter.js");
+    const bucket = { ip: "unknown", account: { userId: t.a.user.id } };
+    for (let i = 0; i < 5; i++) expect((await instExport(`bogus-${i}`)).status).toBe(401);
+    expect(limiter.checkLoginLocks(bucket).locked).toBe(false);
+    expect(limiter.checkProofLocks(bucket).locked).toBe(true);
+    expect((await instExport("another")).status).toBe(429);
+    // The callback refuses too while proof-locked: no result to consume.
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    await proof.beginSsoProof(req("/x", {}), t.a.ctx, {
+      provider: "oidc",
+      purpose: purposeOf("instance.export"),
+    });
+    expect((await complete()).headers.get("location")).toContain("ssoReauth=failed");
   });
 });
 
