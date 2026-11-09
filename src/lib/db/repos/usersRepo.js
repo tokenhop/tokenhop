@@ -593,7 +593,8 @@ export async function deleteUserUnscoped(id, options = {}) {
     deletedPersonal = personal.map((p) => p.id);
     return removed;
   });
-  // Post-commit: purge each deleted personal workspace's DEK from the cache.
+  // Post-commit: drop the gateway's budget cache, then purge each deleted
+  // personal workspace's DEK from the cache.
   if (budgetsDeleted > 0) bumpBudgetsGeneration();
   for (const wsId of deletedPersonal) clearCredentialCache(db, wsId);
   return result;
