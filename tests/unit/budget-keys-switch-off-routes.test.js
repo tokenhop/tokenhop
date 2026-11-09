@@ -138,6 +138,59 @@ describe("budget key picker, switch off, established install", () => {
     });
   });
 
+  // YAN-1992: a revoked key gets no new budget (404 like an unknown key), but
+  // a budget made while it was live stays editable and deletable.
+  it("refuses a new budget for a revoked key; existing ones stay manageable", async () => {
+    await load();
+    singleUser();
+    const post = (scopeId) =>
+      call(routes.budgets.POST, "/api/workspaces/default/budgets", {
+        method: "POST",
+        body: { scopeType: "key", scopeId, window: "day", limitRequests: 3 },
+      });
+    const refused = await post("k-revoked");
+    expect(refused.status).toBe(404);
+    expect((await post("k-unknown")).status).toBe(404);
+    expect(adapter.get(`SELECT COUNT(*) AS n FROM budgets WHERE scopeType = 'key'`)).toEqual({
+      n: 0,
+    });
+
+    const created = await post("k-default");
+    expect(created.status).toBe(201);
+    const { id: budgetId } = (await created.json()).budget;
+    adapter.run(`UPDATE apiKeys SET revokedAt = ? WHERE id = 'k-default'`, [NOW]);
+    const budgetRoute = await import("@/app/api/workspaces/[id]/budgets/[budgetId]/route.js");
+    const at = (method, body) =>
+      budgetRoute[method](
+        new NextRequest(
+          new URL(`/api/workspaces/default/budgets/${budgetId}`, "http://localhost"),
+          {
+            method,
+            headers: body ? { "content-type": "application/json" } : {},
+            body: body ? JSON.stringify(body) : undefined,
+          },
+        ),
+        { params: Promise.resolve({ id: "default", budgetId }) },
+      );
+    const patched = await at("PATCH", { limitRequests: 2 });
+    expect(patched.status).toBe(200);
+    expect(adapter.get(`SELECT limitRequests FROM budgets WHERE id = ?`, [budgetId])).toEqual({
+      limitRequests: 2,
+    });
+    expect((await at("DELETE")).status).toBe(200);
+    expect(adapter.get(`SELECT id FROM budgets WHERE id = ?`, [budgetId])).toBeUndefined();
+  });
+
+  it("config import still maps a revoked key's budget (unchanged by YAN-1992)", async () => {
+    await load();
+    singleUser();
+    const repo = await import("@/lib/db/repos/budgetsRepo.js");
+    const entry = { scopeType: "key", scopeId: "k-revoked", window: "day", limitRequests: 3 };
+    const planned = repo.planPortableBudgetsUnscoped(adapter, [entry]);
+    expect(planned.skipped).toEqual([]);
+    expect(planned.plan.map((p) => [p.row.scopeId, p.status])).toEqual([["k-revoked", "added"]]);
+  });
+
   it("GET /api/keys still refuses the local principal (authority not widened)", async () => {
     await load();
     singleUser();

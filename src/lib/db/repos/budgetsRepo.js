@@ -138,13 +138,14 @@ export function budgetWorkspaceAccess(
 /**
  * Resolve a budget's target the way the API does: the scope must exist in
  * `workspaceId` (key: in that workspace on hashed storage, by id on legacy
- * storage and only while off). Throws NOT_FOUND / INVALID TenancyErrors.
+ * storage and only while off; `liveKey` also refuses a revoked hashed key).
+ * Throws NOT_FOUND / INVALID TenancyErrors.
  * Returns the key or grant row (owner fields), else null.
  */
 export function resolveBudgetScopeUnscoped(
   db,
   row,
-  { workspaceId = null, userId = null, off = false } = {},
+  { workspaceId = null, userId = null, off = false, liveKey = false } = {},
 ) {
   const { scopeType, scopeId } = row;
   if (typeof scopeId !== "string" || !scopeId) throw invalid("scopeId required");
@@ -169,9 +170,12 @@ export function resolveBudgetScopeUnscoped(
     if (legacy && !off) throw invalid("Key budgets require hashed API keys");
     // Switch-off legacy storage: global keys, budgeted on apiKeys.id (the
     // usage writer's legacyKeyId); hashing keeps the id (YAN-1829).
+    // A new budget needs a live key (YAN-1992); existing budgets of a revoked
+    // key stay editable, and imports keep their rows (`liveKey` off).
+    const live = liveKey ? " AND revokedAt IS NULL" : "";
     const key = legacy
       ? db.get("SELECT id, NULL AS userId FROM apiKeys WHERE id = ?", [scopeId])
-      : db.get("SELECT id, userId FROM apiKeys WHERE id = ? AND workspaceId = ?", [
+      : db.get(`SELECT id, userId FROM apiKeys WHERE id = ? AND workspaceId = ?${live}`, [
           scopeId,
           workspaceId,
         ]);
@@ -330,7 +334,7 @@ export async function createBudget(ctx, options = {}) {
           row.scopeId = target.workspaceId;
         row.workspaceId = target.workspaceId;
       }
-      const scope = resolveBudgetScopeUnscoped(db, row, { ...target, off });
+      const scope = resolveBudgetScopeUnscoped(db, row, { ...target, off, liveKey: true });
       requireWrite(db, ctx, access, null, row, scope, target);
       db.run(
         `INSERT INTO budgets(${COLS}) VALUES(${Array(12).fill("?").join(", ")})`,
