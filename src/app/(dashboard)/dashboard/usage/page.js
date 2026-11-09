@@ -44,9 +44,6 @@ const UsageTokensChart = dynamic(() => import("./components/UsageTokensChart"), 
 
 /** Budget scopes that work with the Users & teams switch off (YAN-1829). */
 const OFF_SCOPE_TYPES = ["workspace", "key"];
-// Login-off local access on an established install: key management (the key
-// picker's GET /api/keys) takes a session or the CLI, never `local`.
-const LOCAL_SCOPE_TYPES = ["workspace"];
 // The "Request log" tab is now RequestLog. Sorting is local state inside
 // UsageBreakdown (old ?sortBy= URL sync removed — it fought the tab router).
 
@@ -318,7 +315,8 @@ function UsageContent() {
             <BudgetsTab
               workspaceId="default"
               canManage
-              scopeTypes={status?.principal?.via === "local" ? LOCAL_SCOPE_TYPES : OFF_SCOPE_TYPES}
+              scopeTypes={OFF_SCOPE_TYPES}
+              offKeys
               refreshKey={notices.noticeKey}
             />
             <BudgetWebhookCard workspaceId="default" canManage />

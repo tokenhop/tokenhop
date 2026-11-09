@@ -129,7 +129,8 @@ const GROUPS = {
   preferencesReadWrite: `workspaces/[id]/settings`,
   preferences: `workspaces/[id]/export workspaces/[id]/import`,
   budgetsReadWrite: `workspaces/[id]/budgets`,
-  budgetLower: `workspaces/[id]/budgets/[budgetId] workspaces/[id]/budget-webhook`,
+  budgetLower: `workspaces/[id]/budgets/[budgetId] workspaces/[id]/budget-webhook
+    workspaces/[id]/budget-keys`,
   invite: `invitations/accept`,
 };
 const classes = new Map();
@@ -169,7 +170,7 @@ const NO_CLI = set(`auth/oidc/test auth/saml/test auth/change-password users/own
   users/[id]/logout-all workspaces/[id] workspaces/[id]/reauth auth/sso/preview
   workspaces/[id]/invitations workspaces/[id]/invitations/[inviteId] providers/[id]/grants
   providers/[id]/grants/[grantId] grants workspaces/[id]/budgets workspaces/[id]/budgets/[budgetId]
-  workspaces/[id]/budget-webhook
+  workspaces/[id]/budget-webhook workspaces/[id]/budget-keys
   workspaces/[id]/move users/[id]/budgets users/[id]/budgets/[budgetId] me/workspace
   me/identities me/identities/[id] me/sessions me/sessions/[id] me/reauth workspaces/[id]/export
   workspaces/[id]/import`);

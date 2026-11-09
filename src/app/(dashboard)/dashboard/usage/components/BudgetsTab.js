@@ -26,8 +26,8 @@ import BudgetMarker from "./BudgetMarker";
 // current window — shown as pills, so they survive reloads without the stream.
 // `refreshKey` (bumped by the page when a live notice arrives) refetches them.
 // Switch off (YAN-1829): `workspaceId` is the "default" alias and
-// `scopeTypes` is [workspace, key]; the GET's resolved `workspaceId` (null
-// until the first budget creates the Default row) scopes the key picker.
+// `scopeTypes` is [workspace, key]; the key picker reads the off-mode
+// budget-keys route (YAN-1912) when the page passes `offKeys`.
 
 function LimitRow({ label, spent, limit, format }) {
   const left = pctLeft(spent, limit);
@@ -115,10 +115,10 @@ export default function BudgetsTab({
   canManage = false,
   canManageUsers = false,
   scopeTypes,
+  offKeys = false,
   refreshKey = 0,
 }) {
   const [state, setState] = useState({ budgets: null, error: null, loading: true });
-  const [resolvedWorkspaceId, setResolvedWorkspaceId] = useState(null);
   const workspaceOnly = Array.isArray(scopeTypes) && !scopeTypes.includes("membership");
   const [reload, setReload] = useState(0);
   const retry = useCallback(() => setReload((value) => value + 1), []);
@@ -176,7 +176,6 @@ export default function BudgetsTab({
       .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`budgets ${r.status}`))))
       .then((data) => {
         if (controller.signal.aborted) return;
-        setResolvedWorkspaceId(typeof data.workspaceId === "string" ? data.workspaceId : null);
         setState({
           budgets: Array.isArray(data.budgets) ? data.budgets : [],
           error: null,
@@ -284,7 +283,7 @@ export default function BudgetsTab({
           isOpen
           onClose={() => setDialog(null)}
           workspaceId={workspaceId}
-          keysWorkspaceId={workspaceOnly ? resolvedWorkspaceId : workspaceId}
+          offKeys={offKeys}
           scopeTypes={scopeTypes}
           userId={userTarget ? userId : undefined}
           budget={dialog.budget}
@@ -300,6 +299,7 @@ BudgetsTab.propTypes = {
   canManage: PropTypes.bool,
   canManageUsers: PropTypes.bool,
   /** Scope types the create dialog offers; defaults to the dialog's full list. */
+  offKeys: PropTypes.bool,
   scopeTypes: PropTypes.arrayOf(PropTypes.string),
   /** Bumped when a live budget notice arrives; refetches in the background. */
   refreshKey: PropTypes.number,
