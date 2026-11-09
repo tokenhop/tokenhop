@@ -189,6 +189,12 @@ describe("budget key picker, switch off, established install", () => {
     const planned = repo.planPortableBudgetsUnscoped(adapter, [entry]);
     expect(planned.skipped).toEqual([]);
     expect(planned.plan.map((p) => [p.row.scopeId, p.status])).toEqual([["k-revoked", "added"]]);
+    expect(adapter.transaction(() => repo.writePortableBudgetsUnscoped(adapter, planned))).toBe(1);
+    expect(
+      adapter.get(`SELECT limitRequests FROM budgets WHERE scopeType = 'key' AND scopeId = ?`, [
+        "k-revoked",
+      ]),
+    ).toEqual({ limitRequests: 3 });
   });
 
   it("GET /api/keys still refuses the local principal (authority not widened)", async () => {
@@ -263,6 +269,20 @@ describe("budget key picker, switch on", () => {
     await load({ env: "on", requireLogin: true });
     expect((await listKeys()).status).toBe(404);
     expect((await listKeys({ cookie: await cookieFor(t.a) })).status).toBe(404);
+  });
+
+  it("an owner session gets 404 creating a budget for a revoked key (YAN-1992)", async () => {
+    await load({ env: "on", requireLogin: true });
+    const cookie = await cookieFor(t.a);
+    const post = (scopeId) =>
+      call(routes.budgets.POST, `/api/workspaces/${t.shared.id}/budgets`, {
+        method: "POST",
+        id: t.shared.id,
+        cookie,
+        body: { scopeType: "key", scopeId, window: "day", limitRequests: 3 },
+      });
+    expect((await post("k-revoked")).status).toBe(404);
+    expect((await post("k-default")).status).toBe(201);
   });
 });
 
