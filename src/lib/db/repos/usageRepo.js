@@ -12,6 +12,7 @@ import { pushToRing, scheduleStatsEvent } from "./usageLiveFeed.js";
 import { emitUsageCommitted } from "../../usage/usageCommitted.js";
 import { apiKeyNames } from "./usageStatsRepo.js";
 import { PENDING_DEFAULT_WORKSPACE } from "./ownership.js";
+import { resolveAbsorbedConnectionId } from "../helpers/absorbedConnections.js";
 import {
   NO_KEY,
   legacyKeyId,
@@ -154,6 +155,8 @@ export async function saveRequestUsageUnscoped(entry) {
     const db = await getAdapter();
 
     if (!entry.timestamp) entry.timestamp = new Date().toISOString();
+    // YAN-1941: a request in flight on an absorbed codex duplicate lands on the kept row.
+    if (entry.connectionId) entry.connectionId = resolveAbsorbedConnectionId(entry.connectionId);
     entry.cost =
       typeof entry.cost === "number" && Number.isFinite(entry.cost) && entry.cost >= 0
         ? entry.cost
@@ -206,6 +209,9 @@ export async function saveRequestUsageUnscoped(entry) {
     const savingsDelta = savingsDeltas(metaObj);
     const savedTokens = savingsDelta.savingsSavedEst;
 
+    // YAN-1941: again with no await before the INSERT; an absorb can commit
+    // during the awaits above.
+    if (entry.connectionId) entry.connectionId = resolveAbsorbedConnectionId(entry.connectionId);
     // History insert, rollup upsert and lifetime counters in ONE transaction.
     let stored = null;
     db.transaction(() => {

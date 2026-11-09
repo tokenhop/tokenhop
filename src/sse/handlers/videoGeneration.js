@@ -14,6 +14,7 @@ import {
 import { saveRequestUsageUnscoped } from "@/lib/usageDb.js";
 import { getGatewayConnections } from "@/lib/auth/gatewayResources.js";
 import { getAdapter } from "@/lib/db/driver.js";
+import { resolveAbsorbedConnectionId } from "@/lib/db/helpers/absorbedConnections.js";
 import { readApiKeyStorageState } from "@/lib/db/apiKeyState.js";
 import {
   getGatewayVideoJobsSync,
@@ -540,7 +541,12 @@ async function handleScopedVideoGet(request, requestId, gateway) {
     const job = mappings[0];
     const denied = authorizeGatewayTarget(gateway, { modelId: job.modelId });
     if (denied) return denied;
-    if (headerConnectionId && headerConnectionId !== job.connectionId) {
+    // YAN-1941: a client polling with the id of an absorbed codex duplicate
+    // names the kept row (the job was moved or recorded there).
+    if (
+      headerConnectionId &&
+      resolveAbsorbedConnectionId(headerConnectionId) !== job.connectionId
+    ) {
       // A header naming any other connection must not rebind an account-bound job.
       return errorResponse(HTTP_STATUS.FORBIDDEN, "Forbidden");
     }

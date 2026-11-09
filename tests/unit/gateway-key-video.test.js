@@ -523,6 +523,22 @@ describe("gateway video poll (hashed storage)", () => {
     expect(response.headers.get(header("connection-id"))).toBe("conn-xai");
   });
 
+  it("known mapping: header naming an absorbed duplicate of the job's connection polls (YAN-1941)", async () => {
+    const absorbed = await import("@/lib/db/helpers/absorbedConnections.js");
+    await createJob("xai/grok-video", "poll-absorbed");
+    absorbed.recordAbsorbedConnection("conn-absorbed", "conn-xai");
+    mocks.fetch.mockResolvedValueOnce(upstreamJson({ status: "pending", progress: 5 }));
+    try {
+      const response = await handleVideoGet(
+        get("poll-absorbed", { "x-connection-id": "conn-absorbed" }),
+        "poll-absorbed",
+      );
+      expect(response.status).toBe(200);
+    } finally {
+      absorbed.clearAbsorbedConnections();
+    }
+  });
+
   it("known mapping: restricted key without the recorded model is denied, no upstream", async () => {
     await createJob("xai/grok-video", "poll-2");
     mocks.resolveGatewayAuth.mockResolvedValue({

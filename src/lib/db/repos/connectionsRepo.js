@@ -20,6 +20,7 @@ import {
   matchesFlaggedReplacement,
 } from "../helpers/connectionIdentity.js";
 import { foldUsageRollupSql } from "../helpers/usageRollupFold.js";
+import { recordAbsorbedConnection } from "../helpers/absorbedConnections.js";
 import { loadMasterKey } from "../../security/masterKey.js";
 import { decodeJwtPayload } from "open-sse/utils/jwt.js";
 import { assertCredentialOperationAllowed } from "../credentialMaintenance.js";
@@ -388,9 +389,19 @@ function applyPsdDelta(merged, existing, normalized) {
 export async function createProviderConnectionUnscoped(data, opts = {}) {
   const db = await getAdapter();
   const ctx = await prepareCredentialCtx(db);
-  return db.transaction(() =>
-    createInTx(db, data, opts, { workspaceId: defaultWorkspaceIdUnscoped(db) }, ctx),
+  const removed = [];
+  const conn = await db.transaction(() =>
+    createInTx(db, data, opts, { workspaceId: defaultWorkspaceIdUnscoped(db) }, ctx, removed),
   );
+  recordAbsorbed(removed, conn);
+  return conn;
+}
+
+// YAN-1941: after the commit, so a rolled-back merge never redirects writes.
+// A write already queued in the microtask before this runs keeps the old id;
+// that gap is accepted (the row was dead, see the issue).
+function recordAbsorbed(removed, keeper) {
+  for (const { conn } of removed) recordAbsorbedConnection(conn.id, keeper.id);
 }
 
 // YAN-1623: repoint one removed duplicate's references onto the kept row,
@@ -854,6 +865,7 @@ export async function createConnection(ctx, workspaceId, data, opts = {}) {
       removed,
     );
   });
+  recordAbsorbed(removed, conn);
   // YAN-367: never audit credential fields — only the allow-listed identity fields.
   await audit(
     { principal: ctx, workspaceId },

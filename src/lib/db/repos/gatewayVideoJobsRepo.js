@@ -1,3 +1,5 @@
+import { resolveAbsorbedConnectionId } from "../helpers/absorbedConnections.js";
+
 // YAN-363: explicit migration seam. No driver/barrel import or request-time DDL.
 // Call initGatewayVideoJobsSync(db) inside the hashed-key activation transaction.
 export const GATEWAY_VIDEO_JOBS_TABLE_SQL = `CREATE TABLE IF NOT EXISTS gatewayVideoJobs (
@@ -45,6 +47,8 @@ export function recordGatewayVideoJobSync(db, row) {
   if (!row.modelId.startsWith(`${row.provider}/`) || row.modelId === `${row.provider}/`) {
     throw new Error("Invalid video job canonical model");
   }
+  // YAN-1941: a job created on an absorbed codex duplicate maps to the kept row.
+  row = { ...row, connectionId: resolveAbsorbedConnectionId(row.connectionId) };
   db.transaction(() => {
     const previous = db.get(
       "SELECT * FROM gatewayVideoJobs WHERE workspaceId = ? AND provider = ? AND jobId = ?",
