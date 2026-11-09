@@ -24,10 +24,10 @@ import { resolveAuthModes } from "@/lib/auth/authModes.js";
 import { shouldUseSecureCookie, getDashboardAuthSession } from "@/lib/auth/dashboardSession.js";
 import {
   accountKey,
-  checkLoginLocks,
+  checkProofLocks,
   getClientIp,
-  recordLoginFail,
-  clearAccount,
+  recordProofFail,
+  clearProofAccount,
 } from "@/lib/auth/loginLimiter.js";
 import { getAdapter } from "@/lib/db/driver.js";
 import { getSettings, SSO_POLICY_KEYS } from "@/lib/db/repos/settingsRepo.js";
@@ -134,7 +134,7 @@ export function assertActorFor(db, { purpose, actorId, sv, workspaceId = null })
 }
 
 export function proofLock(request, userId) {
-  const lock = checkLoginLocks({ ip: getClientIp(request), account: accountKey({ userId }) });
+  const lock = checkProofLocks({ ip: getClientIp(request), account: accountKey({ userId }) });
   if (!lock.locked) return null;
   const res = proofJson(
     { error: "Too many attempts", code: "rate_limited", retryAfter: lock.retryAfter },
@@ -409,9 +409,9 @@ export async function handleSsoProofCallback(request, provider, jar, settings = 
       maxAge: 300,
     });
     const action = DATA_ACTION_BY_PURPOSE[slot.purpose];
-    // Data-transfer proofs (open to any workspace owner) never reset the
-    // password-failure bucket; admin preview/delete keep their prior behavior.
-    if (!action) clearAccount(accountKey({ userId: state.actorId }));
+    // YAN-1076: a proof resets only the proof bucket. It says nothing about
+    // the local password, so the password-failure bucket stays as it is.
+    clearProofAccount(accountKey({ userId: state.actorId }));
     if (action) {
       const ws = isWorkspaceDataPurpose(slot.purpose) ? `&workspace=${slot.workspaceId}` : "";
       return redirect(`/dashboard/settings?ssoReauth=${action}${ws}#data`);
@@ -422,7 +422,7 @@ export async function handleSsoProofCallback(request, provider, jar, settings = 
         : `/dashboard/admin/workspaces/${slot.workspaceId}?ssoReauth=1`,
     );
   } catch {
-    recordLoginFail({
+    recordProofFail({
       ip: getClientIp(request),
       account: state ? accountKey({ userId: state.actorId }) : undefined,
     });

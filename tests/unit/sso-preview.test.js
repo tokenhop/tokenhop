@@ -149,8 +149,7 @@ beforeEach(async () => {
   slots = await import("@/lib/users/ssoProofState.js");
   slots.resetProofSlots();
   const limiter = await import("@/lib/auth/loginLimiter.js");
-  limiter.clearAccount(limiter.accountKey({ userId: t.a.user.id }));
-  limiter.recordSuccess("unknown");
+  limiter.resetLoginLimiter();
   cookieStore = await (await import("next/headers")).cookies();
   m.verify.mockResolvedValue({
     iss: "https://idp.test",
@@ -492,6 +491,62 @@ describe("workspace delete SSO proof purpose separation", () => {
     await start();
     await complete();
     expect(await proof.consumeSsoResult(t.a.ctx, "workspace_delete", t.shared.id)).toBeNull();
+  });
+});
+
+describe("YAN-1076 proof limiter isolation", () => {
+  const fail = async () => {
+    m.verify.mockResolvedValue({ iss: "https://idp.test", sub: "other", auth_time: 1e9 });
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    await start();
+    expect((await complete()).headers.get("location")).toContain("ssoPreview=failed");
+  };
+  const ctx = () => ({ ip: "unknown", account: { userId: t.a.user.id } });
+
+  it("repeated proof failures lock the proof flow but never ordinary login", async () => {
+    const limiter = await import("@/lib/auth/loginLimiter.js");
+    for (let i = 0; i < 5; i++) await fail();
+    expect(limiter.checkLoginLocks(ctx()).locked).toBe(false);
+    expect(limiter.checkLock("unknown").locked).toBe(false);
+    const locked = proof.proofLock(req("/x", {}), t.a.user.id);
+    expect(locked.status).toBe(429);
+    expect(Number(locked.headers.get("retry-after"))).toBeGreaterThan(0);
+  });
+
+  it("stateless proof callbacks never touch the login buckets", async () => {
+    const limiter = await import("@/lib/auth/loginLimiter.js");
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    m.jar.delete(slots.SSO_PROOF_COOKIE);
+    for (let i = 0; i < 5; i++) await complete("oidc", `${slots.PROOF_FLOW_PREFIX}forged-${i}`);
+    expect(limiter.checkLock("unknown").locked).toBe(false);
+    expect(limiter.checkLoginLocks(ctx()).locked).toBe(false);
+    expect(limiter.checkProofLocks({ ip: "unknown" }).locked).toBe(true);
+  });
+
+  it("a login lockout still blocks proofs; a proof success never clears it", async () => {
+    const limiter = await import("@/lib/auth/loginLimiter.js");
+    for (let i = 0; i < 5; i++) limiter.recordLoginFail(ctx());
+    expect(proof.proofLock(req("/x", {}), t.a.user.id).status).toBe(429);
+    limiter.clearProofAccount(ctx().account);
+    expect(limiter.checkLoginLocks(ctx()).locked).toBe(true);
+  });
+
+  it("a successful proof clears earlier proof failures, not password failures", async () => {
+    const limiter = await import("@/lib/auth/loginLimiter.js");
+    for (let i = 0; i < 4; i++) await fail();
+    for (let i = 0; i < 4; i++) limiter.recordLoginFail({ account: ctx().account });
+    m.verify.mockResolvedValue({
+      iss: "https://idp.test",
+      sub: "actor-sub",
+      auth_time: Math.floor(Date.now() / 1000),
+      groups: ["eng"],
+    });
+    await start();
+    expect((await complete()).headers.get("location")).toContain("ssoPreview=1");
+    await fail(); // 1 proof fail after the reset: proof account bucket not locked
+    expect(limiter.checkProofLocks({ ip: "other-ip", account: ctx().account }).locked).toBe(false);
+    limiter.recordLoginFail({ account: ctx().account }); // 5th password fail locks login
+    expect(limiter.checkLoginLocks({ ip: "other-ip", account: ctx().account }).locked).toBe(true);
   });
 });
 

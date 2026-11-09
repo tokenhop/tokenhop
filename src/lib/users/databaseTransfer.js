@@ -11,9 +11,11 @@ import { getDashboardAuthSession } from "@/lib/auth/dashboardSession.js";
 import {
   accountKey,
   checkLoginLocks,
+  checkProofLocks,
   clearAccount,
   getClientIp,
   recordLoginFail,
+  recordProofFail,
 } from "@/lib/auth/loginLimiter.js";
 import { verifyPassword } from "@/lib/auth/userPassword.js";
 import { getUserPasswordHashUnscoped, getUserUnscoped } from "@/lib/db/repos/usersRepo.js";
@@ -207,7 +209,8 @@ export async function reauthActor(
   if (!Object.values(DATA_TRANSFER_PURPOSES).includes(purpose)) return reauthInvalid();
   const ip = getClientIp(request);
   const account = accountKey({ userId: principal?.userId });
-  const lock = checkLoginLocks({ ip, account });
+  // YAN-1076: proof buckets (which also honor login locks), never login ones.
+  const lock = checkProofLocks({ ip, account });
   if (lock.locked) return tooManyAttempts(lock);
   try {
     // SSO proofs belong to browser sessions only: never CLI/local principals.
@@ -225,7 +228,7 @@ export async function reauthActor(
       throw new TenancyError("FORBIDDEN", "Only an instance owner or admin may do this");
     }
   } catch (err) {
-    if (err?.code === "REAUTH_REQUIRED") recordLoginFail({ ip, account });
+    if (err?.code === "REAUTH_REQUIRED") recordProofFail({ ip, account });
     return reauthErrorResponse(err);
   }
   // No clearAccount here: an SSO proof says nothing about the local password,

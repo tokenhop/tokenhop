@@ -111,6 +111,38 @@ export function clearAccount(account) {
   attempts.delete(keyOf(account));
 }
 
+// YAN-1076: fresh SSO re-auth proofs (preview, workspace delete, data
+// transfer) get their own buckets per account and per IP, so failed proofs
+// never lock ordinary login. Proof checks still honor login locks: a
+// password-locked account or IP can't start or finish a proof either.
+const PROOF_PREFIX = "proof:";
+const proofIpKey = (ip) => `${PROOF_PREFIX}ip:${ip}`;
+const proofAccountKey = (account) => `${PROOF_PREFIX}${keyOf(account)}`;
+
+/** Proof + login buckets; returns the longest active lock. */
+export function checkProofLocks({ ip, account }) {
+  const locks = [checkLoginLocks({ ip, account }), lockOf(proofIpKey(ip))];
+  if (account) locks.push(lockOf(proofAccountKey(account)));
+  if (!locks.some((l) => l.locked)) return { locked: false };
+  return { locked: true, retryAfter: Math.max(...locks.map((l) => l.retryAfter ?? 0)) };
+}
+
+/** Records a failed proof on the proof buckets only (never the login ones). */
+export function recordProofFail({ ip, account }) {
+  failOf(proofIpKey(ip));
+  if (account) failOf(proofAccountKey(account));
+}
+
+/** Proof success clears only the proof account bucket, never the password one. */
+export function clearProofAccount(account) {
+  attempts.delete(proofAccountKey(account));
+}
+
+/** Test-only: forget every bucket (login and proof). No-op outside Vitest. */
+export function resetLoginLimiter() {
+  if (process.env.VITEST) attempts.clear();
+}
+
 export function getClientIp(request) {
   // Trusted only when custom-server.js proves it stamped the header from the TCP socket;
   // otherwise a client could rotate the value to escape its own lockout bucket.
