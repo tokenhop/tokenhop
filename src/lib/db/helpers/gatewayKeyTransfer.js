@@ -15,6 +15,7 @@ import { readCredentialEncryptionState } from "../credentialEncryptionState.js";
 import { isCredentialMaintenancePoisoned } from "../credentialMaintenance.js";
 import { insertHashedApiKeySync } from "../repos/apiKeysRepo.js";
 import { adoptOwnerlessRowsUnscoped } from "../repos/ownership.js";
+import { holdUsageAttribution, restoreUsageAttribution } from "./usageAttributionHold.js";
 import {
   offBudgetsReplacedRowsUnscoped,
   pruneOrphanedScopeBudgetsUnscoped,
@@ -1574,6 +1575,10 @@ export function applyGatewayKeySnapshot(db, payload, plan, { actor = null } = {}
   } else {
     db.run(`DELETE FROM kv WHERE scope IN (${KV_SCOPES.map((s) => `'${s}'`).join(", ")})`);
   }
+  // YAN-1981: live usage the restore keeps (switch off: never a section)
+  // would lose its workspace/user to the SET NULL below even when the
+  // snapshot restores the same id; hold it and put it back after the insert.
+  holdUsageAttribution(db, payload);
   db.run(`DELETE FROM workspaces`);
   db.run(`DELETE FROM users`);
   const credential = plan.credential ?? null;
@@ -1644,6 +1649,9 @@ export function applyGatewayKeySnapshot(db, payload, plan, { actor = null } = {}
       ],
     );
   }
+  // Before adoption (which never adopts usage here) and before the section
+  // inserts, so only pre-existing live rows regain their attribution.
+  restoreUsageAttribution(db);
   const defaultWorkspaceId = payload.tenancy?.defaultWorkspaceId;
   if (defaultWorkspaceId) setMetaSync(db, "defaultWorkspaceId", defaultWorkspaceId);
 
