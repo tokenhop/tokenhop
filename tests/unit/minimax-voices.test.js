@@ -5,7 +5,8 @@ vi.mock("open-sse/utils/proxyFetch.js", async (importOriginal) => ({
   proxyAwareFetch: (url, options) => globalThis.fetch(url, options),
 }));
 
-vi.mock("../../src/lib/db/index.js", () => ({
+vi.mock("../../src/lib/db/index.js", async (importOriginal) => ({
+  ...(await importOriginal()),
   getProviderConnectionsUnscoped: vi.fn(),
 }));
 
