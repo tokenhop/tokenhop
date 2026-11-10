@@ -154,12 +154,12 @@ describe("updateProviderCredentials — delta refresh persistence", () => {
   const mockRepo = (impl) => {
     vi.resetModules();
     const update = vi.fn(impl);
-    vi.doMock("../../src/lib/localDb.js", () => ({ updateProviderConnectionUnscoped: update }));
+    vi.doMock("../../src/lib/db/index.js", () => ({ updateProviderConnectionUnscoped: update }));
     return update;
   };
 
   afterEach(() => {
-    vi.doUnmock("../../src/lib/localDb.js");
+    vi.doUnmock("../../src/lib/db/index.js");
   });
 
   it("persists a minted apiKey and only the PSD delta (no stale snapshot)", async () => {

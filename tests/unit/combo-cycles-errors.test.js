@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 
 import { findComboCycle, handleComboChat } from "../../open-sse/services/combo.js";
-import { createCombo, updateSettings } from "../../src/lib/localDb.js";
+import { createComboUnscoped, updateSettings } from "../../src/lib/db/index.js";
 import { handleChat } from "../../src/sse/handlers/chat.js";
 
 const log = { info: () => {}, warn: () => {}, debug: () => {} };
@@ -26,8 +26,8 @@ describe("combo cycles (YAN-54)", () => {
 
   it("rejects a cyclic combo at request time instead of recursing forever", async () => {
     await updateSettings({ requireApiKey: false });
-    await createCombo({ name: "cyc-a", models: ["cyc-b"] });
-    await createCombo({ name: "cyc-b", models: ["cyc-a"] });
+    await createComboUnscoped({ name: "cyc-a", models: ["cyc-b"] });
+    await createComboUnscoped({ name: "cyc-b", models: ["cyc-a"] });
     const request = new Request("http://localhost/v1/chat/completions", {
       method: "POST",
       headers: { "Content-Type": "application/json" },

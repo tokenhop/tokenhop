@@ -40,7 +40,7 @@ vi.mock("../../src/sse/utils/logger.js", async (importOriginal) => {
 });
 
 import { getAdapter } from "@/lib/db/driver.js";
-import { getProviderConnectionByIdUnscoped } from "@/lib/localDb";
+import { getProviderConnectionByIdUnscoped } from "@/lib/db/index.js";
 import { handleChat } from "@/sse/handlers/chat.js";
 
 const NOW = "2026-10-04T00:00:00.000Z";

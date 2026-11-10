@@ -18,14 +18,13 @@ const dbMocks = vi.hoisted(() => {
   return m;
 });
 
-vi.mock("@/lib/localDb", () => ({
+vi.mock("@/lib/db/index.js", async (importOriginal) => ({
+  ...(await importOriginal()),
   getProviderConnectionsUnscoped: dbMocks.getProviderConnectionsUnscoped,
   updateProviderConnectionUnscoped: dbMocks.updateProviderConnectionUnscoped,
   mutateProviderConnectionUnscoped: dbMocks.mutateProviderConnectionUnscoped,
   getProxyPools: vi.fn(),
   validateApiKey: vi.fn(),
-}));
-vi.mock("@/lib/db/index.js", () => ({
   getEffectivePreferences: dbMocks.getSettings,
   mutateBillingLockUnscoped: vi.fn(),
 }));

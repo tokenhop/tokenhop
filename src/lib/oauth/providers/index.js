@@ -232,7 +232,7 @@ export async function backfillCodexEmails() {
   codexBackfillDone = true;
   try {
     const { getProviderConnectionsUnscoped, updateProviderConnectionUnscoped } = await import(
-      "@/lib/localDb"
+      "@/lib/db/index.js"
     );
     const connections = await getProviderConnectionsUnscoped();
     const targets = connections.filter((c) => {

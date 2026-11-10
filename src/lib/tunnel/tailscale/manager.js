@@ -12,7 +12,7 @@ import {
 } from "./tailscale.js";
 import { waitForHealth } from "./healthCheck.js";
 import { isCredentialEncryptionEstablished } from "@/lib/db/repos/settingsRepo.js";
-import { getSettings, updateSettings } from "@/lib/localDb";
+import { getSettings, updateSettings } from "@/lib/db/index.js";
 import { getCachedPassword, loadEncryptedPassword, initDbHooks } from "@/mitm/manager";
 
 initDbHooks(getSettings, updateSettings, isCredentialEncryptionEstablished);

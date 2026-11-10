@@ -4,8 +4,12 @@
 // selected workspace. `?workspaceId=` is only a selector: it must be one of
 // the principal's workspaces, and the repos re-verify membership in SQL.
 import { NextResponse } from "next/server";
-import { countActiveUsersUnscoped, getMeta, listConnections } from "@/lib/db/index.js";
-import { getProviderConnectionsUnscoped } from "@/lib/localDb";
+import {
+  countActiveUsersUnscoped,
+  getMeta,
+  listConnections,
+  getProviderConnectionsUnscoped,
+} from "@/lib/db/index.js";
 import { isMultiUserEnabled } from "./featureSwitch.js";
 import { can } from "./principal.js";
 import { getPrincipal } from "./session.js";

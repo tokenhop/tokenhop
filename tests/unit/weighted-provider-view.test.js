@@ -15,7 +15,8 @@ vi.mock("@/lib/db/repos/nodesRepo.js", () => ({
   getProviderNodesMetadataUnscoped: vi.fn(async () => []),
   listNodesMetadata: vi.fn(async () => []),
 }));
-vi.mock("@/lib/localDb", () => ({
+vi.mock("@/lib/db/index.js", async (importOriginal) => ({
+  ...(await importOriginal()),
   getProviderConnectionByIdUnscoped: mocks.getProviderConnectionByIdUnscoped,
   updateProviderConnectionUnscoped: vi.fn(),
 }));

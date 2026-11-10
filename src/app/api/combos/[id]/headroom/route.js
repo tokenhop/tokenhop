@@ -1,6 +1,5 @@
 import { NextResponse } from "next/server";
-import { getComboById } from "@/lib/localDb";
-import { getCombo } from "@/lib/db/index.js";
+import { getComboByIdUnscoped, getCombo } from "@/lib/db/index.js";
 import { loadScoped } from "@/lib/users/workspaceScope.js";
 import { loadComboHeadroomDetailFn } from "@/sse/services/comboHeadroom.js";
 
@@ -16,7 +15,7 @@ export async function GET(_request, { params }) {
       "workspace.connections.metadata.read",
       id,
       getCombo,
-      getComboById,
+      getComboByIdUnscoped,
       "Combo not found",
     );
     if (loaded instanceof Response) return loaded;

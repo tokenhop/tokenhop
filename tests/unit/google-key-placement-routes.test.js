@@ -135,7 +135,7 @@ describe("POST /api/providers/validate", () => {
 
 describe("saved gemini connection test", () => {
   afterEach(() => {
-    vi.doUnmock("@/lib/localDb");
+    vi.doUnmock("@/lib/db/index.js");
     vi.doUnmock("@/lib/network/connectionProxy");
     vi.doUnmock("open-sse/utils/proxyFetch.js");
     vi.unstubAllGlobals();
@@ -150,7 +150,8 @@ describe("saved gemini connection test", () => {
     const proxyFetch = vi.fn(async () => ({ ok: true, status: 200 }));
     vi.stubGlobal("fetch", globalFetch);
     const connection = { id: "g-1", provider: "gemini", authType: "apikey", apiKey: KEY };
-    vi.doMock("@/lib/localDb", () => ({
+    vi.doMock("@/lib/db/index.js", async (importOriginal) => ({
+      ...(await importOriginal()),
       getProviderConnectionByIdUnscoped: vi.fn(async () => connection),
       updateProviderConnectionUnscoped: vi.fn(async () => {}),
     }));

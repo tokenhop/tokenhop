@@ -6,7 +6,10 @@ vi.mock("next/server", () => ({
   NextResponse: { json: (body, init) => ({ status: init?.status || 200, body }) },
 }));
 vi.mock("next/headers", () => ({ cookies: vi.fn() }));
-vi.mock("@/lib/localDb", () => ({ getSettings: mocks.getSettings }));
+vi.mock("@/lib/db/index.js", async (importOriginal) => ({
+  ...(await importOriginal()),
+  getSettings: mocks.getSettings,
+}));
 
 const { POST } = await import("../../src/app/api/auth/oidc/test/route.js");
 

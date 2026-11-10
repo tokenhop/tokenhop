@@ -1,6 +1,5 @@
 import { NextResponse } from "next/server";
-import { getConnection } from "@/lib/db/index.js";
-import { getProviderConnectionByIdUnscoped } from "@/lib/localDb";
+import { getConnection, getProviderConnectionByIdUnscoped } from "@/lib/db/index.js";
 import { loadScoped } from "@/lib/users/workspaceScope.js";
 import { PROBE_RESULT, probeBillingConnection } from "@/shared/services/billingProbe.js";
 

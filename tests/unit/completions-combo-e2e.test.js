@@ -33,7 +33,7 @@ vi.mock("@/lib/usageDb.js", async (importOriginal) => {
   };
 });
 
-const db = await import("@/lib/localDb.js");
+const db = await import("@/lib/db/index.js");
 const { getUsageHistory } = await import("@/lib/db/index.js");
 const { handleChat } = await import("../../src/sse/handlers/chat.js");
 const { CAVEMAN_PROMPTS } = await import("../../open-sse/rtk/cavemanPrompts.js");

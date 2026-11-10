@@ -2,7 +2,7 @@
 // combo must skip it.
 import { describe, it, expect } from "vitest";
 
-import { updateSettings } from "../../src/lib/localDb.js";
+import { updateSettings } from "../../src/lib/db/index.js";
 import { disableModels } from "../../src/lib/disabledModelsDb.js";
 import { handleChat } from "../../src/sse/handlers/chat.js";
 import { getProviderAlias } from "../../src/shared/constants/providers.js";

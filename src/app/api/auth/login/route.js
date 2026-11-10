@@ -1,5 +1,11 @@
 import { NextResponse } from "next/server";
-import { getSettings } from "@/lib/localDb";
+import {
+  getSettings,
+  getEffectivePreferences,
+  getLegacyPasswordHash,
+  getOwnerUnscoped,
+  getUserPasswordHashUnscoped,
+} from "@/lib/db/index.js";
 import bcrypt from "bcryptjs";
 import { cookies } from "next/headers";
 import { mintSessionCookie } from "@/lib/users/sessionMint";
@@ -31,14 +37,8 @@ import {
 import { isLocalRequest } from "@/dashboardGuard";
 import { audit } from "@/lib/users/audit";
 import { sessionClaims, passwordSessionClaims } from "@/lib/users/session";
-import { getEffectivePreferences } from "@/lib/db/index.js";
 import { isUserSecurityEnforced } from "@/lib/users/securityState";
 import { ensureOwnerBootstrap, multiUserActive } from "@/lib/users/bootstrap";
-import {
-  getLegacyPasswordHash,
-  getOwnerUnscoped,
-  getUserPasswordHashUnscoped,
-} from "@/lib/db/index.js";
 import { ACTIVE } from "@/shared/brand";
 
 const RESET_HINT = `Forgot password? Reset to default via ${ACTIVE.name} CLI → Settings → Reset password to default.`;

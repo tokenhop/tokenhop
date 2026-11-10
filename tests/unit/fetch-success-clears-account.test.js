@@ -20,9 +20,10 @@ vi.mock("@/sse/services/auth.js", () => ({
   isValidApiKey: mocks.isValidApiKey,
 }));
 
-vi.mock("@/lib/localDb", () => ({
+vi.mock("@/lib/db/index.js", async (importOriginal) => ({
+  ...(await importOriginal()),
   getSettings: mocks.getSettings,
-  getCombos: mocks.getCombos,
+  getCombosUnscoped: mocks.getCombos,
 }));
 
 // Legacy-storage auth: requireApiKey=false passes through with no principal,

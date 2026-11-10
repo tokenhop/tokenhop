@@ -38,10 +38,10 @@ vi.mock("@/sse/services/auth.js", () => ({
   clearAccountError: mocks.clearAccountError,
 }));
 
-vi.mock("@/lib/localDb", async (importOriginal) => ({
+vi.mock("@/lib/db/index.js", async (importOriginal) => ({
   ...(await importOriginal()),
   getSettings: mocks.getSettings,
-  getComboByName: vi.fn(async () => null),
+  getComboByNameUnscoped: vi.fn(async () => null),
 }));
 
 const { GET } = await import("../../src/app/api/v1beta/models/route.js");

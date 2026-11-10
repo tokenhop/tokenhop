@@ -4,8 +4,9 @@ import {
   updateProviderConnectionUnscoped,
   mutateProviderConnectionUnscoped,
   getProxyPools,
-} from "@/lib/localDb";
-import { getEffectivePreferences, mutateBillingLockUnscoped } from "@/lib/db/index.js";
+  getEffectivePreferences,
+  mutateBillingLockUnscoped,
+} from "@/lib/db/index.js";
 import { resolveConnectionProxyConfig, pickProxyPoolId } from "@/lib/network/connectionProxy";
 import {
   formatRetryAfter,
@@ -159,7 +160,7 @@ function createAffinityHandle(affinityKey, connectionId, token) {
 }
 
 /**
- * Get provider credentials from localDb
+ * Get provider credentials from the db layer
  * Filters out unavailable accounts and returns the selected account based on strategy
  * @param {string} provider - Provider name
  * @param {Set<string>|string|null} excludeConnectionIds - Connection ID(s) to exclude (for retry with next account)

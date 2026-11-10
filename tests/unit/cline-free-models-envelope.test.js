@@ -15,7 +15,8 @@ vi.mock("open-sse/utils/proxyFetch.js", async (importOriginal) => ({
 
 // Mock the heavy Next.js-dependent imports BEFORE importing ping.js
 // (same pattern as tests/unit/ping-reasoning-models-3010.test.js).
-vi.mock("@/lib/localDb", () => ({
+vi.mock("@/lib/db/index.js", async (importOriginal) => ({
+  ...(await importOriginal()),
   getApiKeys: vi.fn(async () => [{ key: "test-key", isActive: true }]),
 }));
 vi.mock("@/shared/constants/config", () => ({ UPDATER_CONFIG: { appPort: 20127 } }));

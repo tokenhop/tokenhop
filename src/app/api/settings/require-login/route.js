@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getSettings } from "@/lib/localDb";
+import { getSettings } from "@/lib/db/index.js";
 
 // Public (no session): expose only what the login flow needs. Tunnel/Tailscale
 // URLs and other settings stay behind the authenticated /api/settings.

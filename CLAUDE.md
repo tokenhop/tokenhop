@@ -113,7 +113,7 @@ Docs: user guide in `gitbook/content/en/users/`; design in `docs/users/` (local 
 
 State is **no longer `db.json`**. It's a SQLite layer under `src/lib/db/` with an adapter fallback chain (`driver.js`): `bun:sqlite` → `better-sqlite3` (optional native dep) → `node:sqlite` (Node ≥22.5) → `sql.js` (pure-JS fallback, always works). `better-sqlite3` is deliberately in `optionalDependencies` so install never fails without build tools.
 
-- `src/lib/localDb.js` is a **backward-compat shim** re-exporting `src/lib/db/index.js`. New code should import from `@/lib/db/index.js`; per-entity logic lives in `src/lib/db/repos/*`. Schema/migrations in `src/lib/db/migrations/`.
+- Persistence lives in `src/lib/db/index.js`; per-entity logic lives in `src/lib/db/repos/*`. Schema/migrations in `src/lib/db/migrations/`.
 - DB file location resolves via `src/lib/db/paths.js` (`DATA_DIR`, else `~/.tokenhop/`, or a legacy data dir that already exists; see `src/lib/dataDir.js`).
 - Usage and request logs live in the same SQLite DB under `DATA_DIR` — `src/lib/usageDb.js` is just a shim re-exporting `@/lib/db/index.js`. `usage.json` is only a legacy one-time migration source; `log.txt` no longer exists.
 

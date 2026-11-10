@@ -28,7 +28,8 @@ vi.mock("next/server", () => ({
   },
 }));
 
-vi.mock("@/lib/localDb", () => ({
+vi.mock("@/lib/db/index.js", async (importOriginal) => ({
+  ...(await importOriginal()),
   getSettings: mocks.getSettings,
   validateApiKey: mocks.validateApiKey,
 }));

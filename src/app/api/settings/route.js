@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getSettings, updateComboStrategies, updateSettings } from "@/lib/localDb";
+import { getSettings, updateComboStrategies, updateSettings } from "@/lib/db/index.js";
 import { applyOutboundProxyEnv } from "@/lib/network/outboundProxy";
 import { resolveDensity, resolveFlagSetting, resolveStartPage } from "@/lib/settingsFlags";
 import { getLegacyPasswordHash } from "@/lib/db/repos/workspaceSettingsRepo.js";

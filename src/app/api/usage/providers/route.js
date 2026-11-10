@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getDistinctProviders } from "@/lib/requestDetailsDb";
-import { getProviderNodesUnscoped } from "@/lib/localDb";
+import { getProviderNodesUnscoped } from "@/lib/db/index.js";
 import { usageScope } from "@/lib/usage/scope.js";
 import { AI_PROVIDERS, getProviderByAlias } from "@/shared/constants/providers";
 

@@ -29,8 +29,10 @@ vi.mock("next/headers", () => ({
     delete: (name) => mocks.cookies.delete(name),
   }),
 }));
-vi.mock("@/lib/localDb", () => ({ getSettings: mocks.getSettings }));
-vi.mock("@/lib/db/index.js", () => ({ getSettings: mocks.getSettings }));
+vi.mock("@/lib/db/index.js", async (importOriginal) => ({
+  ...(await importOriginal()),
+  getSettings: mocks.getSettings,
+}));
 vi.mock("@/lib/users/audit", () => ({ audit: mocks.audit }));
 vi.mock("@/lib/users/securityState.js", () => ({
   isUserSecurityEnforced: vi.fn(async () => false),

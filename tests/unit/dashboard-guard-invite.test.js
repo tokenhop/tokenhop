@@ -5,7 +5,11 @@ import { describe, expect, it, vi } from "vitest";
 vi.mock("next/server", () => ({
   NextResponse: { next: vi.fn(), json: vi.fn(), redirect: vi.fn() },
 }));
-vi.mock("@/lib/localDb", () => ({ getSettings: vi.fn(), validateApiKey: vi.fn() }));
+vi.mock("@/lib/db/index.js", async (importOriginal) => ({
+  ...(await importOriginal()),
+  getSettings: vi.fn(),
+  validateApiKey: vi.fn(),
+}));
 vi.mock("@/lib/users/featureSwitch", () => ({
   isMultiUserEnabled: async () => false,
   requireMultiUser: async () => null,

@@ -11,7 +11,7 @@ import {
   getCombosUnscoped,
   getCustomModelsUnscoped,
   getModelAliasesUnscoped,
-} from "@/lib/localDb";
+} from "@/lib/db/index.js";
 import { getDisabledModelsUnscoped } from "@/lib/disabledModelsDb";
 import { authorizeGatewayTarget, resolveGatewayAuth } from "@/lib/auth/gatewayAuth.js";
 import {

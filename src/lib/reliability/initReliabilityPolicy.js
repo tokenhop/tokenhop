@@ -47,7 +47,7 @@ export function ensureReliabilityPolicy(getSettings) {
 /** Node.js instrumentation entrypoint; the /v1 guard reuses the same promise. */
 export async function bootstrapReliabilityPolicy() {
   try {
-    const { getSettings } = await import("@/lib/localDb");
+    const { getSettings } = await import("@/lib/db/index.js");
     await ensureReliabilityPolicy(getSettings);
   } catch {
     /* keep defaults */

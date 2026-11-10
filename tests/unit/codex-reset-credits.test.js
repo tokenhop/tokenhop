@@ -16,7 +16,8 @@ vi.mock("../../open-sse/utils/proxyFetch.js", () => ({
 
 vi.mock("open-sse/index.js", () => ({}));
 
-vi.mock("@/lib/localDb", () => ({
+vi.mock("@/lib/db/index.js", async (importOriginal) => ({
+  ...(await importOriginal()),
   getProviderConnectionByIdUnscoped: mocks.getProviderConnectionByIdUnscoped,
 }));
 

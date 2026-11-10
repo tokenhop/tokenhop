@@ -21,7 +21,11 @@ vi.mock("@/sse/services/auth.js", () => ({
   clearAccountError: vi.fn(),
   extractApiKey: mocks.raw,
 }));
-vi.mock("@/lib/localDb", () => ({ getSettings: async () => ({}), getCombos: mocks.combos }));
+vi.mock("@/lib/db/index.js", async (importOriginal) => ({
+  ...(await importOriginal()),
+  getSettings: async () => ({}),
+  getCombosUnscoped: mocks.combos,
+}));
 // YAN-364: search.js / fetch.js read combos via getGatewayCombos(principal).
 vi.mock("@/lib/auth/gatewayResources.js", async (original) => ({
   ...(await original()),

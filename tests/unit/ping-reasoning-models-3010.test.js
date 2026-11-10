@@ -2,13 +2,14 @@
 // tiny max_tokens probe. pingModelByKind must use a sane budget (1024) and treat a
 // reasoning-only (length-limited) response as a successful connection.
 //
-// The route module pulls in Next.js-only deps (@/lib/localDb, etc.) that don't
+// The route module pulls in Next.js-only deps (@/lib/db, etc.) that don't
 // resolve under raw vitest, so we mock them and exercise the exported function.
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
 // Mock the heavy Next.js-dependent imports BEFORE importing ping.js.
-vi.mock("@/lib/localDb", () => ({
+vi.mock("@/lib/db/index.js", async (importOriginal) => ({
+  ...(await importOriginal()),
   getApiKeys: vi.fn(async () => [{ key: "test-key", isActive: true }]),
 }));
 vi.mock("@/shared/constants/config", () => ({ UPDATER_CONFIG: { appPort: 20127 } }));

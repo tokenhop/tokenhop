@@ -1,6 +1,5 @@
 import { NextResponse } from "next/server";
-import { getProviderConnectionByIdUnscoped } from "@/lib/localDb";
-import { getConnection } from "@/lib/db/index.js";
+import { getProviderConnectionByIdUnscoped, getConnection } from "@/lib/db/index.js";
 import { loadScoped } from "@/lib/users/workspaceScope.js";
 import { getProviderModels, PROVIDER_ID_TO_ALIAS } from "open-sse/config/providerModels.js";
 import {

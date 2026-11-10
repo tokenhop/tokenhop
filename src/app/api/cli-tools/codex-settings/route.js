@@ -1,5 +1,3 @@
-"use server";
-
 import { NextResponse } from "next/server";
 import { exec } from "child_process";
 import { promisify } from "util";
@@ -7,7 +5,7 @@ import fs from "fs/promises";
 import path from "path";
 import os from "os";
 import { parseTOML, stringifyTOML } from "confbox";
-import { getApiKeys } from "@/lib/localDb";
+import { getApiKeys } from "@/lib/db/index.js";
 import { getAdapter } from "@/lib/db/driver.js";
 import { readApiKeyStorageState } from "@/lib/db/apiKeyState.js";
 import { getHashedApiKeyByHashUnscoped } from "@/lib/db/repos/apiKeysRepo.js";

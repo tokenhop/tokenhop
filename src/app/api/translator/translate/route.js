@@ -3,7 +3,7 @@ import { detectFormat, getTargetFormat } from "open-sse/services/provider.js";
 import { translateRequest } from "open-sse/translator/index.js";
 import { FORMATS } from "open-sse/translator/formats.js";
 import { getModelInfo } from "@/sse/services/model.js";
-import { getProviderConnectionsUnscoped } from "@/lib/localDb.js";
+import { getProviderConnectionsUnscoped } from "@/lib/db/index.js";
 import { getExecutor } from "open-sse/executors/index.js";
 
 export async function POST(request) {

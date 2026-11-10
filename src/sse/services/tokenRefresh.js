@@ -1,6 +1,6 @@
 // Re-export from open-sse with local logger
 import * as log from "../utils/logger.js";
-import { updateProviderConnectionUnscoped } from "../../lib/localDb.js";
+import { updateProviderConnectionUnscoped } from "../../lib/db/index.js";
 import {
   getProjectIdForConnection,
   invalidateProjectId,
@@ -110,7 +110,7 @@ function needsProjectId(provider) {
 
 /**
  * Non-blocking: fetch the project ID for a connection after a token refresh and
- * persist it to localDb.  Invalidates the stale cached value first so the fetch
+ * persist it to the db.  Invalidates the stale cached value first so the fetch
  * always retrieves a fresh one.
  *
  * @param {string} provider
@@ -147,7 +147,7 @@ function _refreshProjectId(provider, connectionId, accessToken, proxyOptions = n
   }
 }
 
-// ─── Local-specific: persist credentials to localDb ──────────────────────────
+// ─── Local-specific: persist credentials to the db ──────────────────────────
 
 /**
  * Pure mapping of refreshed credentials to a connection patch. Only fields
@@ -200,7 +200,7 @@ export function buildCredentialUpdates(newCredentials) {
 }
 
 /**
- * Persist updated credentials for a connection to localDb.
+ * Persist updated credentials for a connection to the db.
  * Only fields that are present in `newCredentials` are written.
  *
  * @param {string} connectionId
@@ -212,7 +212,7 @@ export async function updateProviderCredentials(connectionId, newCredentials) {
     const updates = buildCredentialUpdates(newCredentials);
 
     const result = await updateProviderConnectionUnscoped(connectionId, updates);
-    log.info("TOKEN_REFRESH", "Credentials updated in localDb", {
+    log.info("TOKEN_REFRESH", "Credentials updated in db", {
       connectionId,
       success: !!result,
     });
@@ -222,7 +222,7 @@ export async function updateProviderCredentials(connectionId, newCredentials) {
     // must propagate — swallowing them would let a refresh report durable
     // success with nothing persisted.
     if (error?.code) throw error;
-    log.error("TOKEN_REFRESH", "Error updating credentials in localDb", {
+    log.error("TOKEN_REFRESH", "Error updating credentials in db", {
       connectionId,
       error: error.message,
     });

@@ -1,4 +1,7 @@
-import { getProviderConnectionsUnscoped, updateProviderConnectionUnscoped } from "@/lib/localDb.js";
+import {
+  getProviderConnectionsUnscoped,
+  updateProviderConnectionUnscoped,
+} from "@/lib/db/index.js";
 import {
   proxyOptionsFromConfig,
   resolveConnectionProxyConfig,

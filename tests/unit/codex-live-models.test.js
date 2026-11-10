@@ -26,7 +26,7 @@ import {
   createProviderConnectionUnscoped,
   deleteProviderConnectionsByProviderUnscoped,
 } from "@/models/index.js";
-import { mutateProviderConnectionUnscoped } from "@/lib/localDb";
+import { mutateProviderConnectionUnscoped } from "@/lib/db/index.js";
 import { buildReauthPatch, buildReauthRequired } from "open-sse/services/reauthState.js";
 import { getProviderAlias } from "@/shared/constants/providers";
 import { clearLiveModelsCache } from "@/lib/providerModels/liveResolvers.js";

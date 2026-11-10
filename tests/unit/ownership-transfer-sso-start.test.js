@@ -47,7 +47,10 @@ vi.mock("@/lib/db/repos/usersRepo.js", () => ({ getUserUnscoped: mocks.getUserUn
 vi.mock("@/lib/db/repos/identitiesRepo.js", () => ({
   listIdentitiesUnscoped: mocks.listIdentitiesUnscoped,
 }));
-vi.mock("@/lib/localDb", () => ({ getSettings: mocks.getSettings }));
+vi.mock("@/lib/db/index.js", async (importOriginal) => ({
+  ...(await importOriginal()),
+  getSettings: mocks.getSettings,
+}));
 vi.mock("@/lib/auth/authModes", () => ({ resolveAuthModes: mocks.resolveAuthModes }));
 vi.mock("@/lib/auth/loginLimiter.js", () => ({
   accountKey: ({ userId }) => `acct:${userId}`,

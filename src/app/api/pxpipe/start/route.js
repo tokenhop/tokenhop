@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getSettings } from "@/lib/localDb";
+import { getSettings } from "@/lib/db/index.js";
 import { getInstallInfo, installPxpipe } from "@/lib/pxpipe/install.js";
 import { loadPxpipe } from "@/lib/pxpipe/loader.js";
 import { getPxpipeStatus } from "@/lib/pxpipe/service.js";

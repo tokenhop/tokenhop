@@ -1,8 +1,7 @@
 import { NextResponse } from "next/server";
-import { updateSettings } from "@/lib/localDb";
+import { updateSettings, getOwnerUnscoped, setUserPasswordUnscoped } from "@/lib/db/index.js";
 import { cliTokenAccepted, hasValidSession, revokeOwnerSessions } from "@/lib/users/session";
 import { isUserSecurityEnforced } from "@/lib/users/securityState.js";
-import { getOwnerUnscoped, setUserPasswordUnscoped } from "@/lib/db/index.js";
 import { isLocalRequest } from "@/dashboardGuard";
 
 const NO_STORE = { "Cache-Control": "no-store" };

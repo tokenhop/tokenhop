@@ -2,7 +2,7 @@
 // capabilities.js so routing and media stripping honour them (YAN-657).
 // Called at server start and after every custom-model change.
 import { setCustomCapsSource } from "open-sse/providers/capabilities.js";
-import { getCustomModelsUnscoped } from "@/lib/localDb";
+import { getCustomModelsUnscoped } from "@/lib/db/index.js";
 import { ALIAS_TO_ID, getProviderAlias } from "@/shared/constants/providers";
 
 export async function refreshCustomModelCaps() {

@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
 import { testSingleConnection } from "./testUtils.js";
-import { getConnection } from "@/lib/db/index.js";
-import { getProviderConnectionByIdUnscoped } from "@/lib/localDb";
+import { getConnection, getProviderConnectionByIdUnscoped } from "@/lib/db/index.js";
 import { loadScoped } from "@/lib/users/workspaceScope.js";
 
 const loadConnection = (capability, id) =>

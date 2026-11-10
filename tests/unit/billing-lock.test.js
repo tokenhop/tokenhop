@@ -16,8 +16,9 @@ const dbMocks = vi.hoisted(() => {
   return m;
 });
 
-vi.mock("@/lib/localDb", () => dbMocks);
-vi.mock("@/lib/db/index.js", () => ({
+vi.mock("@/lib/db/index.js", async (importOriginal) => ({
+  ...(await importOriginal()),
+  ...dbMocks,
   getEffectivePreferences: vi.fn(async () => ({})),
   mutateBillingLockUnscoped: vi.fn(),
   saveRequestDetailUnscoped: vi.fn(async () => {}),

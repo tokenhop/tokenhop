@@ -1037,7 +1037,7 @@ docker stop tokenhop && docker rm tokenhop
 
 ### ランタイムファイルとストレージ
 
-- メインアプリ状態: `${DATA_DIR}/db.json`（プロバイダー、コンボ、エイリアス、キー、設定）、`src/lib/localDb.js` で管理。
+- メインアプリ状態: `${DATA_DIR}/db.json`（プロバイダー、コンボ、エイリアス、キー、設定）、`src/lib/db/index.js` で管理。
 - 使用履歴とログ: `~/.tokenhop/usage.json` と `~/.tokenhop/log.txt`、`src/lib/usageDb.js` で管理。
 - オプションのリクエスト/トランスレーターログ: `ENABLE_REQUEST_LOGS=true` 時に `<repo>/logs/...`。
 - 使用状況ストレージは現在 `~/.tokenhop` パスロジックに従い、`DATA_DIR` とは独立しています。既存の `~/.9router` があれば自動的に使われ、`tokenhop data migrate` で移行できます。 <!-- legacy(9router) -->

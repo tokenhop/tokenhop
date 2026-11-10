@@ -9,8 +9,8 @@ import {
   getCombosUnscoped,
   getModelAliasesUnscoped,
   updateProviderConnectionUnscoped,
-} from "@/lib/localDb";
-import { listEffectivePreferencesUnscoped } from "@/lib/db/index.js";
+  listEffectivePreferencesUnscoped,
+} from "@/lib/db/index.js";
 import { getUsageForProvider } from "open-sse/services/usage.js";
 import { getSnapshot } from "open-sse/services/quotaSnapshot.js";
 import { QUOTA_SNAPSHOT } from "open-sse/config/quotaSnapshot.js";

@@ -9,20 +9,20 @@ const dbMocks = vi.hoisted(() => {
   };
   // Lock writes run decide() on the live row inside a transaction; forward the
   // patch so the plain-write assertions below still see it.
-  m.mutateProviderConnectionUnscoped = vi.fn(async (id, decide) => {
+  m.forwardMutate = async (id, decide) => {
     const patch = decide({});
     if (patch) await m.updateProviderConnectionUnscoped(id, patch);
     return { applied: !!patch, missing: false };
-  });
+  };
+  m.mutateProviderConnectionUnscoped = vi.fn(m.forwardMutate);
   return m;
 });
 
-vi.mock("@/lib/localDb", () => dbMocks);
-
-vi.mock("@/lib/db/index.js", () => ({
+vi.mock("@/lib/db/index.js", async (importOriginal) => ({
+  ...(await importOriginal()),
+  ...dbMocks,
   getEffectivePreferences: vi.fn(async () => ({})),
   mutateBillingLockUnscoped: vi.fn(),
-  mutateProviderConnectionUnscoped: vi.fn(),
   saveRequestDetailUnscoped: vi.fn(async () => {}),
   getPricingForModel: vi.fn(async () => null),
 }));
@@ -49,6 +49,9 @@ vi.mock("@/sse/utils/logger.js", () => ({
 }));
 
 const { mutateProviderConnectionUnscoped } = await import("@/lib/db/index.js");
+// Lock writes (auth.js) share this mutate; re-auth flag writes carry reauthRequired.
+const flagWrites = () =>
+  mutateProviderConnectionUnscoped.mock.calls.filter(([, decide]) => decide({})?.reauthRequired);
 const { markAccountUnavailable } = await import("../../src/sse/services/auth.js");
 const { classifyAccessTokenRejection } = await import(
   "../../open-sse/services/earlyTokenExpiry.js"
@@ -78,7 +81,10 @@ const oauth = (id, extra = {}) => ({
   ...extra,
 });
 
-beforeEach(() => vi.clearAllMocks());
+beforeEach(() => {
+  vi.clearAllMocks();
+  mutateProviderConnectionUnscoped.mockImplementation(dbMocks.forwardMutate);
+});
 
 describe("classifyAccessTokenRejection (YAN-1288)", () => {
   const structured = (code) => JSON.stringify({ error: { code } });
@@ -233,7 +239,7 @@ describe("handleReauthOnFailure: conclusive rejection flags the row (YAN-1288)",
     const r = await markAccountUnavailable("a3", 401, "Unauthorized", "codex", "gpt-5");
     expect(r.shouldFallback).toBe(true);
     expect(r.cooldownMs).toBeGreaterThan(0);
-    expect(mutateProviderConnectionUnscoped).not.toHaveBeenCalled();
+    expect(flagWrites()).toHaveLength(0);
   });
 
   it("never flags an oauth row with a refresh token on a rejection 401", async () => {
@@ -250,7 +256,7 @@ describe("handleReauthOnFailure: conclusive rejection flags the row (YAN-1288)",
     );
     expect(r.shouldFallback).toBe(true);
     expect(r.cooldownMs).toBeGreaterThan(0);
-    expect(mutateProviderConnectionUnscoped).not.toHaveBeenCalled();
+    expect(flagWrites()).toHaveLength(0);
   });
 
   it("guards the conditional write against a re-imported token or an existing flag", async () => {

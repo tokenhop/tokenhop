@@ -1,6 +1,6 @@
 import crypto from "node:crypto";
 import { EncryptJWT, createRemoteJWKSet, decodeProtectedHeader, jwtDecrypt, jwtVerify } from "jose";
-import { getSettings } from "@/lib/localDb";
+import { getSettings } from "@/lib/db/index.js";
 import { resolveAuthModes } from "@/lib/auth/authModes";
 
 export const OIDC_COOKIE_NAMES = {

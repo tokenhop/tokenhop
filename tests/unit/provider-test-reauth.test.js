@@ -17,7 +17,8 @@ async function runTest(connection) {
   });
   global.fetch = fetchMock;
   const updates = [];
-  vi.doMock("@/lib/localDb", () => ({
+  vi.doMock("@/lib/db/index.js", async (importOriginal) => ({
+    ...(await importOriginal()),
     getProviderConnectionByIdUnscoped: vi.fn(async () => connection),
     updateProviderConnectionUnscoped: vi.fn(async (_id, data) => updates.push(data)),
   }));
@@ -40,7 +41,7 @@ const flagged = (reason) => ({
 describe("provider Test on a connection that needs re-authentication", () => {
   beforeEach(() => vi.resetModules());
   afterEach(() => {
-    vi.doUnmock("@/lib/localDb");
+    vi.doUnmock("@/lib/db/index.js");
     vi.doUnmock("@/lib/network/connectionProxy");
     global.fetch = originalFetch;
   });

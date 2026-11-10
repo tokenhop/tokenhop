@@ -112,7 +112,8 @@ vi.mock("@/sse/services/auth.js", () => ({
   isValidApiKey: async () => false,
 }));
 vi.mock("@/sse/services/model.js", () => ({ getModelInfo: mocks.getModelInfo }));
-vi.mock("@/lib/localDb", () => ({
+vi.mock("@/lib/db/index.js", async (importOriginal) => ({
+  ...(await importOriginal()),
   getSettings: mocks.getSettings,
   getProviderConnectionByIdUnscoped: mocks.getProviderConnectionByIdUnscoped,
 }));
@@ -630,7 +631,7 @@ describe("gateway video poll (hashed storage)", () => {
 describe("legacy video behavior (pristine)", () => {
   it("legacy storage keeps today's auth, unscoped routing, and records no provenance", async () => {
     // Legacy storage: no hashed markers → resolveVideoAuth takes the original
-    // requireValidApiKey path (settings requireApiKey=false via mocked localDb).
+    // requireValidApiKey path (settings requireApiKey=false via mocked db layer).
     const legacyAdapter = createVideoJobStore();
     legacyAdapter.all = (sql, params = []) => {
       if (sql.startsWith("SELECT key, value FROM _meta")) return []; // no markers

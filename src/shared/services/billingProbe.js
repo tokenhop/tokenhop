@@ -14,7 +14,7 @@
 // concurrent disable / re-lock / delete always wins.
 import "open-sse/index.js";
 
-import { getPricingForModel, getProviderConnectionByIdUnscoped } from "@/lib/localDb";
+import { getPricingForModel, getProviderConnectionByIdUnscoped } from "@/lib/db/index.js";
 import {
   getProviderConnectionsMetadataUnscoped,
   mutateBillingLockUnscoped,

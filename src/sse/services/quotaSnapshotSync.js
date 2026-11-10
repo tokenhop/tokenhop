@@ -1,6 +1,6 @@
 // App-side quota snapshot sync (YAN-259). Maps USAGE_HANDLERS results onto the
 // open-sse snapshot store and persists providerSpecificData.planTier.
-// App-only: may import @/lib/localDb + open-sse; open-sse never imports this.
+// App-only: may import @/lib/db + open-sse; open-sse never imports this.
 import {
   computeEffectiveWeight,
   getSnapshot,
@@ -12,7 +12,10 @@ import { QUOTA_SNAPSHOT } from "open-sse/config/quotaSnapshot.js";
 import { recordQuotaSample } from "@/lib/quota/forecastStore.js";
 import { fetchClaudePlanTier } from "open-sse/services/usage/claude.js";
 import { cursorPlanTier } from "open-sse/services/usage/cursor.js";
-import { getProviderConnectionByIdUnscoped, updateProviderConnectionUnscoped } from "@/lib/localDb";
+import {
+  getProviderConnectionByIdUnscoped,
+  updateProviderConnectionUnscoped,
+} from "@/lib/db/index.js";
 import { releaseExactQuotaBlocks } from "./antigravityQuota.js";
 import { releaseQuotaLocksFromPoll } from "./quotaLockRelease.js";
 

@@ -3,7 +3,10 @@
 // quota-reset branches of markAccountUnavailable) are ever released here;
 // 401/404/5xx/per-model locks have none and wait out their expiry. Never
 // touches billingLock*, reauthRequired or isActive.
-import { getProviderConnectionByIdUnscoped, mutateProviderConnectionUnscoped } from "@/lib/localDb";
+import {
+  getProviderConnectionByIdUnscoped,
+  mutateProviderConnectionUnscoped,
+} from "@/lib/db/index.js";
 import {
   MODEL_LOCK_ALL,
   MODEL_LOCK_META_PREFIX,

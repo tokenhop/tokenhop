@@ -30,7 +30,7 @@ vi.mock("@/lib/usageDb.js", async (importOriginal) => {
   };
 });
 
-const db = await import("@/lib/localDb.js");
+const db = await import("@/lib/db/index.js");
 const { handleChat } = await import("../../src/sse/handlers/chat.js");
 const { resetComboRotation } = await import("../../open-sse/services/combo.js");
 const { resetAccountSelection } = await import("../../src/sse/services/auth.js");

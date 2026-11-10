@@ -71,8 +71,9 @@ describe("effective weighted shares (router math)", () => {
 describe("combo headroom quota source (additive API)", () => {
   it("GET /api/combos/[id]/headroom keeps `headroom` and adds per-member detail", async () => {
     vi.resetModules();
-    vi.doMock("@/lib/localDb", () => ({
-      getComboById: async () => ({ id: "c1", name: "combo", models: ["cc/a", "cx/b"] }),
+    vi.doMock("@/lib/db/index.js", async (importOriginal) => ({
+      ...(await importOriginal()),
+      getComboByIdUnscoped: async () => ({ id: "c1", name: "combo", models: ["cc/a", "cx/b"] }),
     }));
     vi.doMock("@/sse/services/comboHeadroom.js", () => ({
       loadComboHeadroomDetailFn: async () => (model) =>
@@ -88,7 +89,7 @@ describe("combo headroom quota source (additive API)", () => {
       "cx/b": { headroom: 1, source: "static" },
     });
     vi.doUnmock("@/sse/services/comboHeadroom.js");
-    vi.doUnmock("@/lib/localDb");
+    vi.doUnmock("@/lib/db/index.js");
   });
 
   it("loadComboHeadroomFn keeps returning numbers with the same fail-open rules", async () => {

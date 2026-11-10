@@ -10,7 +10,8 @@ const mocks = vi.hoisted(() => ({
   refreshCredentials: vi.fn(),
 }));
 
-vi.mock("@/lib/localDb.js", () => ({
+vi.mock("@/lib/db/index.js", async (importOriginal) => ({
+  ...(await importOriginal()),
   getProviderConnectionsUnscoped: mocks.getProviderConnectionsUnscoped,
   updateProviderConnectionUnscoped: mocks.updateProviderConnectionUnscoped,
 }));

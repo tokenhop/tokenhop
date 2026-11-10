@@ -3,7 +3,7 @@
 import { describe, expect, it } from "vitest";
 
 import { readTokenResponse } from "../../src/lib/oauth/providerHelpers.js";
-import { updateSettings } from "../../src/lib/localDb.js";
+import { updateSettings } from "../../src/lib/db/index.js";
 import { handleChat } from "../../src/sse/handlers/chat.js";
 
 const post = (body) =>

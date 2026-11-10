@@ -9,7 +9,7 @@ import { clearPid } from "./pid.js";
 import { waitForHealth, probeUrlAlive } from "./healthCheck.js";
 import { getTunnelRelay } from "./config.js";
 import { buildPublicUrl } from "./relay.js";
-import { getSettings, updateSettings } from "@/lib/localDb";
+import { getSettings, updateSettings } from "@/lib/db/index.js";
 
 const svc = {
   cancelToken: { cancelled: false },

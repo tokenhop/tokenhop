@@ -8,12 +8,11 @@ const mocks = vi.hoisted(() => ({
   resolveConnectionProxyConfig: vi.fn(),
 }));
 
-vi.mock("@/lib/localDb", () => ({
+vi.mock("@/lib/db/index.js", async (importOriginal) => ({
+  ...(await importOriginal()),
   getProviderConnectionsUnscoped: vi.fn(async () => mocks.connections),
   getProxyPools: vi.fn(async () => []),
   updateProviderConnectionUnscoped: vi.fn(),
-}));
-vi.mock("@/lib/db/index.js", () => ({
   getEffectivePreferences: vi.fn(async () => ({})),
   mutateBillingLockUnscoped: vi.fn(),
 }));
