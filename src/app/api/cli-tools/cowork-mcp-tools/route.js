@@ -1,5 +1,3 @@
-"use server";
-
 import { NextResponse } from "next/server";
 import { UPSTREAM_CLIENT_IDS } from "@/shared/brand";
 import { assertPublicUrl } from "@/shared/utils/ssrfGuard.js";
