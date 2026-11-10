@@ -1076,7 +1076,7 @@ docker stop tokenhop && docker rm tokenhop
 
 ### 运行时文件和存储
 
-- 主应用状态：`${DATA_DIR}/db.json`（提供商、组合、别名、密钥、设置），由 `src/lib/localDb.js` 管理。
+- 主应用状态：`${DATA_DIR}/db.json`（提供商、组合、别名、密钥、设置），由 `src/lib/db/index.js` 管理。
 - 使用历史和日志：`${DATA_DIR}/usage.json` 和 `${DATA_DIR}/log.txt`，由 `src/lib/usageDb.js` 管理。
 - 可选的请求/翻译器日志：`ENABLE_REQUEST_LOGS=true` 时位于 `<repo>/logs/...`。
 - `${DATA_DIR}` 和 `~/.tokenhop` 在 Docker 容器中解析到同一位置 — 符号链接 `/root/.tokenhop -> /app/data` 在构建时创建。

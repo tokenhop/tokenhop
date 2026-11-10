@@ -10,7 +10,8 @@ const mocks = vi.hoisted(() => ({
 vi.mock("next/server", () => ({
   NextResponse: { json: (body, init) => ({ status: init?.status || 200, body, init }) },
 }));
-vi.mock("@/lib/localDb", () => ({
+vi.mock("@/lib/db/index.js", async (importOriginal) => ({
+  ...(await importOriginal()),
   getProviderConnectionsUnscoped: mocks.getProviderConnectionsUnscoped,
   getCombosUnscoped: mocks.getCombosUnscoped,
   getSettings: mocks.getSettings,

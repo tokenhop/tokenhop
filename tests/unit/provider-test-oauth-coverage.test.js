@@ -10,7 +10,8 @@ async function testConnection(
   const updates = [];
   const fetchMock = vi.fn(fetchImpl);
   global.fetch = fetchMock;
-  vi.doMock("@/lib/localDb", () => ({
+  vi.doMock("@/lib/db/index.js", async (importOriginal) => ({
+    ...(await importOriginal()),
     getProviderConnectionByIdUnscoped: vi.fn(async () => connection),
     updateProviderConnectionUnscoped: vi.fn(async (_id, data) => updates.push(data)),
   }));
@@ -36,7 +37,7 @@ const connection = (provider, authType = "oauth") => ({
 describe("provider connection tests for OAuth and imported keys", () => {
   beforeEach(() => vi.resetModules());
   afterEach(() => {
-    vi.doUnmock("@/lib/localDb");
+    vi.doUnmock("@/lib/db/index.js");
     vi.doUnmock("@/lib/network/connectionProxy");
     global.fetch = originalFetch;
   });

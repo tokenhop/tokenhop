@@ -29,7 +29,8 @@ vi.mock("@/mitm/manager", async (importOriginal) => {
   };
 });
 
-vi.mock("@/lib/localDb", () => ({
+vi.mock("@/lib/db/index.js", async (importOriginal) => ({
+  ...(await importOriginal()),
   getSettings: vi.fn(),
   updateSettings: vi.fn(),
 }));
@@ -42,7 +43,7 @@ vi.mock("@/lib/auth/mitmCredential", () => ({
 
 const { assertMitmStartupSourceCompatible, getMitmStatus, getMitmCredentialStatus, startServer } =
   await import("@/mitm/manager");
-const { getSettings, updateSettings } = await import("@/lib/localDb");
+const { getSettings, updateSettings } = await import("@/lib/db/index.js");
 const { readStorageState } = await import("@/lib/auth/mitmCredential");
 const { GET, POST } = await import("@/app/api/cli-tools/antigravity-mitm/route.js");
 const legacyMod = await import("@/mitm/legacyPasswordCrypto.cjs");

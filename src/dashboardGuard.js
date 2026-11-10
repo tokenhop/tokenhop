@@ -1,6 +1,5 @@
 import { NextResponse } from "next/server";
-import { getSettings, validateApiKey } from "@/lib/localDb";
-import { getEffectivePreferences } from "@/lib/db/index.js";
+import { getSettings, validateApiKey, getEffectivePreferences } from "@/lib/db/index.js";
 import { isHashedSecurityEstablished } from "@/lib/users/securityState.js";
 import { resolveGatewayAuth } from "@/lib/auth/gatewayAuth.js";
 import { resolveFlagSetting, resolveStartPage } from "@/lib/settingsFlags";

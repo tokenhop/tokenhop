@@ -52,12 +52,10 @@ vi.mock("@/lib/db/workspaceTransfer.js", () => ({
   exportWorkspace: m.exportWorkspace,
   importWorkspace: m.importWorkspace,
 }));
-vi.mock("@/lib/localDb", () => ({
+vi.mock("@/lib/db/index.js", async (importOriginal) => ({
+  ...(await importOriginal()),
   importDb: m.importDb,
   getSettings: vi.fn(async () => ({})),
-}));
-vi.mock("@/lib/db/index.js", async (orig) => ({
-  ...(await orig()),
   exportDbToFile: m.exportDb,
   importDbStream: m.importDbStream,
 }));

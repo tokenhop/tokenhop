@@ -14,13 +14,14 @@ async function slowRead(id) {
   return [{ id, provider: "openai", isActive: true, priority: 1 }];
 }
 
-vi.mock("@/lib/localDb", () => ({
+vi.mock("@/lib/db/index.js", async (importOriginal) => ({
+  ...(await importOriginal()),
   getProviderConnectionsUnscoped: vi.fn(() => slowRead("legacy")),
   getProxyPools: vi.fn(),
   validateApiKey: vi.fn(),
   updateProviderConnectionUnscoped: vi.fn(),
+  getEffectivePreferences: vi.fn(async () => ({})),
 }));
-vi.mock("@/lib/db/index.js", () => ({ getEffectivePreferences: vi.fn(async () => ({})) }));
 vi.mock("@/lib/auth/gatewayResources.js", () => ({
   getGatewayConnections: vi.fn((principal) => slowRead(`${principal.workspaceId}-conn`)),
   requireGatewayWorkspace: vi.fn(async () => {}),

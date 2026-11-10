@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { deleteApiKeyUnscoped, getApiKeyById, updateApiKey } from "@/lib/localDb";
+import { deleteApiKeyUnscoped, getApiKeyById, updateApiKey } from "@/lib/db/index.js";
 import { validateKeyName } from "@/app/(dashboard)/dashboard/endpoint/endpointLogic";
 
 import { readApiKeyStorageState } from "@/lib/db/apiKeyState";

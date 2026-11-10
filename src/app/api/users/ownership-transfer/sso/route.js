@@ -27,7 +27,7 @@ import {
   getClientIp,
   recordLoginFail,
 } from "@/lib/auth/loginLimiter.js";
-import { getSettings } from "@/lib/localDb";
+import { getSettings } from "@/lib/db/index.js";
 import { listIdentitiesUnscoped } from "@/lib/db/repos/identitiesRepo.js";
 import { getUserUnscoped } from "@/lib/db/repos/usersRepo.js";
 import { requireMultiUser } from "@/lib/users/featureSwitch.js";

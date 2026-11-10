@@ -5,8 +5,8 @@ import {
   getSettings,
   getProviderConnectionsUnscoped,
   updateProviderConnectionUnscoped,
-} from "@/lib/localDb";
-import { listEffectivePreferencesUnscoped } from "@/lib/db/index.js";
+  listEffectivePreferencesUnscoped,
+} from "@/lib/db/index.js";
 import { getClaudeUsage } from "open-sse/services/usage/claude.js";
 import { getCodexUsage } from "open-sse/services/usage/codex.js";
 import { getExecutor } from "open-sse/executors/index.js";

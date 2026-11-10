@@ -2,12 +2,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("open-sse/index.js", () => ({}), { virtual: true });
 
-vi.mock("@/lib/localDb", () => ({
+vi.mock("@/lib/db/index.js", async (importOriginal) => ({
+  ...(await importOriginal()),
   getSettings: vi.fn(),
   getProviderConnectionsUnscoped: vi.fn(),
   getProviderConnectionByIdUnscoped: vi.fn(),
-  getCombos: vi.fn(),
-  getModelAliases: vi.fn(async () => ({})),
+  getCombosUnscoped: vi.fn(),
+  getModelAliasesUnscoped: vi.fn(async () => ({})),
   updateProviderConnectionUnscoped: vi.fn(),
 }));
 
@@ -42,7 +43,7 @@ describe("quota snapshot sync", () => {
     vi.useFakeTimers();
     vi.setSystemTime(NOW);
 
-    db = await import("@/lib/localDb");
+    db = await import("@/lib/db/index.js");
     db.getProviderConnectionByIdUnscoped.mockReset();
     db.updateProviderConnectionUnscoped.mockReset();
     ({ fetchClaudePlanTier } = await import("open-sse/services/usage/claude.js"));
@@ -335,9 +336,9 @@ describe("quota snapshot poller", () => {
     vi.setSystemTime(NOW);
     delete global.__quotaSnapshotPoller;
 
-    const db = await import("@/lib/localDb");
+    const db = await import("@/lib/db/index.js");
     db.getSettings.mockReset().mockResolvedValue({});
-    db.getCombos.mockReset().mockResolvedValue([]);
+    db.getCombosUnscoped.mockReset().mockResolvedValue([]);
     db.getProviderConnectionsUnscoped.mockReset().mockResolvedValue([]);
     store = await import("open-sse/services/quotaSnapshot.js");
     poller = await import("../../src/shared/services/quotaSnapshotPoller.js");

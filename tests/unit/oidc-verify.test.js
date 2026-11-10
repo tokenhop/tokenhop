@@ -2,7 +2,10 @@ import http from "node:http";
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { SignJWT, exportJWK, generateKeyPair } from "jose";
 
-vi.mock("@/lib/localDb", () => ({ getSettings: vi.fn() }));
+vi.mock("@/lib/db/index.js", async (importOriginal) => ({
+  ...(await importOriginal()),
+  getSettings: vi.fn(),
+}));
 
 const { verifyOidcIdToken, fetchOidcUserInfo } = await import("../../src/lib/auth/oidc.js");
 const { readGroupsClaim, normalizeGroups, resolveAssignments } = await import(

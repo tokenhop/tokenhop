@@ -10,8 +10,7 @@ import {
   handleAntigravityQuotaError,
   clearAntigravityStrikes,
 } from "../services/antigravityQuota.js";
-import { getSettings } from "@/lib/localDb";
-import { getEffectivePreferences } from "@/lib/db/index.js";
+import { getSettings, getEffectivePreferences } from "@/lib/db/index.js";
 import { createChatLookups } from "./chatLookups.js";
 import { comboRotationKey, comboStrategyFor } from "@/lib/comboKeys.js";
 import { handleChatCore } from "open-sse/handlers/chatCore.js";

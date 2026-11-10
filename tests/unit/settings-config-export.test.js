@@ -39,7 +39,7 @@ const importConfig = (doc, extra = {}) =>
   );
 
 const readStored = async () => {
-  const { getSettings } = await import("@/lib/localDb");
+  const { getSettings } = await import("@/lib/db/index.js");
   return getSettings();
 };
 
@@ -74,7 +74,7 @@ describe("YAN-313 config export/import routes", () => {
     // A credential-laden URL in storage: export masks it, import skips
     // tombstones (with warning), so the stored URL is never lost.
     const storedUrl = "http://alice:hunter2@proxy.corp:8080/path";
-    const { updateSettings } = await import("@/lib/localDb");
+    const { updateSettings } = await import("@/lib/db/index.js");
     await updateSettings({ outboundProxyUrl: storedUrl });
 
     const doc = await (await exportConfig()).json();
@@ -120,7 +120,7 @@ describe("YAN-313 config export/import routes", () => {
   });
 
   it("never exports the metadata-only secretsConfigured presence map (YAN-365)", async () => {
-    const { updateSettings } = await import("@/lib/localDb");
+    const { updateSettings } = await import("@/lib/db/index.js");
     await updateSettings({
       oidcIssuerUrl: "https://idp.example",
       oidcClientId: "client",
@@ -144,7 +144,7 @@ describe("YAN-313 config export/import routes", () => {
   });
 
   it("never exports the MITM internal verifier and rejects it on import (YAN-363)", async () => {
-    const { updateSettings } = await import("@/lib/localDb");
+    const { updateSettings } = await import("@/lib/db/index.js");
     await updateSettings({ mitmInternalVerifier: "a".repeat(64) });
 
     const doc = await (await exportConfig()).json();
@@ -197,7 +197,7 @@ describe("YAN-313 config export/import routes", () => {
 
     const applied = await importConfig(changed, { mode: "apply" });
     expect(applied.status).toBe(200);
-    const { getCombos, getUserPricing } = await import("@/lib/localDb");
+    const { getCombosUnscoped: getCombos, getUserPricing } = await import("@/lib/db/index.js");
     expect((await readStored()).stickyRoundRobinLimit).toBe(target);
     expect((await getCombos()).some((c) => c.name === "yan313-e2e")).toBe(true);
     expect((await getUserPricing())["yan313-test"]).toEqual({ m1: { input: 1 } });

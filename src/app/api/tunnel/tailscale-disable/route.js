@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { disableTailscale } from "@/lib/tunnel";
 import { invalidateTunnelStatusCache } from "@/lib/tunnel/statusCache.js";
-import { getSettings } from "@/lib/localDb";
+import { getSettings } from "@/lib/db/index.js";
 import { configureTunnelMonitoring } from "@/shared/services/initializeApp";
 
 export async function POST() {

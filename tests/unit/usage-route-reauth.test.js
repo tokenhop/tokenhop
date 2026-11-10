@@ -9,11 +9,12 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock("open-sse/index.js", () => ({}));
-vi.mock("@/lib/localDb", () => ({
+vi.mock("@/lib/db/index.js", async (importOriginal) => ({
+  ...(await importOriginal()),
   getProviderConnectionByIdUnscoped: vi.fn(),
   updateProviderConnectionUnscoped: mocks.update,
+  getConnection: vi.fn(),
 }));
-vi.mock("@/lib/db/index.js", () => ({ getConnection: vi.fn() }));
 vi.mock("@/lib/users/workspaceScope.js", () => ({ loadScoped: vi.fn() }));
 vi.mock("open-sse/services/usage.js", () => ({ getUsageForProvider: vi.fn() }));
 vi.mock("open-sse/executors/index.js", () => ({

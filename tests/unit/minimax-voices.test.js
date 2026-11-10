@@ -5,11 +5,11 @@ vi.mock("open-sse/utils/proxyFetch.js", async (importOriginal) => ({
   proxyAwareFetch: (url, options) => globalThis.fetch(url, options),
 }));
 
-vi.mock("../../src/lib/localDb.js", () => ({
+vi.mock("../../src/lib/db/index.js", () => ({
   getProviderConnectionsUnscoped: vi.fn(),
 }));
 
-import { getProviderConnectionsUnscoped } from "../../src/lib/localDb.js";
+import { getProviderConnectionsUnscoped } from "../../src/lib/db/index.js";
 import { GET } from "../../src/app/api/media-providers/tts/minimax/voices/route.js";
 
 const originalFetch = global.fetch;

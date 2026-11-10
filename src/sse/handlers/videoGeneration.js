@@ -5,7 +5,7 @@ import {
   extractApiKey,
   isValidApiKey,
 } from "../services/auth.js";
-import { getSettings, getProviderConnectionByIdUnscoped } from "@/lib/localDb";
+import { getSettings, getProviderConnectionByIdUnscoped } from "@/lib/db/index.js";
 import {
   authorizeGatewayTarget,
   gatewayKeyContext,

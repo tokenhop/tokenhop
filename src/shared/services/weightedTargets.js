@@ -1,7 +1,11 @@
 // Weighted-target resolution (YAN-259). Neutral module so the usage route and the
 // snapshot poller can share it without a route <-> poller import cycle.
-import { getSettings, getCombosUnscoped, getModelAliasesUnscoped } from "@/lib/localDb";
-import { listEffectivePreferencesUnscoped } from "@/lib/db/index.js";
+import {
+  getSettings,
+  getCombosUnscoped,
+  getModelAliasesUnscoped,
+  listEffectivePreferencesUnscoped,
+} from "@/lib/db/index.js";
 import { parseModel, resolveModelAliasFromMap } from "open-sse/services/model.js";
 
 import { resolveComboStrategy } from "open-sse/services/comboStrategy.js";

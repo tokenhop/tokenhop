@@ -1,4 +1,4 @@
-// Database Models - Export all from localDb
+// Database Models - Export all from the db layer
 export {
   getProviderConnectionsUnscoped,
   getProviderConnectionByIdUnscoped,
@@ -48,4 +48,4 @@ export {
   deleteApiKeyUnscoped,
   validateApiKey,
   isCloudEnabled,
-} from "@/lib/localDb";
+} from "@/lib/db/index.js";

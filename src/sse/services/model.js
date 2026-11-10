@@ -1,5 +1,5 @@
-// Re-export from open-sse with localDb integration
-import { getModelAliases, getComboByName as getComboByNameUnscoped } from "@/lib/localDb";
+// Re-export from open-sse with db integration
+import { getModelAliasesUnscoped, getComboByNameUnscoped } from "@/lib/db/index.js";
 import {
   getGatewayNodesMetadata,
   getGatewayCombos,
@@ -81,7 +81,7 @@ export async function resolveOpenAICompatibleConnectionApiType(connection) {
 export async function resolveModelAlias(alias, options = {}) {
   const aliases = options.principal
     ? await getGatewayAliases(options.principal)
-    : await getModelAliases();
+    : await getModelAliasesUnscoped();
   return resolveModelAliasFromMap(alias, aliases);
 }
 
@@ -141,7 +141,7 @@ export async function getModelInfo(modelStr, options = {}) {
     // Scoped miss: built-ins only (never the global alias map).
     return getModelInfoCore(modelStr, {});
   }
-  return getModelInfoCore(modelStr, getModelAliases);
+  return getModelInfoCore(modelStr, getModelAliasesUnscoped);
 }
 
 /**

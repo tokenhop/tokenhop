@@ -107,13 +107,16 @@ describe("refresh merge (mergeRefreshedCredentials)", () => {
 describe("persistence keeps the clamped expiry", () => {
   it("updateProviderCredentials writes the merged expiresAt and derives expiresIn from it", async () => {
     const update = vi.fn(async () => ({ id: "c1" }));
-    vi.doMock("@/lib/localDb.js", () => ({ updateProviderConnectionUnscoped: update }));
+    vi.doMock("@/lib/db/index.js", async (importOriginal) => ({
+      ...(await importOriginal()),
+      updateProviderConnectionUnscoped: update,
+    }));
     const { updateProviderCredentials } = await import("../../src/sse/services/tokenRefresh.js");
     const expiresAt = new Date(NOW + 2 * HOUR).toISOString();
     await updateProviderCredentials("c1", { accessToken: "a", expiresAt });
     expect(update.mock.calls[0][1].expiresAt).toBe(expiresAt);
     expect(update.mock.calls[0][1].expiresIn).toBe(2 * 3600);
-    vi.doUnmock("@/lib/localDb.js");
+    vi.doUnmock("@/lib/db/index.js");
   });
 });
 

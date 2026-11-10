@@ -1038,7 +1038,7 @@ docker stop tokenhop && docker rm tokenhop
 
 ### Runtime-файлы и хранилище
 
-- Основное состояние приложения: `${DATA_DIR}/db.json` (провайдеры, комбо, alias, ключи, настройки), управляется `src/lib/localDb.js`.
+- Основное состояние приложения: `${DATA_DIR}/db.json` (провайдеры, комбо, alias, ключи, настройки), управляется `src/lib/db/index.js`.
 - История использования и логи: `~/.tokenhop/usage.json` и `~/.tokenhop/log.txt`, управляется `src/lib/usageDb.js`.
 - Опциональные логи запросов/транслятора: `<repo>/logs/...` при `ENABLE_REQUEST_LOGS=true`.
 - Хранилище использования следует логике пути `~/.tokenhop` и независимо от `DATA_DIR`.

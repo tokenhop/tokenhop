@@ -21,13 +21,12 @@ vi.mock("open-sse/config/runtimeConfig.js", async (importActual) => ({
   ...(await importActual()),
   CACHE_AFFINITY_TTL_MS: 150,
 }));
-vi.mock("@/lib/localDb", () => ({
+vi.mock("@/lib/db/index.js", async (importOriginal) => ({
+  ...(await importOriginal()),
   getProviderConnectionsUnscoped: vi.fn(async () => rowsFor()),
   getProxyPools: vi.fn(),
   validateApiKey: vi.fn(),
   updateProviderConnectionUnscoped: mocks.update,
-}));
-vi.mock("@/lib/db/index.js", () => ({
   getEffectivePreferences: vi.fn(async () => mocks.settings),
 }));
 vi.mock("@/lib/auth/gatewayResources.js", () => ({

@@ -19,7 +19,8 @@ vi.mock("next/headers", () => ({
   cookies: mocks.cookies,
 }));
 
-vi.mock("@/lib/localDb", () => ({
+vi.mock("@/lib/db/index.js", async (importOriginal) => ({
+  ...(await importOriginal()),
   getSettings: mocks.getSettings,
 }));
 

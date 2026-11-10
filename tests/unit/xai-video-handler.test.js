@@ -28,11 +28,12 @@ const tokenMocks = vi.hoisted(() => ({
 
 vi.mock("@/sse/services/auth.js", () => authMocks);
 vi.mock("@/sse/services/tokenRefresh.js", () => tokenMocks);
-vi.mock("@/lib/localDb", () => ({
+vi.mock("@/lib/db/index.js", async (importOriginal) => ({
+  ...(await importOriginal()),
   getSettings: vi.fn(async () => ({ requireApiKey: false })),
   getProviderConnectionByIdUnscoped: vi.fn(async () => ({ id: "conn-5", provider: "xai" })),
-  getComboByName: vi.fn(async () => null),
-  getModelAliases: vi.fn(async () => ({})),
+  getComboByNameUnscoped: vi.fn(async () => null),
+  getModelAliasesUnscoped: vi.fn(async () => ({})),
   getProviderNodesUnscoped: vi.fn(async () => []),
 }));
 vi.mock("@/sse/utils/logger.js", () => ({

@@ -1,4 +1,7 @@
-import { getProviderConnectionByIdUnscoped, updateProviderConnectionUnscoped } from "@/lib/localDb";
+import {
+  getProviderConnectionByIdUnscoped,
+  updateProviderConnectionUnscoped,
+} from "@/lib/db/index.js";
 import { resolveConnectionProxyConfig } from "@/lib/network/connectionProxy";
 import { testProxyUrl } from "@/lib/network/proxyTest";
 import { probeApiKeyProvider } from "@/lib/providerKeyProbes";

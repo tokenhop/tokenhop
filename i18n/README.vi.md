@@ -1034,7 +1034,7 @@ Ghi chú:
 
 ### Tệp Runtime và Lưu trữ
 
-- Trạng thái ứng dụng chính: `${DATA_DIR}/db.json` (nhà cung cấp, combo, alias, key, cài đặt), được quản lý bởi `src/lib/localDb.js`.
+- Trạng thái ứng dụng chính: `${DATA_DIR}/db.json` (nhà cung cấp, combo, alias, key, cài đặt), được quản lý bởi `src/lib/db/index.js`.
 - Lịch sử sử dụng và log: `~/.tokenhop/usage.json` và `~/.tokenhop/log.txt`, được quản lý bởi `src/lib/usageDb.js`.
 - request/translator tùy chọn: `<repo>/logs/...` khi `ENABLE_REQUEST_LOGS=true`.
 - Lưu trữ sử dụng hiện tại tuân theo logic đường dẫn `~/.tokenhop` và độc lập với `DATA_DIR`.

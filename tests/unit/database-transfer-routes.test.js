@@ -17,16 +17,15 @@ const hidden404 = () => NextResponse.json({ error: "Not found" }, { status: 404 
 const transfer = vi.hoisted(() => ({ exportWorkspace: vi.fn(), importWorkspace: vi.fn() }));
 vi.mock("@/lib/db/workspaceTransfer.js", () => transfer);
 
-vi.mock("@/lib/localDb", () => ({
+vi.mock("@/lib/db/index.js", async (importOriginal) => ({
+  ...(await importOriginal()),
   getSettings: vi.fn(async () => ({})),
   importDb: vi.fn(),
-}));
-// Live workspace membership for the post-hash ownership re-check.
-vi.mock("@/lib/db/index.js", () => ({
   listWorkspaces: vi.fn(),
   exportDbToFile: vi.fn(),
   importDbStream: vi.fn(),
 }));
+// Live workspace membership for the post-hash ownership re-check.
 vi.mock("@/lib/auth/cliToken", () => ({ hasValidCliToken: () => false }));
 vi.mock("@/lib/network/outboundProxy", () => ({ applyOutboundProxyEnv: vi.fn() }));
 vi.mock("@/lib/users/audit.js", () => ({ audit: vi.fn() }));
@@ -98,7 +97,7 @@ vi.mock("@/lib/db/repos/usersRepo.js", () => ({
   getUserPasswordHashUnscoped: vi.fn(),
 }));
 
-const db = await import("@/lib/localDb");
+const db = await import("@/lib/db/index.js");
 const dbIndex = await import("@/lib/db/index.js");
 const featureSwitch = await import("@/lib/users/featureSwitch");
 const sameOrigin = await import("@/lib/auth/sameOrigin.js");

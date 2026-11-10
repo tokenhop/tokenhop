@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { enableTunnel } from "@/lib/tunnel";
 import { invalidateTunnelStatusCache } from "@/lib/tunnel/statusCache.js";
-import { getSettings } from "@/lib/localDb";
+import { getSettings } from "@/lib/db/index.js";
 import { configureTunnelMonitoring } from "@/shared/services/initializeApp";
 import { audit } from "@/lib/users/audit.js";
 

@@ -8,7 +8,8 @@ const mocks = vi.hoisted(() => ({
   getAntigravityUsage: vi.fn(),
 }));
 
-vi.mock("@/lib/localDb", () => ({
+vi.mock("@/lib/db/index.js", async (importOriginal) => ({
+  ...(await importOriginal()),
   getProviderConnectionsUnscoped: mocks.getProviderConnectionsUnscoped,
   getProviderConnectionByIdUnscoped: vi.fn(async () => null),
   mutateProviderConnectionUnscoped: vi.fn(),
@@ -16,8 +17,6 @@ vi.mock("@/lib/localDb", () => ({
   getProxyPools: vi.fn(),
   validateApiKey: vi.fn(),
   updateProviderConnectionUnscoped: vi.fn(),
-}));
-vi.mock("@/lib/db/index.js", () => ({
   getEffectivePreferences: mocks.getSettings,
   mutateBillingLockUnscoped: vi.fn(),
 }));

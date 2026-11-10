@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
-import { getCombos, createCombo, getComboByName } from "@/lib/localDb";
 import {
+  getCombosUnscoped,
+  createComboUnscoped,
+  getComboByNameUnscoped,
   listCombos,
   createCombo as createComboScoped,
   getComboByNameScoped,
@@ -20,7 +22,9 @@ export async function GET(request) {
   try {
     const scope = await workspaceScope(request, "workspace.connections.metadata.read");
     if (scope instanceof Response) return scope;
-    const combos = scope ? await listCombos(scope.ctx, scope.workspaceId) : await getCombos();
+    const combos = scope
+      ? await listCombos(scope.ctx, scope.workspaceId)
+      : await getCombosUnscoped();
     return NextResponse.json({ combos });
   } catch (error) {
     console.log("Error fetching combos:", error);
@@ -56,7 +60,7 @@ export async function POST(request) {
     // Check if name already exists (inside the selected workspace when scoped)
     const existing = scope
       ? await getComboByNameScoped(scope.ctx, scope.workspaceId, name)
-      : await getComboByName(name);
+      : await getComboByNameUnscoped(name);
     if (existing) {
       return NextResponse.json({ error: "Combo name already exists" }, { status: 400 });
     }
@@ -69,7 +73,9 @@ export async function POST(request) {
       return NextResponse.json({ error: `Invalid combo kind "${kind}"` }, { status: 400 });
     }
 
-    const combos = scope ? await listCombos(scope.ctx, scope.workspaceId) : await getCombos();
+    const combos = scope
+      ? await listCombos(scope.ctx, scope.workspaceId)
+      : await getCombosUnscoped();
     const cycle = findComboCycle(name, models || [], combos);
     if (cycle) {
       return NextResponse.json(
@@ -84,7 +90,7 @@ export async function POST(request) {
           models: models || [],
           kind: kind || null,
         })
-      : await createCombo({ name, models: models || [], kind: kind || null });
+      : await createComboUnscoped({ name, models: models || [], kind: kind || null });
 
     import("@/shared/services/quotaSnapshotPoller")
       .then(({ syncQuotaSnapshotPoller }) => syncQuotaSnapshotPoller())

@@ -32,9 +32,10 @@ vi.mock("../../src/sse/services/model.js", () => ({
   getComboByName: vi.fn(async () => null),
 }));
 vi.mock("@/lib/db/repos/combosRepo.js", () => ({ getComboByName: vi.fn(async () => null) }));
-vi.mock("@/lib/localDb", () => ({
+vi.mock("@/lib/db/index.js", async (importOriginal) => ({
+  ...(await importOriginal()),
   getSettings: async () => ({}),
-  getCombos: vi.fn(async () => []),
+  getCombosUnscoped: vi.fn(async () => []),
   getProviderConnectionByIdUnscoped: vi.fn(async () => null),
 }));
 vi.mock("@/lib/usageDb.js", () => ({ saveRequestUsageUnscoped: mocks.saveRequestUsageUnscoped }));

@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getSettings } from "@/lib/localDb";
+import { getSettings } from "@/lib/db/index.js";
 import { formatX509Certificate } from "@/lib/auth/saml.js";
 import { ACTIVE } from "@/shared/brand";
 

@@ -12,8 +12,11 @@ vi.mock("@/lib/users/workspaceScope.js", () => ({
   loadScoped: (...a) => mocks.loadScoped(...a),
   redactConnection: (s, c) => c,
 }));
-vi.mock("@/lib/db/index.js", () => ({ getConnection: vi.fn() }));
-vi.mock("@/lib/localDb", () => ({ getProviderConnectionByIdUnscoped: vi.fn() }));
+vi.mock("@/lib/db/index.js", async (importOriginal) => ({
+  ...(await importOriginal()),
+  getConnection: vi.fn(),
+  getProviderConnectionByIdUnscoped: vi.fn(),
+}));
 vi.mock("@/shared/services/billingProbe.js", async (importOriginal) => ({
   ...(await importOriginal()),
   probeBillingConnection: (...a) => mocks.probe(...a),

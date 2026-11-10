@@ -35,7 +35,8 @@ async function runTest(connection, responses) {
   for (const res of responses) fetchMock.mockResolvedValueOnce(res);
   global.fetch = fetchMock;
   const updates = [];
-  vi.doMock("@/lib/localDb", () => ({
+  vi.doMock("@/lib/db/index.js", async (importOriginal) => ({
+    ...(await importOriginal()),
     getProviderConnectionByIdUnscoped: vi.fn(async () => connection),
     updateProviderConnectionUnscoped: vi.fn(async (_id, data) => updates.push(data)),
   }));
@@ -61,7 +62,7 @@ describe("cursor connection test", () => {
   });
 
   afterEach(() => {
-    vi.doUnmock("@/lib/localDb");
+    vi.doUnmock("@/lib/db/index.js");
     vi.doUnmock("@/lib/network/connectionProxy");
     vi.doUnmock("open-sse/utils/proxyFetch.js");
     global.fetch = originalFetch;

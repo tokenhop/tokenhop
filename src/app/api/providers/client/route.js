@@ -1,6 +1,5 @@
 import { NextResponse } from "next/server";
-import { getProviderConnectionsUnscoped } from "@/lib/localDb";
-import { listConnections } from "@/lib/db/index.js";
+import { getProviderConnectionsUnscoped, listConnections } from "@/lib/db/index.js";
 import { workspaceScope } from "@/lib/users/workspaceScope.js";
 import { backfillCodexEmails } from "@/lib/oauth/providers";
 import { USAGE_APIKEY_PROVIDERS, USAGE_SUPPORTED_PROVIDERS } from "@/shared/constants/providers";

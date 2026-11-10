@@ -1,7 +1,11 @@
 import { NextResponse } from "next/server";
 import { isDeepStrictEqual } from "node:util";
-import { getCombos, getComboById, updateCombo, deleteCombo, getComboByName } from "@/lib/localDb";
 import {
+  getCombosUnscoped,
+  getComboByIdUnscoped,
+  updateComboUnscoped,
+  deleteComboUnscoped,
+  getComboByNameUnscoped,
   getCombo,
   updateCombo as updateComboScoped,
   deleteCombo as deleteComboScoped,
@@ -25,7 +29,7 @@ export async function GET(_request, { params }) {
       "workspace.connections.metadata.read",
       id,
       getCombo,
-      getComboById,
+      getComboByIdUnscoped,
       "Combo not found",
     );
     if (loaded instanceof Response) return loaded;
@@ -44,7 +48,7 @@ export async function PUT(request, { params }) {
       "workspace.combos.manage",
       id,
       getCombo,
-      getComboById,
+      getComboByIdUnscoped,
       "Combo not found",
     );
     if (loaded instanceof Response) return loaded;
@@ -68,7 +72,7 @@ export async function PUT(request, { params }) {
       // Check if name already exists (inside the combo's workspace when scoped)
       const existing = scope
         ? await getComboByNameScoped(scope.ctx, prev.workspaceId, body.name)
-        : await getComboByName(body.name);
+        : await getComboByNameUnscoped(body.name);
       if (existing && existing.id !== id) {
         return NextResponse.json({ error: "Combo name already exists" }, { status: 400 });
       }
@@ -84,7 +88,7 @@ export async function PUT(request, { params }) {
 
     if (body.name !== undefined || body.models !== undefined) {
       const others = (
-        scope ? await listCombos(scope.ctx, prev.workspaceId) : await getCombos()
+        scope ? await listCombos(scope.ctx, prev.workspaceId) : await getCombosUnscoped()
       ).filter((c) => c.id !== id);
       const cycle = findComboCycle(
         body.name ?? prev.name,
@@ -101,7 +105,7 @@ export async function PUT(request, { params }) {
 
     const combo = scope
       ? await updateComboScoped(scope.ctx, id, body)
-      : await updateCombo(id, body);
+      : await updateComboUnscoped(id, body);
 
     if (!combo) {
       return NextResponse.json({ error: "Combo not found" }, { status: 404 });
@@ -136,13 +140,13 @@ export async function DELETE(_request, { params }) {
       "workspace.combos.manage",
       id,
       getCombo,
-      getComboById,
+      getComboByIdUnscoped,
       "Combo not found",
     );
     if (loaded instanceof Response) return loaded;
     const { scope, row: prev } = loaded;
 
-    const success = scope ? await deleteComboScoped(scope.ctx, id) : await deleteCombo(id);
+    const success = scope ? await deleteComboScoped(scope.ctx, id) : await deleteComboUnscoped(id);
 
     if (!success) {
       return NextResponse.json({ error: "Combo not found" }, { status: 404 });

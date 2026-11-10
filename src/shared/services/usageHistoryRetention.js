@@ -27,7 +27,7 @@ export async function runUsageHistoryRetention() {
   if (g.usageHistoryRetentionRunning) return null;
   g.usageHistoryRetentionRunning = true;
   try {
-    const { getSettings } = await import("@/lib/localDb");
+    const { getSettings } = await import("@/lib/db/index.js");
     const raw = (await getSettings()).usageHistoryRetentionDays;
     const days = parseDays(raw);
     if (days === null) {

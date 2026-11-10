@@ -28,7 +28,10 @@ vi.mock("../../src/sse/services/model.js", () => ({
   getComboByName: mocks.getComboByName,
 }));
 vi.mock("@/lib/db/repos/combosRepo.js", () => ({ getComboByName: mocks.getComboByName }));
-vi.mock("@/lib/localDb", () => ({ getSettings: async () => ({}) }));
+vi.mock("@/lib/db/index.js", async (importOriginal) => ({
+  ...(await importOriginal()),
+  getSettings: async () => ({}),
+}));
 vi.mock("@/lib/usageDb.js", () => ({ saveRequestUsageUnscoped: mocks.saveRequestUsageUnscoped }));
 vi.mock("../../src/sse/services/tokenRefresh.js", () => ({
   checkAndRefreshToken: async (_provider, credentials) => credentials,

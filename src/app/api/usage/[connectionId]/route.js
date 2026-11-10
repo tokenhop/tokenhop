@@ -1,8 +1,11 @@
 // Ensure proxyFetch is loaded to patch globalThis.fetch
 import "open-sse/index.js";
 
-import { getProviderConnectionByIdUnscoped, updateProviderConnectionUnscoped } from "@/lib/localDb";
-import { getConnection } from "@/lib/db/index.js";
+import {
+  getProviderConnectionByIdUnscoped,
+  updateProviderConnectionUnscoped,
+  getConnection,
+} from "@/lib/db/index.js";
 import { loadScoped } from "@/lib/users/workspaceScope.js";
 import { getUsageForProvider } from "open-sse/services/usage.js";
 import { getExecutor } from "open-sse/executors/index.js";

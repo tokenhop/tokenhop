@@ -1,6 +1,5 @@
 import { NextResponse } from "next/server";
-import { updateProviderConnectionUnscoped } from "@/lib/localDb";
-import { updateConnection } from "@/lib/db/index.js";
+import { updateProviderConnectionUnscoped, updateConnection } from "@/lib/db/index.js";
 import { scopedConnections } from "@/lib/users/workspaceScope.js";
 
 const MODEL_LOCK_PREFIX = "modelLock_";

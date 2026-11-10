@@ -16,7 +16,7 @@ import {
   getMitmCredentialStatus,
 } from "@/mitm/manager";
 import { isCredentialEncryptionEstablished } from "@/lib/db/repos/settingsRepo.js";
-import { getSettings, updateSettings } from "@/lib/localDb";
+import { getSettings, updateSettings } from "@/lib/db/index.js";
 import runtimeCredentials from "@/mitm/runtimeCredentials";
 import { ACTIVE } from "@/shared/brand";
 import { audit } from "@/lib/users/audit.js";

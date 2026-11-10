@@ -8,19 +8,20 @@ const dbMocks = vi.hoisted(() => {
   };
   // Lock writes run decide() on the live row inside a transaction; forward the
   // patch so the plain-write assertions below still see it.
-  m.mutateProviderConnectionUnscoped = vi.fn(async (id, decide) => {
+  m.forwardMutate = async (id, decide) => {
     const patch = decide({});
     if (patch) await m.updateProviderConnectionUnscoped(id, patch);
     return { applied: !!patch, missing: false };
-  });
+  };
+  m.mutateProviderConnectionUnscoped = vi.fn(m.forwardMutate);
   return m;
 });
 
-vi.mock("@/lib/localDb", () => dbMocks);
-vi.mock("@/lib/db/index.js", () => ({
+vi.mock("@/lib/db/index.js", async (importOriginal) => ({
+  ...(await importOriginal()),
+  ...dbMocks,
   getEffectivePreferences: vi.fn(async () => ({})),
   mutateBillingLockUnscoped: vi.fn(),
-  mutateProviderConnectionUnscoped: vi.fn(),
   saveRequestDetailUnscoped: vi.fn(async () => {}),
   getPricingForModel: vi.fn(async () => null),
 }));
@@ -43,6 +44,9 @@ vi.mock("@/sse/utils/logger.js", () => ({
 }));
 
 const { mutateProviderConnectionUnscoped } = await import("@/lib/db/index.js");
+// Lock writes (auth.js) share this mutate; re-auth flag writes carry reauthRequired.
+const flagWrites = () =>
+  mutateProviderConnectionUnscoped.mock.calls.filter(([, decide]) => decide({})?.reauthRequired);
 const { markAccountUnavailable, getProviderCredentials } = await import(
   "../../src/sse/services/auth.js"
 );
@@ -75,7 +79,10 @@ const accessTokenRow = (id, extra = {}) => ({
 });
 const idOf = (c) => c?.connectionId ?? c?.id;
 
-beforeEach(() => vi.clearAllMocks());
+beforeEach(() => {
+  vi.clearAllMocks();
+  mutateProviderConnectionUnscoped.mockImplementation(dbMocks.forwardMutate);
+});
 
 describe("account selection skips connections that need re-authentication", () => {
   it("skips a flagged row and picks the next one", async () => {
@@ -161,7 +168,7 @@ describe("markAccountUnavailable with the re-authentication state", () => {
     ]);
     const r = await markAccountUnavailable("c1", 401, "unauthorized", "codex", "gpt-5");
     expect(r).toEqual({ shouldFallback: true, cooldownMs: 0 });
-    expect(mutateProviderConnectionUnscoped).not.toHaveBeenCalled();
+    expect(flagWrites()).toHaveLength(0);
     expect(dbMocks.updateProviderConnectionUnscoped).not.toHaveBeenCalled();
   });
 
@@ -171,7 +178,7 @@ describe("markAccountUnavailable with the re-authentication state", () => {
     const r = await markAccountUnavailable("c1", 401, "unauthorized", "codex", "gpt-5");
     expect(r.shouldFallback).toBe(true);
     expect(r.cooldownMs).toBeGreaterThan(0);
-    expect(mutateProviderConnectionUnscoped).not.toHaveBeenCalled();
+    expect(flagWrites()).toHaveLength(0);
     expect(dbMocks.updateProviderConnectionUnscoped).toHaveBeenCalledWith(
       "c1",
       expect.objectContaining({ testStatus: "unavailable" }),
@@ -183,7 +190,7 @@ describe("markAccountUnavailable with the re-authentication state", () => {
       grantId: "g1",
     });
     expect(r.shouldFallback).toBe(true);
-    expect(mutateProviderConnectionUnscoped).not.toHaveBeenCalled();
+    expect(flagWrites()).toHaveLength(0);
     expect(dbMocks.updateProviderConnectionUnscoped).not.toHaveBeenCalled();
   });
 });
@@ -266,7 +273,7 @@ describe("H1: selection lazily persists the flag for expired access-token-only r
     ]);
     await getProviderCredentials("codex", null, "gpt-5");
     await flush();
-    expect(mutateProviderConnectionUnscoped).not.toHaveBeenCalled();
+    expect(flagWrites()).toHaveLength(0);
   });
 });
 
@@ -275,7 +282,7 @@ describe("M6: a failing flag write falls through to the ordinary lock path", () 
     const conn = accessTokenRow("a1", { accessToken: "SECRET-AT-VALUE" });
     dbMocks.getProviderConnectionsUnscoped.mockResolvedValue([conn]);
     dbMocks.updateProviderConnectionUnscoped.mockResolvedValue(null);
-    mutateProviderConnectionUnscoped.mockRejectedValue(new Error("db down"));
+    mutateProviderConnectionUnscoped.mockRejectedValueOnce(new Error("db down"));
 
     const r = await markAccountUnavailable(
       "a1",

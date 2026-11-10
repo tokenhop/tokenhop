@@ -13,7 +13,10 @@ vi.mock("next/server", () => ({
   },
 }));
 vi.mock("next/headers", () => ({ cookies: async () => mocks.cookieStore }));
-vi.mock("@/lib/localDb", () => ({ getSettings: mocks.getSettings }));
+vi.mock("@/lib/db/index.js", async (importOriginal) => ({
+  ...(await importOriginal()),
+  getSettings: mocks.getSettings,
+}));
 vi.mock("@/lib/auth/dashboardSession", () => ({
   setDashboardAuthCookie: mocks.setDashboardAuthCookie,
   shouldUseSecureCookie: () => false,

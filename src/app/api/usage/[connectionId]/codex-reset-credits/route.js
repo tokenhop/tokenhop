@@ -1,8 +1,7 @@
 // Ensure proxyFetch is loaded to patch globalThis.fetch
 import "open-sse/index.js";
 
-import { getProviderConnectionByIdUnscoped } from "@/lib/localDb";
-import { getConnection } from "@/lib/db/index.js";
+import { getProviderConnectionByIdUnscoped, getConnection } from "@/lib/db/index.js";
 import { loadScoped } from "@/lib/users/workspaceScope.js";
 import {
   consumeCodexRateLimitResetCredit,

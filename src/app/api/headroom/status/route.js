@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getSettings } from "@/lib/localDb";
+import { getSettings } from "@/lib/db/index.js";
 import { DEFAULT_HEADROOM_URL, getHeadroomStatus } from "@/lib/headroom/detect";
 import { getManagedPid } from "@/lib/headroom/process";
 

@@ -1,12 +1,15 @@
 // YAN-1037/1038: src-side implementation of the open-sse CredentialStore hook
 // (open-sse/services/credentialStore.js). Installed once at startup from
 // src/instrumentation.js; never as an import side effect, so tests that mock
-// "@/lib/localDb" do not get a real store.
+// "@/lib/db/index.js" do not get a real store.
 //
 // Every write is a conditional read-decide-write on the LIVE decrypted row inside
 // one SQLite transaction (mutateProviderConnectionUnscoped): a slow request can
 // never overwrite a newer re-auth, nor flag a re-authed row.
-import { getProviderConnectionByIdUnscoped, mutateProviderConnectionUnscoped } from "@/lib/localDb";
+import {
+  getProviderConnectionByIdUnscoped,
+  mutateProviderConnectionUnscoped,
+} from "@/lib/db/index.js";
 import { setCredentialStore } from "open-sse/services/credentialStore.js";
 import { buildReauthPatch, getReauthRequired } from "open-sse/services/reauthState.js";
 import { buildCredentialUpdates } from "./tokenRefresh.js";

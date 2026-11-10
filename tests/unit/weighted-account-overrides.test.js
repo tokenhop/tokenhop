@@ -14,11 +14,12 @@ vi.mock("next/server", () => ({
 
 vi.mock("open-sse/index.js", () => ({}), { virtual: true });
 
-vi.mock("@/lib/localDb", () => ({
+vi.mock("@/lib/db/index.js", async (importOriginal) => ({
+  ...(await importOriginal()),
   getSettings: vi.fn(async () => ({})),
   getProviderConnectionsUnscoped: mocks.getProviderConnectionsUnscoped,
   getProviderConnectionByIdUnscoped: mocks.getProviderConnectionByIdUnscoped,
-  getCombos: vi.fn(async () => []),
+  getCombosUnscoped: vi.fn(async () => []),
   updateProviderConnectionUnscoped: mocks.updateProviderConnectionUnscoped,
 }));
 

@@ -28,7 +28,7 @@ vi.mock("@/lib/auth/gatewayResources.js", async (importOriginal) => ({
   ...mocks.gateway,
 }));
 
-vi.mock("@/lib/localDb", async (importOriginal) => {
+vi.mock("@/lib/db/index.js", async (importOriginal) => {
   const actual = await importOriginal();
   mocks.unscoped.connections.mockImplementation(actual.getProviderConnectionsUnscoped);
   mocks.unscoped.combos.mockImplementation(actual.getCombosUnscoped);

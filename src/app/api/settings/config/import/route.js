@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { applyOutboundProxyEnv } from "@/lib/network/outboundProxy";
-import { getSettings } from "@/lib/localDb";
+import { getSettings } from "@/lib/db/index.js";
 import { resetComboRotation } from "open-sse/services/combo.js";
 import { hasValidCliToken } from "@/lib/auth/cliToken";
 import { verifyDashboardPassword } from "@/lib/auth/dashboardSession";

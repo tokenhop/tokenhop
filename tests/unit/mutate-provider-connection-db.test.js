@@ -33,10 +33,8 @@ const mk = (name, extra = {}) =>
   });
 
 describe("mutateProviderConnectionUnscoped", () => {
-  it("is exported from the db index and the localDb shim", async () => {
+  it("is exported from the db index", async () => {
     expect(typeof db.mutateProviderConnectionUnscoped).toBe("function");
-    const shim = await import("@/lib/localDb.js");
-    expect(shim.mutateProviderConnectionUnscoped).toBe(db.mutateProviderConnectionUnscoped);
   });
 
   it("applies the patch decided against the live row inside the transaction", async () => {

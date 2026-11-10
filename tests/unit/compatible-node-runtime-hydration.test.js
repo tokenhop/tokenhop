@@ -13,7 +13,7 @@ vi.mock("@/lib/db/repos/nodesRepo.js", async (importOriginal) => ({
   getProviderNodeMetadataByIdUnscoped: nodeLookup,
 }));
 
-vi.mock("@/lib/localDb", async (importOriginal) => ({
+vi.mock("@/lib/db/index.js", async (importOriginal) => ({
   ...(await importOriginal()),
   getProviderConnectionsUnscoped: vi.fn(async () => connections.list),
 }));

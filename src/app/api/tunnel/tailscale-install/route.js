@@ -3,7 +3,7 @@ import { execSync } from "child_process";
 import { installTailscale, loadState, generateShortId } from "@/lib/tunnel";
 import { getCachedPassword, loadEncryptedPassword, initDbHooks } from "@/mitm/manager";
 import { isCredentialEncryptionEstablished } from "@/lib/db/repos/settingsRepo.js";
-import { getSettings, updateSettings } from "@/lib/localDb";
+import { getSettings, updateSettings } from "@/lib/db/index.js";
 
 initDbHooks(getSettings, updateSettings, isCredentialEncryptionEstablished);
 

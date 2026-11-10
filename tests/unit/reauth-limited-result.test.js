@@ -10,9 +10,8 @@ const dbMocks = vi.hoisted(() => ({
 
 dbMocks.updateSettings = vi.fn(async () => {});
 dbMocks.getSettings = vi.fn(async () => ({ requireApiKey: false }));
-vi.mock("@/lib/localDb", () => dbMocks);
-
 vi.mock("@/lib/db/index.js", () => ({
+  ...dbMocks,
   getEffectivePreferences: vi.fn(async () => ({})),
   mutateBillingLockUnscoped: vi.fn(),
   mutateProviderConnectionUnscoped: vi.fn(),

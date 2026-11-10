@@ -76,7 +76,7 @@ vi.mock("@/lib/usageDb.js", async (importOriginal) => {
   };
 });
 
-const db = await import("@/lib/localDb.js");
+const db = await import("@/lib/db/index.js");
 const { handleChat } = await import("../../src/sse/handlers/chat.js");
 const { saveRequestDetailUnscoped } = await import("@/lib/usageDb.js");
 

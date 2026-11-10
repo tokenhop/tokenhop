@@ -8,8 +8,8 @@ import {
   getSettings,
   updateSettings,
   getApiKeys,
-} from "@/lib/localDb";
-import { listEffectivePreferencesUnscoped } from "@/lib/db/index.js";
+  listEffectivePreferencesUnscoped,
+} from "@/lib/db/index.js";
 import { runShutdownFlushers } from "@/lib/db/shutdownFlushers.js";
 import {
   enableTunnel,

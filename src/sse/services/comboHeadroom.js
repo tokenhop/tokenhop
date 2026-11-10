@@ -1,6 +1,6 @@
-// Weighted combo headroom (YAN-261). App-side: open-sse must not import localDb,
+// Weighted combo headroom (YAN-261). App-side: open-sse must not import the db layer,
 // so handlers build this fn here and inject it into handleComboChat.
-import { getProviderConnectionsUnscoped } from "@/lib/localDb";
+import { getProviderConnectionsUnscoped } from "@/lib/db/index.js";
 import { getProviderHeadroom } from "open-sse/services/quotaSnapshot.js";
 import { parseModel } from "./model.js";
 

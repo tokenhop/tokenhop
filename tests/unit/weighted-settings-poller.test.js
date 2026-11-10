@@ -3,22 +3,18 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 vi.mock("next/server", () => ({
   NextResponse: { json: (body, options = {}) => ({ body, status: options.status ?? 200 }) },
 }));
-vi.mock("@/lib/localDb", () => ({
+vi.mock("@/lib/db/index.js", async (importOriginal) => ({
+  ...(await importOriginal()),
   getSettings: vi.fn(),
   updateSettings: vi.fn(),
-  getCombos: vi.fn(),
   getCombosUnscoped: vi.fn(),
-  getModelAliases: vi.fn(async () => ({})),
   getModelAliasesUnscoped: vi.fn(async () => ({})),
   getProviderConnectionsUnscoped: vi.fn(),
   updateProviderConnectionUnscoped: vi.fn(),
+  listEffectivePreferencesUnscoped: vi.fn(async () => null),
 }));
 // YAN-362: the poller's default deps read preferences from the DB barrel; keep
 // the real DB (and its checkpoint timer) out of these fake-timer tests.
-vi.mock("@/lib/db/index.js", async (importOriginal) => ({
-  ...(await importOriginal()),
-  listEffectivePreferencesUnscoped: vi.fn(async () => null),
-}));
 vi.mock("@/lib/network/outboundProxy", () => ({ applyOutboundProxyEnv: vi.fn() }));
 vi.mock("open-sse/services/combo.js", () => ({ resetComboRotation: vi.fn() }));
 vi.mock("@/sse/services/auth", () => ({ resetAccountSelection: vi.fn() }));
@@ -34,11 +30,11 @@ vi.mock("@/sse/services/quotaSnapshotSync", () => ({
 }));
 
 import {
-  getCombos,
+  getCombosUnscoped,
   getProviderConnectionsUnscoped,
   getSettings,
   updateSettings,
-} from "@/lib/localDb";
+} from "@/lib/db/index.js";
 import { resetAccountSelection } from "@/sse/services/auth";
 import { PATCH } from "../../src/app/api/settings/route.js";
 import {
@@ -60,7 +56,7 @@ beforeEach(() => {
   updateSettings.mockImplementation(async (body) => body);
   // Scheduler start runs one real-deps tick; keep it inert.
   getSettings.mockResolvedValue({});
-  getCombos.mockResolvedValue([]);
+  getCombosUnscoped.mockResolvedValue([]);
   getProviderConnectionsUnscoped.mockResolvedValue([]);
   vi.useFakeTimers();
 });

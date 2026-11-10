@@ -1,4 +1,4 @@
-import { getApiKeys } from "@/lib/localDb";
+import { getApiKeys } from "@/lib/db/index.js";
 import { resolveProviderId } from "@/shared/constants/providers.js";
 import { unwrapClineEnvelope } from "open-sse/shared/clineEnvelope.js";
 import { UPDATER_CONFIG } from "@/shared/constants/config";

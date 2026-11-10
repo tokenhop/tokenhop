@@ -13,8 +13,7 @@
  *   console request log lines remain visible for debugging.
  */
 
-import { getComboById } from "@/lib/localDb";
-import { getEffectivePreferences } from "@/lib/db/index.js";
+import { getComboByIdUnscoped, getEffectivePreferences } from "@/lib/db/index.js";
 import { getAdapter } from "@/lib/db/driver.js";
 import { readApiKeyStorageState } from "@/lib/db/apiKeyState.js";
 import { handleChat } from "@/sse/handlers/chat.js";
@@ -222,7 +221,7 @@ export async function runComboProbe({
       error.status = 404;
       throw error;
     }
-    combo = await getComboById(comboId);
+    combo = await getComboByIdUnscoped(comboId);
     if (!combo) {
       const error = new Error("Combo not found");
       error.status = 404;

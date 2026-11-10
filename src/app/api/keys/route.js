@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getApiKeys, createApiKey, getApiKeyUsage } from "@/lib/localDb";
+import { getApiKeys, createApiKey, getApiKeyUsage } from "@/lib/db/index.js";
 import { validateKeyName } from "@/app/(dashboard)/dashboard/endpoint/endpointLogic";
 import { getConsistentMachineId } from "@/shared/utils/machineId";
 import { readApiKeyStorageState } from "@/lib/db/apiKeyState";

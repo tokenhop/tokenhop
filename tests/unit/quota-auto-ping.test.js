@@ -2,7 +2,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("open-sse/index.js", () => ({}), { virtual: true });
 
-vi.mock("@/lib/localDb", () => ({
+vi.mock("@/lib/db/index.js", async (importOriginal) => ({
+  ...(await importOriginal()),
   getSettings: vi.fn(),
   getProviderConnectionsUnscoped: vi.fn(),
   updateProviderConnectionUnscoped: vi.fn(),

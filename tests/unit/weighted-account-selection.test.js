@@ -8,14 +8,13 @@ const mocks = vi.hoisted(() => ({
   updateProviderConnectionUnscoped: vi.fn(),
 }));
 
-vi.mock("@/lib/localDb", () => ({
+vi.mock("@/lib/db/index.js", async (importOriginal) => ({
+  ...(await importOriginal()),
   getProviderConnectionsUnscoped: mocks.getProviderConnectionsUnscoped,
   getSettings: mocks.getSettings,
   getProxyPools: vi.fn(),
   validateApiKey: vi.fn(),
   updateProviderConnectionUnscoped: mocks.updateProviderConnectionUnscoped,
-}));
-vi.mock("@/lib/db/index.js", () => ({
   getEffectivePreferences: mocks.getSettings,
 }));
 vi.mock("@/lib/network/connectionProxy", () => ({

@@ -1,11 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-vi.mock("@/lib/localDb", () => ({
+vi.mock("@/lib/db/index.js", async (importOriginal) => ({
+  ...(await importOriginal()),
   getSettings: vi.fn(async () => ({})),
   importDb: vi.fn(),
-}));
-vi.mock("@/lib/db/index.js", async (orig) => ({
-  ...(await orig()),
   exportDbToFile: vi.fn(),
   importDbStream: vi.fn(),
 }));
@@ -53,7 +51,7 @@ vi.mock("@/lib/db/repos/usersRepo.js", () => ({
   getUserPasswordHashUnscoped: vi.fn(),
 }));
 
-const db = { ...(await import("@/lib/db/index.js")), ...(await import("@/lib/localDb")) };
+const db = { ...(await import("@/lib/db/index.js")), ...(await import("@/lib/db/index.js")) };
 const cliToken = await import("@/lib/auth/cliToken");
 const ssoData = await import("@/lib/users/ssoDataProof.js");
 const limiter = await import("@/lib/auth/loginLimiter.js");
