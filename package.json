@@ -87,10 +87,5 @@
   "comment_overrides": "monaco-editor 0.57 pins dompurify 3.4.15. 3.4.17 patches the Oct 2026 DOMPurify advisories (GHSA-cg2g-xh64-v4q7, GHSA-mrv2-3pqr-j5jr).",
   "overrides": {
     "dompurify": "3.4.17"
-  },
-  "pnpm": {
-    "overrides": {
-      "dompurify": "3.4.17"
-    }
   }
 }

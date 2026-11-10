@@ -3,3 +3,5 @@ allowBuilds:
   lefthook: true
 minimumReleaseAgeExclude:
   - prettier@3.9.9
+overrides:
+  dompurify: 3.4.17
