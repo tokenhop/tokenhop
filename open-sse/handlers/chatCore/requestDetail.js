@@ -1,4 +1,4 @@
-import { saveRequestUsageUnscoped } from "@/lib/usageDb.js";
+import { saveRequestUsageUnscoped } from "../../services/usageSink.js";
 import { COLORS } from "../../utils/stream.js";
 import { canonicalizeUsage } from "../../utils/usageTracking.js";
 import { COMBO_PROBE_ENDPOINT, FIM_USAGE_ENDPOINT } from "../../config/runtimeConfig.js";

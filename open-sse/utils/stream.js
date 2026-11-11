@@ -1,6 +1,6 @@
 import { translateResponse, initState } from "../translator/index.js";
 import { FORMATS, isFimFormat } from "../translator/formats.js";
-import { trackPendingRequest, appendRequestLog } from "@/lib/usageDb.js";
+import { trackPendingRequest, appendRequestLog } from "../services/usageSink.js";
 import {
   extractUsage,
   mergeUsage,

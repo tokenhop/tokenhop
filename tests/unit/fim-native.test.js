@@ -32,6 +32,8 @@ vi.mock("@/lib/usageDb.js", async (importOriginal) => {
   };
 });
 
+vi.mock("open-sse/services/usageSink.js", async () => import("@/lib/usageDb.js"));
+
 const db = await import("@/lib/db/index.js");
 const { getUsageHistory } = await import("@/lib/db/index.js");
 const { handleChat } = await import("../../src/sse/handlers/chat.js");

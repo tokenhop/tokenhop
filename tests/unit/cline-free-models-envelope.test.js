@@ -30,6 +30,7 @@ vi.mock("@/lib/usageDb.js", () => ({
   saveRequestDetailUnscoped: vi.fn(async () => {}),
   saveRequestUsageUnscoped: vi.fn(async () => {}),
 }));
+vi.mock("open-sse/services/usageSink.js", async () => import("@/lib/usageDb.js"));
 
 const { pingModelByKind } = await import("../../src/app/api/models/test/ping.js");
 const { handleNonStreamingResponse } = await import(

@@ -1,12 +1,31 @@
-import { makeKv } from "../../src/lib/db/helpers/kvStore.js";
+// Persistence is injected (open-sse never imports src/): the app installs a kv
+// store at startup via setThoughtSignatureKv (src/instrumentation.js). With none
+// installed the cache is RAM-only, exactly the previous fail-open behavior.
+const KV_SLOT = Symbol.for("tokenhop.thoughtSignatureKv");
+const NO_KV = {
+  get: async () => null,
+  set: async () => {},
+  remove: async () => {},
+  getAll: async () => ({}),
+};
+
+/** Install (or clear with null) the persistent kv store: { get, set, remove, getAll }. */
+export function setThoughtSignatureKv(kv) {
+  globalThis[KV_SLOT] = kv || null;
+}
+
+const signatureKv = {
+  get: (k) => (globalThis[KV_SLOT] || NO_KV).get(k),
+  set: (k, v) => (globalThis[KV_SLOT] || NO_KV).set(k, v),
+  remove: (k) => (globalThis[KV_SLOT] || NO_KV).remove(k),
+  getAll: () => (globalThis[KV_SLOT] || NO_KV).getAll(),
+};
 
 const MAX_SIGNATURES = 2000;
 const MAX_PERSISTED_SIGNATURES = 10_000;
 const MEMORY_TTL_MS = 1000 * 60 * 60; // 1 hour
 const PERSISTED_TTL_MS = 1000 * 60 * 60 * 24 * 7; // 7 days
-const SCOPE = "gemini_thought_signatures";
 
-const signatureKv = makeKv(SCOPE);
 const memorySignatures = new Map();
 let pruneCounter = 0;
 

@@ -13,6 +13,18 @@ export async function register() {
       console.warn("[CredentialStore] install failed:", err?.message);
     }
 
+    try {
+      (await import("@/sse/services/thoughtSignatureKv.js")).installThoughtSignatureKv();
+    } catch (err) {
+      console.warn("[ThoughtSignatureKv] install failed:", err?.message);
+    }
+
+    try {
+      (await import("@/sse/services/usageSink.js")).installUsageSink();
+    } catch (err) {
+      console.warn("[UsageSink] install failed:", err?.message);
+    }
+
     // YAN-363 final wiring: exclusive DATA_DIR writer lock -> adapter
     // open/migrate -> multi-user resolved once -> strict owner bootstrap when
     // enabled -> activateGatewayKeys (legacy+off: skipped, no master/backup;

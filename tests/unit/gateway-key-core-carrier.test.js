@@ -14,6 +14,7 @@ vi.mock("@/lib/usageDb.js", () => ({
   saveRequestUsageUnscoped: mocks.usage,
   saveRequestDetailUnscoped: mocks.detail,
 }));
+vi.mock("open-sse/services/usageSink.js", async () => import("@/lib/usageDb.js"));
 vi.mock("../../open-sse/executors/index.js", () => ({
   getExecutor: () => ({ execute: mocks.execute, supportsRefresh: false }),
 }));

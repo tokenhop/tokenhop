@@ -35,6 +35,7 @@ vi.mock("@/lib/usageDb.js", async (importOriginal) => ({
   appendRequestLog: vi.fn(async () => {}),
   saveRequestDetailUnscoped: vi.fn(async () => {}),
 }));
+vi.mock("open-sse/services/usageSink.js", async () => import("@/lib/usageDb.js"));
 
 import { POST as chatPost } from "@/app/api/v1/chat/completions/route.js";
 import { spentFor } from "@/sse/services/budgetGuard.js";

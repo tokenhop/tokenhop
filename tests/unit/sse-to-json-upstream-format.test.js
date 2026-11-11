@@ -9,6 +9,8 @@ vi.mock("@/lib/usageDb.js", () => ({
   trackPendingRequest: vi.fn(async () => {}),
 }));
 
+vi.mock("open-sse/services/usageSink.js", async () => import("@/lib/usageDb.js"));
+
 const { FORMATS } = await import("../../open-sse/translator/formats.js");
 const { parseSSEToOpenAIResponse, handleForcedSSEToJson } = await import(
   "../../open-sse/handlers/chatCore/sseToJsonHandler.js"

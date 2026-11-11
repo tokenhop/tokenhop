@@ -1,14 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-// Keep the signature store in RAM only; the SQLite kv layer is not under test here.
-vi.mock("@/lib/db/helpers/kvStore.js", () => ({
-  makeKv: () => ({
-    get: async () => null,
-    set: async () => {},
-    remove: async () => {},
-    getAll: async () => ({}),
-  }),
-}));
+// No kv store is installed, so the signature cache stays RAM-only.
 
 const { storeGeminiThoughtSignature, getGeminiThoughtSignatureSync, signatureFamily } =
   await import("../../open-sse/services/thoughtSignatureStore.js");
