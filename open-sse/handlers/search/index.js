@@ -11,7 +11,7 @@ import { buildSearchRequest } from "./callers.js";
 import { normalizeSearchResponse } from "./normalizers.js";
 import { handleChatSearch } from "./chatSearch.js";
 import { runGlmMcpSearch } from "./glmMcp.js";
-import { fetchTrusted } from "../../../src/shared/utils/ssrfGuard.js";
+import { fetchTrusted } from "../../shared/ssrfGuard.js";
 import { proxyOptionsFromCredentials } from "../../utils/connectionProxyOptions.js";
 import { mapProxyFetchError } from "../../utils/proxyError.js";
 

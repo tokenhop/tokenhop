@@ -18,6 +18,7 @@ beforeAll(async () => {
   fs.writeFileSync(catalogFile, JSON.stringify({ v: 2, models: {}, providers: {} }));
   pricing = await import("../../open-sse/providers/pricing.js");
   catalog = await import("../../open-sse/providers/catalogOverride.js");
+  catalog.setCatalogFile(catalogFile);
   capabilities = await import("../../open-sse/providers/capabilities.js");
   outputCap = await import("@/sse/services/modelOutputCap.js");
   await catalog.installCatalogSource();

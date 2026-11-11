@@ -46,7 +46,7 @@ vi.mock("@/sse/utils/logger.js", () => ({
   error: vi.fn(),
   maskKey: vi.fn(),
 }));
-vi.mock("@/shared/utils/ssrfGuard.js", () => ({ assertPublicUrlResolved: async () => {} }));
+vi.mock("open-sse/shared/ssrfGuard.js", () => ({ assertPublicUrlResolved: async () => {} }));
 vi.mock("open-sse/services/combo.js", async (original) => ({
   ...(await original()),
   getComboModelsFromData: mocks.expand,

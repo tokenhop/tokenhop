@@ -51,9 +51,9 @@ beforeAll(async () => {
   expect(typeof build).toBe("function");
   const { models, providers } = build(upstream, entries);
   fs.writeFileSync(catalogFile, JSON.stringify({ v: 2, models, providers }));
-  ({ getCatalogModalities, invalidateCatalog } = await import(
-    "../../open-sse/providers/catalogOverride.js"
-  ));
+  const catalogMod = await import("../../open-sse/providers/catalogOverride.js");
+  ({ getCatalogModalities, invalidateCatalog } = catalogMod);
+  catalogMod.setCatalogFile(catalogFile);
   capabilities = await import("../../open-sse/providers/capabilities.js");
 });
 
@@ -228,6 +228,7 @@ describe("catalog snapshot lookup", () => {
 
   beforeAll(async () => {
     mod = await import("../../open-sse/providers/catalogOverride.js");
+    mod.setCatalogFile(catalogFile);
     await mod.installCatalogSource();
   });
   afterAll(() => capabilities.setCatalogSource(null));

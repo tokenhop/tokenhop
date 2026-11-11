@@ -19,7 +19,7 @@
 // same address to hex form ("::ffff:7f00:1") — a mismatch, not an oversight.
 
 import dns from "node:dns";
-import { proxyAwareFetch } from "../../../open-sse/utils/proxyFetch.js";
+import { proxyAwareFetch } from "../utils/proxyFetch.js";
 
 const BLOCKED_HOSTNAMES = new Set(["localhost", "ip6-localhost", "ip6-loopback"]);
 const BLOCKED_SUFFIXES = [".internal", ".local", ".localhost"];

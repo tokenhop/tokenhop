@@ -6,13 +6,8 @@
 
 import fs from "node:fs";
 import path from "node:path";
-import {
-  CATALOG_FILE,
-  CATALOG_RAW_FILE,
-  CATALOG_VERSION,
-  invalidateCatalog,
-  installCatalogSource,
-} from "open-sse/providers/catalogOverride.js";
+import { CATALOG_VERSION, invalidateCatalog } from "open-sse/providers/catalogOverride.js";
+import { CATALOG_FILE, CATALOG_RAW_FILE, installCatalog } from "./paths.js";
 
 const CATALOG_URL = "https://models.dev/api.json";
 const FETCH_TIMEOUT_MS = 60000;
@@ -259,7 +254,7 @@ export async function syncModelCatalog() {
     return null;
   } finally {
     // collectEntries() detaches the reader; put it back whatever happened.
-    await installCatalogSource().catch(() => {});
+    await installCatalog().catch(() => {});
     state.running = false;
   }
 }

@@ -33,8 +33,8 @@ export async function register() {
 
     // Server-only: lets capabilities.js read the synced catalog without pulling
     // node:fs into the dashboard's browser bundle.
-    const { installCatalogSource } = await import("open-sse/providers/catalogOverride.js");
-    await installCatalogSource();
+    const { installCatalog } = await import("@/lib/modelCatalog/paths.js");
+    await installCatalog();
 
     const { startModelCatalogSync } = await import("@/lib/modelCatalog/sync.js");
     startModelCatalogSync();

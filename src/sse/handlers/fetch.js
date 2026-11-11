@@ -21,7 +21,7 @@ import * as log from "../utils/logger.js";
 import { updateProviderCredentials, checkAndRefreshToken } from "../services/tokenRefresh.js";
 import { handleComboChat, getComboModelsFromData } from "open-sse/services/combo.js";
 import { loadComboHeadroomFn } from "../services/comboHeadroom.js";
-import { assertPublicUrlResolved } from "@/shared/utils/ssrfGuard.js";
+import { assertPublicUrlResolved } from "open-sse/shared/ssrfGuard.js";
 import { grantRateLimitResponse, releaseGrantReservation } from "../services/grantRateLimiter.js";
 import { budgetResponse, budgeted } from "../services/budgetGuard.js";
 import { reauthRequiredResponse } from "open-sse/services/reauthState.js";
