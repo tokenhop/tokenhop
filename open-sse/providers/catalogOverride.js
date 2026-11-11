@@ -8,13 +8,6 @@
 // immediate re-stat; only a write from another process waits out the interval.
 
 import fs from "node:fs";
-import path from "node:path";
-import { DATA_DIR } from "@/lib/dataDir.js";
-
-export const CATALOG_FILE = path.join(DATA_DIR, "model-catalog.json");
-// Trimmed upstream catalog, read by the add-models skill (not by the router).
-export const CATALOG_RAW_FILE = path.join(DATA_DIR, "model-catalog-raw.json");
-
 // Schema of the file this module reads. The writer stamps it; a file carrying an
 // older value predates provider-scoped modality keys, and its flat keys are not
 // looked up here, so the sync rebuilds it instead of asking upstream for a 304.
@@ -28,8 +21,14 @@ const EMPTY = { models: {}, providers: {} };
 // copy resets the stat clock and mtime for every copy, not just the generation.
 // `cache: null` means "no catalog file / unparsable".
 const SLOT_KEY = Symbol.for("tokenhop.catalogGeneration");
-globalThis[SLOT_KEY] ??= { n: 0, cache: null, cachedMtime: -1, checkedAt: -Infinity };
+globalThis[SLOT_KEY] ??= { n: 0, cache: null, cachedMtime: -1, checkedAt: -Infinity, file: null };
 const slot = globalThis[SLOT_KEY]; // n = generation: bumps whenever the served snapshot may have changed
+
+/** The app picks where the synced file lives (open-sse never resolves the data dir itself). */
+export function setCatalogFile(file) {
+  slot.file = file;
+  invalidateCatalog();
+}
 
 /** Changes whenever the catalog snapshot is invalidated or re-read from disk. */
 export const catalogGeneration = () => slot.n;
@@ -46,9 +45,15 @@ function load() {
   // Backwards clock jumps re-stat too (now < checkedAt).
   if (now >= slot.checkedAt && now - slot.checkedAt < STAT_INTERVAL_MS) return slot.cache ?? EMPTY;
   slot.checkedAt = now;
+  const file = slot.file;
+  if (!file) {
+    slot.cache = null;
+    slot.cachedMtime = -1;
+    return EMPTY;
+  }
   let mtime;
   try {
-    mtime = fs.statSync(CATALOG_FILE).mtimeMs;
+    mtime = fs.statSync(file).mtimeMs;
   } catch {
     if (slot.cache) slot.n++;
     slot.cache = null;
@@ -60,7 +65,7 @@ function load() {
   slot.n++;
   slot.cachedMtime = mtime;
   try {
-    const parsed = JSON.parse(fs.readFileSync(CATALOG_FILE, "utf8"));
+    const parsed = JSON.parse(fs.readFileSync(file, "utf8"));
     slot.cache = { models: parsed?.models || {}, providers: parsed?.providers || {} };
   } catch {
     slot.cache = null;

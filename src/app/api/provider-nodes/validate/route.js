@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { assertPublicUrl } from "@/shared/utils/ssrfGuard.js";
+import { assertPublicUrl } from "open-sse/shared/ssrfGuard.js";
 import { isLocalRequest } from "@/dashboardGuard";
 
 // Fetch with timeout wrapper

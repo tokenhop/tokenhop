@@ -19,7 +19,7 @@ vi.mock("node:dns", () => ({
 }));
 
 const { assertPublicUrl, assertPublicUrlResolved, fetchPublic, fetchTrusted } = await import(
-  "../../src/shared/utils/ssrfGuard.js"
+  "../../open-sse/shared/ssrfGuard.js"
 );
 
 describe("assertPublicUrl: literal hostname/IP bypasses from #3714", () => {

@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { UPSTREAM_CLIENT_IDS } from "@/shared/brand";
-import { assertPublicUrl } from "@/shared/utils/ssrfGuard.js";
+import { assertPublicUrl } from "open-sse/shared/ssrfGuard.js";
 import { isLocalRequest } from "@/dashboardGuard";
 
 const TIMEOUT_MS = 8000;

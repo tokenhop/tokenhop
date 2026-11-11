@@ -5,7 +5,7 @@ import { proxyAwareFetch } from "../../utils/proxyFetch.js";
 import { mintMetaCodeKey } from "../metaCode.js";
 import { dedupRefresh } from "./dedup.js";
 import { clampExpiresInSeconds } from "../tokenLifetime.js";
-import { buildExternalIdpRefreshParams } from "../../../src/lib/oauth/kiroExternalIdp.js";
+import { buildExternalIdpRefreshParams } from "../kiroExternalIdp.js";
 
 let _xaiServiceSingleton = null;
 export async function refreshXaiToken(refreshToken, log, proxyOptions = null) {
@@ -475,7 +475,7 @@ async function resolveKiroProfileArnPatch(providerSpecificData, accessToken, ref
   let profileArn = refreshedArn?.trim?.() || null;
   if (!profileArn) {
     try {
-      const { fetchKiroProfileArn } = await import("../../../src/lib/oauth/providers.js");
+      const { fetchKiroProfileArn } = await import("../kiroProfile.js");
       profileArn = await fetchKiroProfileArn(accessToken);
     } catch {
       // Profile discovery is optional; keep the refreshed token.

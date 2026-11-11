@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import fs from "node:fs";
 import { getSyncState, syncModelCatalog } from "@/lib/modelCatalog/sync.js";
-import { CATALOG_FILE } from "open-sse/providers/catalogOverride.js";
+import { CATALOG_FILE } from "@/lib/modelCatalog/paths.js";
 
 // GET /api/models/catalog-sync - Sync status and what the catalog currently holds
 export async function GET() {

@@ -10,7 +10,6 @@ vi.mock("../../open-sse/utils/proxyFetch.js", async (importOriginal) => ({
 import REGISTRY from "../../open-sse/providers/registry/index.js";
 import { PROVIDER_MEDIA } from "../../open-sse/providers/index.js";
 import { FORMAT_HANDLERS } from "../../open-sse/handlers/ttsProviders/genericFormats.js";
-import { AI_PROVIDERS } from "@/shared/constants/providers";
 
 const AUDIO = new Uint8Array(256).fill(7);
 
@@ -33,9 +32,8 @@ describe("Fish Audio TTS provider", () => {
     expect(PROVIDER_MEDIA["fish-audio"]?.ttsConfig?.baseUrl).toBe("https://api.fish.audio/v1/tts");
   });
 
-  it("is visible to the generic dispatcher, which reads AI_PROVIDERS", () => {
-    // synthesizeViaConfig() looks the provider up here, not in PROVIDER_MEDIA.
-    expect(AI_PROVIDERS["fish-audio"]?.ttsConfig?.format).toBe("fish-audio");
+  it("is visible to the generic dispatcher, which reads PROVIDER_MEDIA", () => {
+    expect(PROVIDER_MEDIA["fish-audio"]?.ttsConfig?.format).toBe("fish-audio");
     expect(typeof FORMAT_HANDLERS["fish-audio"]).toBe("function");
   });
 

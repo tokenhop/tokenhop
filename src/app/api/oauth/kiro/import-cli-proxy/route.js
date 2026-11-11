@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { createIn, oauthScope } from "@/lib/oauth/scope";
-import { normalizeKiroExternalIdpAuth } from "@/lib/oauth/kiroExternalIdp.js";
+import { normalizeKiroExternalIdpAuth } from "open-sse/services/kiroExternalIdp.js";
 
 /**
  * POST /api/oauth/kiro/import-cli-proxy

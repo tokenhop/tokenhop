@@ -2,7 +2,8 @@
 import "open-sse/index.js";
 
 import { generatePKCE } from "../utils/pkce.js";
-import { extractCodexAccountInfo, fetchKiroProfileArn } from "../providerHelpers.js";
+import { extractCodexAccountInfo } from "../providerHelpers.js";
+import { fetchKiroProfileArn } from "open-sse/services/kiroProfile.js";
 
 import claude from "./claude.js";
 import codex from "./codex.js";

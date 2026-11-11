@@ -46,7 +46,7 @@ vi.mock("@/sse/utils/logger.js", () => ({
   maskKey: vi.fn(() => "masked"),
 }));
 
-vi.mock("@/shared/utils/ssrfGuard.js", () => ({
+vi.mock("open-sse/shared/ssrfGuard.js", () => ({
   assertPublicUrlResolved: vi.fn(async () => {}),
 }));
 

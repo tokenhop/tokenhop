@@ -6,7 +6,7 @@
  * `result.isError`, so both are mapped to errors carrying `status`.
  */
 
-import { fetchTrusted } from "../../../src/shared/utils/ssrfGuard.js";
+import { fetchTrusted } from "../../shared/ssrfGuard.js";
 import { UPSTREAM_CLIENT_IDS } from "../../../src/shared/brand/index.js";
 
 const PROTOCOL_VERSION = "2024-11-05";
