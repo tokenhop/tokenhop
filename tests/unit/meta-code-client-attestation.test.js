@@ -237,7 +237,9 @@ describe("handleChat meta-code client_attestation_denied", () => {
     const seen = [];
     executeMock.mockImplementation(async ({ credentials }) => {
       seen.push(credentials.accessToken || credentials.apiKey);
-      return credentials.apiKey === "payg-key" ? upstreamSse("served by payg") : upstream(DENIED_BODY);
+      return credentials.apiKey === "payg-key"
+        ? upstreamSse("served by payg")
+        : upstream(DENIED_BODY);
     });
 
     const res = await chat();
@@ -278,7 +280,10 @@ describe("handleChat meta-code client_attestation_denied", () => {
       accessToken: "LLM|old",
       refreshToken: "dca:device",
     });
-    refreshCredentialsMock.mockResolvedValue({ accessToken: "LLM|new", refreshToken: "dca:device" });
+    refreshCredentialsMock.mockResolvedValue({
+      accessToken: "LLM|new",
+      refreshToken: "dca:device",
+    });
     executeMock.mockImplementation(async () => upstream(PLAIN_403));
 
     const res = await chat();
@@ -347,8 +352,7 @@ describe("combo with client_attestation_denied members", () => {
     const res = await handleComboChat({
       body: {},
       models: ["p/a", "p/b"],
-      handleSingleModel: async () =>
-        new Response(JSON.stringify(PLAIN_403), { status: 403 }),
+      handleSingleModel: async () => new Response(JSON.stringify(PLAIN_403), { status: 403 }),
       log,
     });
     const body = await res.json();
