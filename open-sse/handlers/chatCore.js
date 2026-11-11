@@ -824,8 +824,9 @@ export async function handleChatCore({
     finalBody = result.transformedBody;
     providerResponseFormat = result.responseFormat || targetFormat;
     reqLogger.logTargetRequest(providerUrl, providerHeaders, finalBody);
-  } catch (error) {
+  } catch (caughtError) {
     clearAttemptTimer();
+    let error = caughtError;
     if (cancellable && attemptSignal.aborted && error.name !== "AbortError") error = abortError();
     if (timedOut) {
       trackPendingRequest(
