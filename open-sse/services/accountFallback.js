@@ -8,6 +8,7 @@ import {
   UPSTREAM_CODE_MARKER,
 } from "../config/errorConfig.js";
 import { getActiveReliabilityPolicy, RELIABILITY_DEFAULTS } from "../config/reliabilityPolicy.js";
+import { isClientAttestationDenied } from "../utils/error.js";
 import REGISTRY from "../providers/registry/index.js";
 import { resolveBillingProbeSpec } from "./billingProbeSpec.js";
 
@@ -183,6 +184,14 @@ export function checkFallbackError(
   // markAccountUnavailable (it knows provider + authType); here only fall back.
   if (Number(status) === 400 && isBillingExhausted(status, lowerError, provider)) {
     return { shouldFallback: true, cooldownMs: cooldowns.longMs, billing: true };
+  }
+
+  // Client-attestation 403: the key itself is fine but this client may not use it. Rotate
+  // to the next connection/combo member (a pay-as-you-go key can serve) but never
+  // cool down or back off: no cooldown is a no-op for the credential and a
+  // reset hint would make external clients wait for something that cannot change.
+  if (isClientAttestationDenied(status, lowerError)) {
+    return { shouldFallback: true, cooldownMs: 0 };
   }
 
   for (const rule of ERROR_RULES) {

@@ -302,6 +302,22 @@ The static Antigravity catalog includes these ids. `ag/gemini-4-argon` uses the 
 
 ---
 
+## Meta Code (Muse Spark)
+
+### Subscription limitation
+
+Muse Code subscription keys only serve the official Muse Code client. Meta enforces this upstream: a request made with a subscription key from any other client, including tokenhop, is rejected with HTTP 403 `client_attestation_denied` for every model. This applies to an OAuth connection (its minted key is the subscription key) and to the subscription key copied from `~/.config/muse/auth.json`. tokenhop cannot work around it, and it does not refresh the token, cool the connection down, or retry the same key. The 403 is returned to your client as a `permission_error` with `code: "client_attestation_denied"`.
+
+### Use a pay-as-you-go key instead
+
+1. Create an additional API key at [dev.meta.ai](https://dev.meta.ai) (pay-as-you-go billing).
+2. In the dashboard, open Providers → Meta Code → Add connection and choose **API key**.
+3. Use models like `mc/muse-spark-1.3`.
+
+If a Meta Code OAuth connection and an API-key connection both exist, a denied request moves on to the API-key connection. An OAuth connection still shows subscription quota, but requests through tokenhop are billed to the pay-as-you-go key.
+
+---
+
 ## Pricing Comparison
 
 | Provider            | Monthly Cost | Quota Reset     | Value                       |

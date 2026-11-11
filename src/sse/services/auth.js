@@ -25,6 +25,7 @@ import {
 } from "open-sse/services/accountFallback.js";
 import { getActiveReliabilityPolicy } from "open-sse/config/reliabilityPolicy.js";
 import { BILLING_UNAVAILABLE_MESSAGE } from "open-sse/config/errorConfig.js";
+import { isClientAttestationDenied } from "open-sse/utils/error.js";
 import { getExhaustedUntil, getSnapshot } from "open-sse/services/quotaSnapshot.js";
 import { resolveProviderId, FREE_PROVIDERS } from "@/shared/constants/providers.js";
 import { extractClientApiKey } from "@/lib/auth/clientApiKey.js";
@@ -676,6 +677,10 @@ export async function markAccountUnavailable(
   { grantId = null } = {},
 ) {
   if (!connectionId || connectionId === "noauth") return { shouldFallback: false, cooldownMs: 0 };
+  // Client-attestation 403: this client is not allowed to use the key. Try the next
+  // connection for this request, but write nothing: no model lock, error state or
+  // backoff, so no cooldown/reset hint reaches the caller and other clients' keys stay usable.
+  if (isClientAttestationDenied(status, errorText)) return { shouldFallback: true, cooldownMs: 0 };
   // YAN-369 (ADR-0006): a grantee's failure falls back for this request only;
   // it never locks or cools down the owner's connection row.
   if (grantId) {

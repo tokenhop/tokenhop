@@ -5,7 +5,10 @@
  *  - OAuth: muse CLI device-code flow → the `dca:` token mints the subscription API
  *    key (accessToken) at /muse-code/key; the dca token is kept as refreshToken to
  *    re-mint on 401. Quota is only available for OAuth connections.
- *  - API key: pay-as-you-go key, or the key copied from ~/.config/muse/auth.json.
+ *  - API key: pay-as-you-go key from dev.meta.ai. Muse Code subscription keys (the minted
+ *    key above, or the one in ~/.config/muse/auth.json) are restricted to the official
+ *    Muse Code client: upstream answers every other client with 403
+ *    `client_attestation_denied`, which tokenhop surfaces as-is (no refresh, no cooldown).
  *
  * clientId intentionally omitted — injected from META_CODE_OAUTH_CLIENT_ID at runtime
  * (src/lib/oauth/constants/oauth.js).

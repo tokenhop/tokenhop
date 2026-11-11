@@ -1,3 +1,9 @@
+## Unreleased
+
+## Fixes
+
+- **Meta Code**: a 403 `client_attestation_denied` (Muse Code subscription keys serve only the official client) is returned as a `permission_error` with its own code and a pay-as-you-go hint. It no longer triggers a token refresh or re-mint, a cooldown or a retry of the same key. A pay-as-you-go API-key connection is still tried next. Docs describe the limitation and the API-key setup.
+
 # v1.2.0 (2026-11-04)
 
 The second tokenhop minor. The Usage page and Token saver get custom ranges, period comparisons and CSV/JSON export. Combos keep each conversation on one model and account so prompt caching keeps working. Sessions can be listed and revoked per device. Live model catalogs reach Vertex AI, MiniMax, GLM, Cohere, Kilo and more. Every outbound media, catalog and token-refresh call now goes through the connection proxy. The Users & teams switch is still off by default; instance admins can turn it on in Instance settings.

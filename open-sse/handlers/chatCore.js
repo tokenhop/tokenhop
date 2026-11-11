@@ -32,7 +32,12 @@ import {
   PROVIDER_ID_TO_ALIAS,
 } from "../config/providerModels.js";
 import { PROVIDERS } from "../config/providers.js";
-import { createErrorResult, parseUpstreamError, formatProviderError } from "../utils/error.js";
+import {
+  createErrorResult,
+  parseUpstreamError,
+  formatProviderError,
+  isClientAttestationDeniedResponse,
+} from "../utils/error.js";
 import {
   FIM_ATTEMPT_TIMEOUT_MS,
   FIM_USAGE_ENDPOINT,
@@ -914,7 +919,10 @@ export async function handleChatCore({
     (typeof executor?.canRefreshCredentials !== "function" ||
       executor.canRefreshCredentials(credentials)) &&
     (providerResponse.status === HTTP_STATUS.UNAUTHORIZED ||
-      providerResponse.status === HTTP_STATUS.FORBIDDEN)
+      providerResponse.status === HTTP_STATUS.FORBIDDEN) &&
+    // A client-attestation denial (subscription key restricted to its own CLI) is not a
+    // stale token: re-minting/refreshing and replaying the request cannot change it.
+    !(await isClientAttestationDeniedResponse(providerResponse))
   ) {
     try {
       // YAN-1035: snapshot a `token_expired` 401 before the refresh overwrites the

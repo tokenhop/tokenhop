@@ -4,7 +4,7 @@
 
 import { checkFallbackError, formatRetryAfter, isBillingExhausted } from "./accountFallback.js";
 import { PROVIDER_ID_TO_ALIAS } from "../config/providerModels.js";
-import { unavailableResponse } from "../utils/error.js";
+import { errorResponse, isClientAttestationDenied, unavailableResponse } from "../utils/error.js";
 import { getCapabilitiesForModel } from "../providers/capabilities.js";
 import { extractTextContent } from "../translator/formats/gemini.js";
 import { RESPONSES_ITEM } from "../translator/schema/index.js";
@@ -884,6 +884,8 @@ function createAggregator() {
         return unavailableResponse(status, msg, earliestRetryAfter, retryHuman);
       }
       log.warn("COMBO", `All models failed | ${msg}`);
+      // Keep the structured permission_error/code so callers don't retry a denial.
+      if (isClientAttestationDenied(status, msg)) return errorResponse(status, msg);
       return new Response(JSON.stringify({ error: { message: msg } }), {
         status,
         headers: { "Content-Type": "application/json" },

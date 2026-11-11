@@ -150,6 +150,18 @@ export const BILLING_RULES = {
 // text-based classification (chat.js loop and combo.js) sees them independently.
 export const UPSTREAM_CODE_MARKER = "code=";
 
+// Upstream 403 permission_error whose key is billed to a client-restricted
+// subscription (Meta "Muse Code": subscription keys only serve the official CLI).
+// Not an expired token and not a quota: refreshing/re-minting the credential, cooling
+// the account down or retrying the same key can never change the answer. Surfaced as
+// a structured `[code=...]` marker like billing codes, so every text-based layer
+// (chat loop, combo, error body builder) classifies it without re-parsing JSON.
+export const CLIENT_ATTESTATION_DENIED_CODE = "client_attestation_denied";
+
+// Appended after the upstream message so the caller knows the tokenhop-side remedy.
+export const CLIENT_ATTESTATION_DENIED_HINT =
+  "tokenhop cannot use a client-restricted subscription key; connect a pay-as-you-go API key for this provider instead.";
+
 export const BILLING_LOCK_REASON = "credit_exhausted";
 export const BILLING_UNAVAILABLE_MESSAGE = "Connection out of credit";
 

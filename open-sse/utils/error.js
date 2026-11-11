@@ -3,6 +3,8 @@ import {
   DEFAULT_ERROR_MESSAGES,
   UPSTREAM_CODE_MARKER,
   BILLING_RULES,
+  CLIENT_ATTESTATION_DENIED_CODE,
+  CLIENT_ATTESTATION_DENIED_HINT,
 } from "../config/errorConfig.js";
 import { mapProxyFetchError } from "./proxyError.js";
 
@@ -19,11 +21,17 @@ export function buildErrorBody(statusCode, message) {
       ? { type: "server_error", code: "internal_server_error" }
       : { type: "invalid_request_error", code: "" });
 
+  // A structured upstream denial keeps its own code: the generic 403 default
+  // ("insufficient_quota") would send the caller to the wrong remedy.
+  const code = isClientAttestationDenied(statusCode, message)
+    ? CLIENT_ATTESTATION_DENIED_CODE
+    : errorInfo.code;
+
   return {
     error: {
       message: message || DEFAULT_ERROR_MESSAGES[statusCode] || "An error occurred",
       type: errorInfo.type,
-      code: errorInfo.code,
+      code,
     },
   };
 }
@@ -57,14 +65,19 @@ export async function writeStreamError(writer, statusCode, message) {
 }
 
 /**
- * Billing-relevant structured codes (error.code / error.type /
- * error.details.error_code) from an upstream JSON body. Only codes listed in
- * BILLING_RULES.codes are returned, so ordinary error messages stay untouched.
+ * Allowlisted structured codes (error.code / error.type / error.details.error_code)
+ * from an upstream JSON body: BILLING_RULES.codes plus client_attestation_denied.
+ * Everything else is ignored, so ordinary error messages stay untouched.
  */
 function extractStructuredCodes(json) {
   const err = json?.error && typeof json.error === "object" ? json.error : json;
   const parts = [err?.code, err?.type, err?.details?.error_code, json?.code]
-    .filter((v) => typeof v === "string" && BILLING_RULES.codes.includes(v.toLowerCase()))
+    .filter(
+      (v) =>
+        typeof v === "string" &&
+        (BILLING_RULES.codes.includes(v.toLowerCase()) ||
+          v.toLowerCase() === CLIENT_ATTESTATION_DENIED_CODE),
+    )
     .map((v) => v.toLowerCase());
   return [...new Set(parts)].join(",");
 }
@@ -100,6 +113,51 @@ export function withStructuredBillingCodes(message, bodyText) {
 }
 
 /**
+ * True when an error text carries the `[code=client_attestation_denied]` marker
+ * (only ever produced from the structured upstream body by withStructuredBillingCodes)
+ * on a 403. Account fallback, combo and the client error body all key off this.
+ * @param {number|string} status
+ * @param {unknown} errorText
+ */
+export function isClientAttestationDenied(status, errorText) {
+  if (Number(status) !== 403 || typeof errorText !== "string") return false;
+  for (const m of errorText.toLowerCase().matchAll(/\[code=([^\]]*)\]/g)) {
+    if (m[1].split(",").includes(CLIENT_ATTESTATION_DENIED_CODE)) return true;
+  }
+  return false;
+}
+
+function isClientAttestationDeniedBody(bodyText) {
+  try {
+    const json = JSON.parse(bodyText);
+    const err = json?.error && typeof json.error === "object" ? json.error : json;
+    return err?.code === CLIENT_ATTESTATION_DENIED_CODE;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Peek an upstream 403 for the client-attestation denial without consuming the
+ * body (clone). Lets the refresh path skip a re-mint that can never change the answer.
+ * @param {Response} response
+ */
+export async function isClientAttestationDeniedResponse(response) {
+  if (response?.status !== 403 || typeof response.clone !== "function") return false;
+  try {
+    return isClientAttestationDeniedBody(await response.clone().text());
+  } catch {
+    return false;
+  }
+}
+
+// Append the actionable remedy to a denied 403's message (no-op otherwise).
+function withAttestationHint(message, status, bodyText) {
+  if (Number(status) !== 403 || !isClientAttestationDeniedBody(bodyText)) return message;
+  return `${message} ${CLIENT_ATTESTATION_DENIED_HINT}`;
+}
+
+/**
  * Parse upstream provider error response
  * @param {Response} response - Fetch response from provider
  * @param {object} [executor] - Optional executor with parseError() override for provider-specific parsing
@@ -124,7 +182,10 @@ export async function parseUpstreamError(response, executor = null) {
           `Upstream error: ${response.status}`;
         return {
           statusCode: parsed.status || response.status,
-          message: withStructuredBillingCodes(msg, bodyText),
+          message: withStructuredBillingCodes(
+            withAttestationHint(msg, parsed.status || response.status, bodyText),
+            bodyText,
+          ),
           resetsAtMs: parsed.resetsAtMs,
         };
       }
@@ -143,7 +204,11 @@ export async function parseUpstreamError(response, executor = null) {
 
   // Keep structured billing codes visible to text-based fallback classification.
   const messageStr = withStructuredBillingCodes(
-    typeof message === "string" ? message : JSON.stringify(message),
+    withAttestationHint(
+      typeof message === "string" ? message : JSON.stringify(message),
+      response.status,
+      bodyText,
+    ),
     bodyText,
   );
   const finalMessage =
