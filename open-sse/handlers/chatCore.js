@@ -42,7 +42,11 @@ import {
 } from "../config/runtimeConfig.js";
 import { warnLegacyOnce } from "../../src/shared/brand/index.js";
 import { handleBypassRequest } from "../utils/bypassHandler.js";
-import { trackPendingRequest, appendRequestLog, saveRequestDetailUnscoped } from "@/lib/usageDb.js";
+import {
+  trackPendingRequest,
+  appendRequestLog,
+  saveRequestDetailUnscoped,
+} from "../services/usageSink.js";
 import { getExecutor } from "../executors/index.js";
 import { proxyOptionsFromCredentials } from "../utils/connectionProxyOptions.js";
 import { supportsGrokCliReasoningEffort } from "../config/grokCli.js";

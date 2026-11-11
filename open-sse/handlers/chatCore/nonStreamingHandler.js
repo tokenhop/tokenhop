@@ -18,7 +18,7 @@ import {
   formatDoneLine,
   summarizeClientResponse,
 } from "./requestDetail.js";
-import { saveRequestDetailUnscoped } from "@/lib/usageDb.js";
+import { saveRequestDetailUnscoped } from "../../services/usageSink.js";
 import { decloakToolNames } from "../../utils/claudeCloaking.js";
 import { openAICompletionToClientFormat } from "./completionToClient.js";
 import { fimContextFor } from "../../translator/concerns/fim.js";

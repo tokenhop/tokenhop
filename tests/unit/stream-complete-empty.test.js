@@ -8,6 +8,7 @@ vi.mock("@/lib/usageDb.js", async (importOriginal) => ({
   saveRequestDetailUnscoped: vi.fn(async (d) => details.push(d)),
   saveUsageStats: vi.fn(async () => {}),
 }));
+vi.mock("open-sse/services/usageSink.js", async () => import("@/lib/usageDb.js"));
 
 const { buildOnStreamComplete } = await import(
   "../../open-sse/handlers/chatCore/streamingHandler.js"

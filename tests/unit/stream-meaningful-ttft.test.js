@@ -17,6 +17,7 @@ vi.mock("@/lib/usageDb.js", async (importOriginal) => {
     }),
   };
 });
+vi.mock("open-sse/services/usageSink.js", async () => import("@/lib/usageDb.js"));
 
 import { createSSEStream } from "../../open-sse/utils/stream.js";
 import { hasMeaningfulToken } from "../../open-sse/utils/streamHelpers.js";

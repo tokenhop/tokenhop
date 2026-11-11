@@ -16,7 +16,7 @@ import {
   saveUsageStats,
   formatDoneLine,
 } from "./requestDetail.js";
-import { saveRequestDetailUnscoped } from "@/lib/usageDb.js";
+import { saveRequestDetailUnscoped } from "../../services/usageSink.js";
 import { SSE_HEADERS_CORS as SSE_HEADERS } from "../../utils/sseConstants.js";
 
 // Codex returns Responses API SSE → which client format to translate INTO, by request sourceFormat.

@@ -10,6 +10,7 @@ vi.mock("@/lib/usageDb.js", async (importOriginal) => ({
   appendRequestLog: vi.fn(async (e) => requestLogs.push(e)),
   trackPendingRequest: vi.fn(),
 }));
+vi.mock("open-sse/services/usageSink.js", async () => import("@/lib/usageDb.js"));
 
 import { hasAnswerToken, hasMeaningfulToken } from "../../open-sse/utils/streamHelpers.js";
 import { createSSEStream } from "../../open-sse/utils/stream.js";

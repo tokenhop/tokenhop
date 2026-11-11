@@ -11,6 +11,7 @@ describe("probe usage exclusion (YAN-299)", () => {
       appendRequestLog: async () => {},
       saveRequestDetailUnscoped: async () => {},
     }));
+    vi.doMock("open-sse/services/usageSink.js", async () => import("@/lib/usageDb.js"));
     const { saveUsageStats } = await import("../../open-sse/handlers/chatCore/requestDetail.js");
 
     saveUsageStats({

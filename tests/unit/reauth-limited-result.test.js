@@ -41,6 +41,8 @@ vi.mock("@/lib/usageDb.js", () => ({
   saveRequestDetailUnscoped: vi.fn(async () => {}),
 }));
 
+vi.mock("open-sse/services/usageSink.js", async () => import("@/lib/usageDb.js"));
+
 vi.mock("@/lib/auth/gatewayAuth.js", () => ({
   ALLOW_KEYLESS_SETTING: "allowKeylessGatewayRequests",
   resolveGatewayAuth: vi.fn(async () => ({ principal: null, legacy: true })),

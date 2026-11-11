@@ -26,7 +26,7 @@ import {
 
 // Responses-API providers (e.g. codex) may emit SSE without content-type + use Responses output shape
 const isResponsesProvider = (p) => PROVIDERS[p]?.format === FORMATS.OPENAI_RESPONSES;
-import { saveRequestDetailUnscoped } from "@/lib/usageDb.js";
+import { saveRequestDetailUnscoped } from "../../services/usageSink.js";
 
 function textFromResponsesMessageItem(item) {
   if (!item?.content || !Array.isArray(item.content)) return "";
