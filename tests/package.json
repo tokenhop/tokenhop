@@ -9,7 +9,7 @@
     "test:watch": "vitest --reporter=verbose"
   },
   "devDependencies": {
-    "vitest": "^5.0.3"
+    "vitest": "^5.1.0"
   },
   "comment_overrides": "vitest peers vite ^8, which resolved to 8.3.2. 8.3.5 patches GHSA-587h-7wmj-h5pm (Oct 2026).",
   "overrides": {
