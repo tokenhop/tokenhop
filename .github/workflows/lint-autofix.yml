@@ -228,4 +228,5 @@ jobs:
           fi
           git commit -q --no-verify -m "$AUTOFIX_SUBJECT"
           git show --stat --format='%h %s' HEAD
-          git push -q --no-verify "$remote" "HEAD:refs/heads/${PR_HEAD_REF}"
+          # Lease on the head the patch was built from, so a branch reset since then is not undone.
+          git push -q --no-verify --force-with-lease="refs/heads/${PR_HEAD_REF}:${PR_HEAD_SHA}" "$remote" "HEAD:refs/heads/${PR_HEAD_REF}"
