@@ -65,10 +65,6 @@ export function getPlatformEnum() {
   return PLATFORM.UNSPECIFIED;
 }
 
-export function getPlatformUserAgent() {
-  return ANTIGRAVITY_IDE_USER_AGENT;
-}
-
 export const CLIENT_METADATA = {
   ideType: IDE_TYPE.ANTIGRAVITY,
   platform: getPlatformEnum(),

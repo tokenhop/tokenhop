@@ -29,7 +29,6 @@ export {
   translateResponse,
   needsTranslation,
   initState,
-  initTranslators,
 } from "./translator/index.js";
 
 // Services

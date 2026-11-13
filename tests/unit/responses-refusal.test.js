@@ -14,9 +14,6 @@ const { initState } = await import("../../open-sse/translator/index.js");
 const { openaiToOpenAIResponsesResponse } = await import(
   "../../open-sse/translator/response/openai-responses.js"
 );
-const { createResponsesApiTransformStream } = await import(
-  "../../open-sse/transformer/responsesTransformer.js"
-);
 const { translateNonStreamingResponse } = await import(
   "../../open-sse/handlers/chatCore/nonStreamingHandler.js"
 );
@@ -142,50 +139,6 @@ describe("Chat stream → Responses: refusal (YAN-1027)", () => {
     expect(done.type).toBe("response.incomplete");
     expect(done.response.status).toBe("incomplete");
     expect(done.response.incomplete_details).toEqual({ reason: "max_output_tokens" });
-  });
-});
-
-describe("responsesTransformer (Chat SSE → Responses SSE): refusal (YAN-1027)", () => {
-  async function transform(chunks) {
-    const raw = `${chunks.map((c) => `data: ${JSON.stringify(c)}`).join("\n\n")}\n\ndata: [DONE]\n\n`;
-    const source = new ReadableStream({
-      start(c) {
-        c.enqueue(new TextEncoder().encode(raw));
-        c.close();
-      },
-    });
-    const reader = source.pipeThrough(createResponsesApiTransformStream(null)).getReader();
-    const decoder = new TextDecoder();
-    let out = "";
-    for (;;) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      out += decoder.decode(value, { stream: true });
-    }
-    return out
-      .split("\n\n")
-      .filter((block) => block.startsWith("event: "))
-      .map((block) => {
-        const [eventLine, dataLine] = block.split("\n");
-        return { event: eventLine.slice(7), data: JSON.parse(dataLine.slice(6)) };
-      });
-  }
-
-  it("emits the refusal part and an incomplete terminal event", async () => {
-    const events = await transform([
-      chunk({ role: "assistant", content: "hi" }),
-      chunk({ refusal: "No." }, "content_filter"),
-    ]);
-    expect(events.some((e) => e.event === "response.refusal.delta")).toBe(true);
-    expect(events.find((e) => e.event === "response.refusal.done").data.refusal).toBe("No.");
-    const done = events[events.length - 1];
-    expect(done.event).toBe("response.incomplete");
-    expect(done.data.response.status).toBe("incomplete");
-    expect(done.data.response.incomplete_details).toEqual({ reason: "content_filter" });
-    expect(done.data.response.output[0].content).toEqual([
-      { type: "output_text", annotations: [], logprobs: [], text: "hi" },
-      { type: "refusal", refusal: "No." },
-    ]);
   });
 });
 

@@ -263,24 +263,6 @@ export function getUnavailableUntil(cooldownMs) {
 }
 
 /**
- * Get the earliest rateLimitedUntil from a list of accounts
- * @param {Array} accounts - Array of account objects with rateLimitedUntil
- * @returns {string|null} Earliest rateLimitedUntil ISO string, or null
- */
-export function getEarliestRateLimitedUntil(accounts) {
-  let earliest = null;
-  const now = Date.now();
-  for (const acc of accounts) {
-    if (!acc.rateLimitedUntil) continue;
-    const until = new Date(acc.rateLimitedUntil).getTime();
-    if (until <= now) continue;
-    if (!earliest || until < earliest) earliest = until;
-  }
-  if (!earliest) return null;
-  return new Date(earliest).toISOString();
-}
-
-/**
  * Format rateLimitedUntil to human-readable "reset after Xm Ys"
  * @param {string} rateLimitedUntil - ISO timestamp
  * @returns {string} e.g. "reset after 2m 30s"
@@ -414,17 +396,6 @@ export function buildQuotaLockMeta(window, previous = null) {
 }
 
 /**
- * Build update object to clear all model locks on a connection.
- */
-export function buildClearModelLocksUpdate(connection) {
-  const cleared = {};
-  for (const key of Object.keys(connection)) {
-    if (key.startsWith(MODEL_LOCK_PREFIX)) cleared[key] = null;
-  }
-  return cleared;
-}
-
-/**
  * Filter available accounts (not in cooldown)
  */
 export function filterAvailableAccounts(accounts, excludeId = null) {
@@ -437,43 +408,4 @@ export function filterAvailableAccounts(accounts, excludeId = null) {
     }
     return true;
   });
-}
-
-/**
- * Reset account state when request succeeds
- * Clears cooldown and resets backoff level to 0
- * @param {object} account - Account object
- * @returns {object} Updated account with reset state
- */
-export function resetAccountState(account) {
-  if (!account) return account;
-  return {
-    ...account,
-    rateLimitedUntil: null,
-    backoffLevel: 0,
-    lastError: null,
-    status: "active",
-  };
-}
-
-/**
- * Apply error state to account
- * @param {object} account - Account object
- * @param {number} status - HTTP status code
- * @param {string} errorText - Error message
- * @returns {object} Updated account with error state
- */
-export function applyErrorState(account, status, errorText) {
-  if (!account) return account;
-
-  const backoffLevel = account.backoffLevel || 0;
-  const { cooldownMs, newBackoffLevel } = checkFallbackError(status, errorText, backoffLevel);
-
-  return {
-    ...account,
-    rateLimitedUntil: cooldownMs > 0 ? getUnavailableUntil(cooldownMs) : null,
-    backoffLevel: newBackoffLevel ?? backoffLevel,
-    lastError: { status, message: errorText, timestamp: new Date().toISOString() },
-    status: "error",
-  };
 }

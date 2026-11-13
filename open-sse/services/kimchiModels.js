@@ -184,8 +184,3 @@ export async function resolveKimchiModels(credentials, options = {}) {
   catalogCache.set(key, entry);
   return entry;
 }
-
-export function clearKimchiCatalog() {
-  catalogCache.clear();
-  metadataByModelId.clear();
-}
