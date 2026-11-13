@@ -323,9 +323,6 @@ export async function createRequestLogger(sourceFormat, targetFormat, model, opt
   return logger;
 }
 
-// Legacy functions for backward compatibility
-export function logRequest() {}
-export function logResponse() {}
 export function logError(provider, { error, url, model, requestBody }) {
   if (!fs || !LOGS_DIR) return;
 

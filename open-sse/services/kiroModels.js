@@ -332,15 +332,6 @@ export async function resolveKiroModels(credentials, options = {}) {
 }
 
 /**
- * Drop any cached catalog for this credential. Call this after rotating /
- * importing tokens so the next fetch is fresh.
- */
-export function invalidateKiroModelCache(credentials) {
-  if (!credentials) return;
-  catalogCache.delete(cacheKey(credentials));
-}
-
-/**
  * Drop the entire in-memory cache. Mostly for tests / manual debug.
  */
 export function clearKiroModelCache() {

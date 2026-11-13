@@ -238,17 +238,3 @@ export const BILLING_PROBE_CONFIG = {
   // Internal accounting tag for the request-detail row (never a user-stats row).
   usageEndpoint: "/internal/billing-probe",
 };
-
-// Allowlisted probe failure codes persisted as billingLock.lastProbeError —
-// upstream free text is NEVER stored there.
-export const BILLING_PROBE_ERROR_CODES = [
-  "billing", // still exhausted
-  "auth", // 401/403
-  "rate_limited", // 429 non-billing
-  "server_error", // 5xx
-  "timeout",
-  "network",
-  "invalid_response", // 200 but empty/invalid completion
-  "probe_model_unavailable", // 404 / model-specific 400 / missing pricing or spec
-  "unknown",
-];

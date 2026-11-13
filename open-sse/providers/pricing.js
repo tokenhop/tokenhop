@@ -1178,16 +1178,6 @@ export function getDefaultPricing() {
 }
 
 /**
- * Format cost for display
- * @param {number} cost
- * @returns {string}
- */
-export function formatCost(cost) {
-  if (cost === null || cost === undefined || isNaN(cost)) return "$0.00";
-  return `$${cost.toFixed(2)}`;
-}
-
-/**
  * Calculate cost from tokens and pricing.
  * Convention: completion_tokens INCLUDES reasoning_tokens, and prompt_tokens INCLUDES
  * cached_tokens + cache_creation_input_tokens. Missing input/output rates count as 0.

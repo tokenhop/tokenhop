@@ -1,16 +1,6 @@
 import { handleChat } from "@/sse/handlers/chat.js";
 import { HTTP_STATUS } from "open-sse/config/runtimeConfig.js";
-import { initTranslators } from "open-sse/translator/index.js";
 import { errorResponse } from "open-sse/utils/error.js";
-
-let initialized = false;
-
-async function ensureInitialized() {
-  if (!initialized) {
-    await initTranslators();
-    initialized = true;
-  }
-}
 
 export async function OPTIONS() {
   return new Response(null, {
@@ -27,7 +17,6 @@ export async function OPTIONS() {
  * Reuses the same handleChat pipeline, signals compact via body._compact
  */
 export async function POST(request) {
-  await ensureInitialized();
   let body;
   try {
     body = await request.json();

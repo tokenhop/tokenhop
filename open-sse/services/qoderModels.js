@@ -366,12 +366,3 @@ export function routableQoderModels(catalog) {
   }
   return out;
 }
-
-export function invalidateQoderCatalog(credentials) {
-  if (!credentials) return;
-  catalogCache.delete(cacheKey(credentials));
-}
-
-export function clearQoderCatalog() {
-  catalogCache.clear();
-}

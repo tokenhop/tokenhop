@@ -75,13 +75,6 @@ export function startCacheCleanup() {
   _cleanupTimer?.unref?.();
 }
 
-/** Stop the periodic background cleanup (e.g. during graceful shutdown). */
-export function stopCacheCleanup() {
-  if (!_cleanupTimer) return;
-  clearInterval(_cleanupTimer);
-  _cleanupTimer = null;
-}
-
 // Start automatically when the module is first imported
 startCacheCleanup();
 

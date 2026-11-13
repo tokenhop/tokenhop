@@ -14,7 +14,6 @@ import {
 import { getModelInfo } from "@/sse/services/model.js";
 import { PROVIDER_MODELS } from "@/shared/constants/models";
 import { GEMINI_NATIVE_TTS_FETCH_TIMEOUT_MS, HTTP_STATUS } from "open-sse/config/runtimeConfig.js";
-import { initTranslators } from "open-sse/translator/index.js";
 import {
   grantRateLimitResponse,
   releaseGrantReservation,
@@ -23,20 +22,9 @@ import { budgetResponse, budgeted } from "@/sse/services/budgetGuard.js";
 import { disabledGate } from "@/sse/services/modelDisabled.js";
 import { errorResponse } from "open-sse/utils/error.js";
 
-let initialized = false;
 const GEMINI_NATIVE_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/models";
 // Gemini model id charset (matches sanitizeGeminiFunctionName); blocks path traversal in upstream URL.
 const GEMINI_NATIVE_MODEL_PATTERN = /^[a-zA-Z0-9_.:-]+$/;
-
-/**
- * Initialize translators once
- */
-async function ensureInitialized() {
-  if (!initialized) {
-    await initTranslators();
-    initialized = true;
-  }
-}
 
 /**
  * Handle CORS preflight
@@ -64,8 +52,6 @@ export async function OPTIONS() {
  * Gemini SSE format on the fly via transformOpenAISSEToGeminiSSE().
  */
 export async function POST(request, { params }) {
-  await ensureInitialized();
-
   try {
     const auth = await resolveGatewayAuth(request);
     if (auth instanceof Response) return auth;

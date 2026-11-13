@@ -758,15 +758,6 @@ export function generateCursorBody(
   return framed;
 }
 
-/**
- * Generate a framed tool result body to send as a separate request frame.
- * Uses field 2 (client_side_tool_v2_result) of StreamUnifiedChatRequestWithTools.
- */
-export function generateToolResultBody(toolResult) {
-  const protobuf = buildToolResultRequest(toolResult);
-  return wrapConnectRPCFrame(protobuf, false);
-}
-
 // ==================== PRIMITIVE DECODING ====================
 
 export function decodeVarint(buffer, offset) {

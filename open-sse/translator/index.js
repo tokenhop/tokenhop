@@ -28,9 +28,6 @@ export function register(from, to, requestFn, responseFn) {
   }
 }
 
-// No-op: translators self-register via the static imports at the bottom of this file.
-function ensureInitialized() {}
-
 // Strip specific content types from messages (explicit opt-in via strip[] in PROVIDER_MODELS)
 function stripContentTypes(body, stripList = []) {
   if (!stripList.length || !body.messages || !Array.isArray(body.messages)) return;
@@ -62,7 +59,6 @@ export function translateRequest(
   connectionId = null,
   clientTool = null,
 ) {
-  ensureInitialized();
   // Same-format requests must not rewrite the combo/account caller's top-level intent.
   let result = { ...body };
   // Translators build fresh bodies; keep the /v1/responses/compact routing flag.
@@ -217,7 +213,6 @@ export function translateRequest(
 
 // Translate response chunk: target -> openai -> source
 export function translateResponse(targetFormat, sourceFormat, chunk, state) {
-  ensureInitialized();
   // If same format, return as-is — except the tool name may still be cloaked:
   // translateRequest() suffixes client tools for OAuth-cloaked Claude providers
   // even when no format conversion is needed, so streamed tool_use blocks must
@@ -326,11 +321,6 @@ export function initState(sourceFormat) {
   }
 
   return base;
-}
-
-// Kept for backward compatibility; translators are already registered at import time.
-export function initTranslators() {
-  ensureInitialized();
 }
 
 // Static side-effect imports: each module calls register() at load (works in ESM + bundler).

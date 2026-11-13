@@ -35,9 +35,6 @@ export const KIRO_DEFAULT_PROFILE_ARNS = {
   social: "arn:aws:codewhisperer:us-east-1:699475941385:profile/EHGA3GRVQMUK",
 };
 
-// Back-compat single default (Builder ID).
-export const KIRO_DEFAULT_PROFILE_ARN = KIRO_DEFAULT_PROFILE_ARNS["builder-id"];
-
 /** Resolve the shared default profileArn for a given auth method. */
 export function resolveDefaultProfileArn(authMethod) {
   const social = authMethod === "google" || authMethod === "github";
@@ -237,10 +234,6 @@ export function resolveKiroEffortPath(model) {
     : "output_config";
 }
 
-export function supportsKiroAdditionalModelRequestFields(model) {
-  return resolveKiroEffortPath(model) !== null;
-}
-
 export function usesKiroNativeGptEffort(body, model) {
   return resolveKiroEffortPath(model) === "reasoning" && extractKiroGptEffortLevel(body) !== null;
 }
@@ -249,19 +242,6 @@ export function buildKiroAdditionalModelRequestFieldsForModel(body, model) {
   const effortPath = resolveKiroEffortPath(model);
   if (!effortPath) return undefined;
   return buildKiroAdditionalModelRequestFields(body, effortPath);
-}
-
-/**
- * Detect whether an inbound request is asking for reasoning / thinking output.
- * Thin wrapper over resolveKiroThinkingBudget (single source of truth).
- *
- * @param {object} body OpenAI-shaped request body (post-translation)
- * @param {object} [headers] Original inbound HTTP headers (case-insensitive)
- * @param {string} [model] Model id the caller asked for (post-strip ok)
- * @returns {boolean}
- */
-export function isThinkingEnabled(body, headers, model) {
-  return resolveKiroThinkingBudget(body, headers, model) !== null;
 }
 
 /**
