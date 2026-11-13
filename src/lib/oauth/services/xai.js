@@ -1,10 +1,6 @@
-import open from "open";
 import { OAuthService } from "./oauth.js";
 import crypto from "crypto";
-import { XAI_CONFIG, XAI_PKCE_VERIFIER_BYTES } from "../constants/xai.js";
-import { startLocalServer } from "../utils/server.js";
-import { generateCodeVerifier, generateCodeChallenge, generateState } from "../utils/pkce.js";
-import { spinner as createSpinner } from "../utils/ui.js";
+import { XAI_CONFIG } from "../constants/xai.js";
 
 /**
  * xAI (Grok) OAuth Service
@@ -178,71 +174,5 @@ export class XaiService extends OAuthService {
       throw new Error(`xAI token refresh failed: ${err}`);
     }
     return await res.json();
-  }
-
-  /**
-   * Complete xAI OAuth flow end-to-end (CLI entrypoint).
-   * Returns the raw token response plus extracted email.
-   */
-  async connect() {
-    const spinner = createSpinner("Starting xAI OAuth...").start();
-    try {
-      spinner.text = "Discovering xAI endpoints...";
-      const { authorizeUrl, tokenUrl } = await discoverEndpoints();
-
-      spinner.text = `Starting local server on port ${XAI_CONFIG.loopbackPort}...`;
-      let callbackParams = null;
-      const { port, close } = await startLocalServer((params) => {
-        callbackParams = params;
-      }, XAI_CONFIG.loopbackPort);
-      const redirectUri = `http://127.0.0.1:${port}${XAI_CONFIG.callbackPath}`;
-      spinner.succeed(`Local server started on port ${port}`);
-
-      const codeVerifier = generateCodeVerifier(XAI_PKCE_VERIFIER_BYTES);
-      const codeChallenge = generateCodeChallenge(codeVerifier);
-      const state = generateState();
-      const authUrl = this.buildXaiAuthUrl(redirectUri, state, codeChallenge, authorizeUrl);
-
-      console.log("\nOpening browser for xAI authentication...");
-      console.log(`If browser doesn't open, visit:\n${authUrl}\n`);
-      await open(authUrl);
-
-      spinner.start("Waiting for xAI authorization...");
-      await new Promise((resolve, reject) => {
-        const timeout = setTimeout(
-          () => reject(new Error("Authentication timeout (5 minutes)")),
-          300000,
-        );
-        const iv = setInterval(() => {
-          if (callbackParams) {
-            clearInterval(iv);
-            clearTimeout(timeout);
-            resolve();
-          }
-        }, 100);
-      });
-      close();
-
-      if (callbackParams.error) {
-        throw new Error(callbackParams.error_description || callbackParams.error);
-      }
-      if (!callbackParams.code) throw new Error("No authorization code received");
-      if (callbackParams.state !== state) throw new Error("Invalid state parameter");
-
-      spinner.start("Exchanging code for tokens...");
-      const tokens = await this.exchangeXaiCode({
-        tokenUrl,
-        code: callbackParams.code,
-        redirectUri,
-        codeVerifier,
-      });
-
-      const email = decodeIdTokenEmail(tokens.id_token);
-      spinner.succeed("xAI connected successfully!");
-      return { tokens, email };
-    } catch (error) {
-      spinner.fail(`Failed: ${error.message}`);
-      throw error;
-    }
   }
 }
