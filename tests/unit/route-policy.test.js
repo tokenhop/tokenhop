@@ -50,18 +50,15 @@ const ROUTES = walk(API).map((file) => {
 const LEGACY = {
   publicApi: [
     "/api/health",
-    "/api/init",
     "/api/locale",
     "/api/auth/login",
     "/api/auth/logout",
     "/api/auth/status",
     "/api/auth/oidc",
     "/api/auth/saml",
-    "/api/settings/require-login",
   ],
   publicLlm: ["/v1", "/v1beta", "/api/v1", "/api/v1beta", "/codex", "/responses"],
   alwaysProtected: [
-    "/api/shutdown",
     "/api/settings/database",
     "/api/version/shutdown",
     "/api/oauth/cursor/auto-import",
@@ -275,7 +272,7 @@ describe("adversarial paths never get a weaker gate than the old guard", () => {
   }
 
   it("keeps trailing and doubled slashes on their own row", () => {
-    expect(resolveRoutePolicy("/api/shutdown/", "POST").key).toBe("/api/shutdown");
+    expect(resolveRoutePolicy("/api/version/shutdown/", "POST").key).toBe("/api/version/shutdown");
     expect(resolveRoutePolicy("/api//cli-tools/claude-settings", "GET").localOnly).toBe(true);
     expect(resolveRoutePolicy("/%76%31/chat/completions", "POST").gateway).toBe(true);
     expect(resolveRoutePolicy("/v1/models/%2e%2e", "GET").gateway).toBe(true);

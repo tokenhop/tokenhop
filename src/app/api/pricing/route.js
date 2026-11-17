@@ -1,6 +1,5 @@
 import { NextResponse } from "next/server";
 import { getPricing, updatePricing, resetPricing, resetAllPricing } from "@/lib/db/index.js";
-import { getDefaultPricing } from "open-sse/providers/pricing.js";
 
 /**
  * GET /api/pricing
@@ -103,19 +102,5 @@ export async function DELETE(request) {
   } catch (error) {
     console.error("Error resetting pricing:", error);
     return NextResponse.json({ error: "Failed to reset pricing" }, { status: 500 });
-  }
-}
-
-/**
- * GET /api/pricing/defaults
- * Get default pricing configuration
- */
-export async function GET_DEFAULTS() {
-  try {
-    const defaultPricing = getDefaultPricing();
-    return NextResponse.json(defaultPricing);
-  } catch (error) {
-    console.error("Error fetching default pricing:", error);
-    return NextResponse.json({ error: "Failed to fetch default pricing" }, { status: 500 });
   }
 }

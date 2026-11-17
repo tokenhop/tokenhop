@@ -231,12 +231,9 @@ export const ROUTE_POLICY = {
     cliAllowed: false,
   }),
   "/api/health": PUBLIC,
-  "/api/init": PUBLIC,
   "/api/locale": PUBLIC,
-  "/api/settings/require-login": PUBLIC,
 
   // Host operations.
-  "/api/shutdown": { cap: HOST, alwaysProtected: true },
   "/api/version/shutdown": { cap: HOST, alwaysProtected: true },
   "/api/settings/database": { cap: HOST, alwaysProtected: true },
   "/api/settings/config/export": { cap: HOST },
@@ -272,13 +269,9 @@ export const ROUTE_POLICY = {
   "/api/headroom/extras": { cap: HOST },
   "/api/headroom/status": { cap: HOST },
   "/api/pxpipe/health": { cap: HOST },
-  "/api/pxpipe/install": { cap: HOST },
   "/api/pxpipe/logs": { cap: HOST },
-  "/api/pxpipe/restart": { cap: HOST },
-  "/api/pxpipe/start": { cap: HOST },
   "/api/pxpipe/stats": { cap: HOST },
   "/api/pxpipe/status": { cap: HOST },
-  "/api/pxpipe/stop": { cap: HOST },
   "/api/translator/console-logs": { cap: HOST },
   "/api/translator/console-logs/stream": { cap: HOST },
   "/api/translator/load": { cap: HOST },
@@ -405,12 +398,10 @@ export const ROUTE_POLICY = {
   "/api/usage/[connectionId]/codex-reset-credits": scoped(read(USAGE, CONN)),
   "/api/usage/chart": scoped({ cap: USAGE }),
   "/api/usage/export": scoped({ cap: USAGE }),
-  "/api/usage/history": scoped({ cap: USAGE }),
   "/api/usage/last-activity": scoped({ cap: USAGE }),
   "/api/usage/logs": scoped({ cap: USAGE }),
   "/api/usage/providers": scoped({ cap: USAGE }),
   "/api/usage/request-details": scoped({ cap: USAGE }),
-  "/api/usage/request-logs": scoped({ cap: USAGE }),
   "/api/usage/savings": scoped({ cap: USAGE }),
   "/api/usage/stats": scoped({ cap: USAGE }),
   "/api/usage/stream": scoped({ cap: USAGE }),
@@ -419,7 +410,6 @@ export const ROUTE_POLICY = {
   "/api/home/summary": scoped({ cap: USAGE }),
   "/api/shell/summary": scoped({ cap: USAGE }),
   "/api/shell/savings-milestone": scoped({ cap: USAGE }),
-  "/api/gateway/status": { cap: SELF },
 
   // YAN-376: audit log. Any-session gate (self.session): seeing the log
   // needs no manage right at the edge; the handler enforces the exact
