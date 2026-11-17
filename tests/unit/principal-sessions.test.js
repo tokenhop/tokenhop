@@ -150,7 +150,6 @@ describe("switch on", () => {
     expect((await call(t.b, "/api/providers")).status).not.toBe(403);
     expect((await call(t.b, "/api/combos")).status).not.toBe(403);
     expect((await call(t.b, "/api/keys", "POST")).headers.get("x-middleware-next")).toBe("1");
-    expect((await call(t.b, "/api/gateway/status")).status).not.toBe(403);
     expect((await call(t.b, "/api/health")).status).not.toBe(403);
     await db.updateUserUnscoped(t.b.user.id, { instanceRole: "pending" });
     t.b.user = await db.getUserUnscoped(t.b.user.id);

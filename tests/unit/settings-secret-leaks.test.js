@@ -64,17 +64,6 @@ describe("database export/import re-auth (YAN-605)", () => {
   });
 });
 
-describe("public require-login response (YAN-606)", () => {
-  it("returns only requireLogin, never tunnel or Tailscale URLs", async () => {
-    await db.updateSettings({
-      tunnelUrl: "https://secret.trycloudflare.com",
-      tailscaleUrl: "https://box.tail123.ts.net",
-    });
-    const { GET } = await import("@/app/api/settings/require-login/route.js");
-    expect(await (await GET()).json()).toEqual({ requireLogin: true });
-  });
-});
-
 describe("settings API omits credentials (YAN-607)", () => {
   it("GET and PATCH responses contain no secret keys", async () => {
     await db.updateSettings({

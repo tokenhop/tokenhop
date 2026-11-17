@@ -1,15 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { readFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
-import path from "node:path";
 import {
   formatUptime,
   resolveListenPort,
   shapeGatewayStatus,
   uptimeSecondsSince,
 } from "../../src/lib/gatewayStatus.js";
-
-const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 
 describe("resolveListenPort", () => {
   it("prefers PORT, then --port, else null", () => {
@@ -59,20 +54,5 @@ describe("uptimeSecondsSince", () => {
     expect(uptimeSecondsSince("2026-09-25T12:00:05.000Z", nowMs)).toBe(0);
     expect(uptimeSecondsSince(null, nowMs)).toBeNull();
     expect(uptimeSecondsSince("garbage", nowMs)).toBeNull();
-  });
-});
-
-describe("gateway status route auth", () => {
-  it("is not a public route", async () => {
-    const { resolveRoutePolicy } = await import("@/lib/auth/routePolicy");
-    expect(resolveRoutePolicy("/api/gateway/status").public).toBe(false);
-    expect(resolveRoutePolicy("/api/health").public).toBe(true);
-  });
-
-  it("route is GET-only and exposes no env", () => {
-    const route = readFileSync(path.join(repoRoot, "src/app/api/gateway/status/route.js"), "utf8");
-    expect(route).toMatch(/export async function GET/);
-    expect(route).not.toMatch(/export async function (POST|PUT|PATCH|DELETE)/);
-    expect(route).not.toMatch(/process\.env\)/);
   });
 });

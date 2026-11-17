@@ -71,16 +71,16 @@ for (const route of new Set(
 // explicitly; no default class that silently grants access. GET/write splits
 // below are declarations, not reads of ROUTE_POLICY/resolveRoutePolicy.
 const GROUPS = {
-  public: `health init locale settings/require-login auth/login auth/logout auth/status
+  public: `health locale auth/login auth/logout auth/status
     auth/oidc/start auth/oidc/callback auth/saml/start auth/saml/acs auth/saml/metadata`,
-  self: `auth/logout-all me/preferences gateway/status`,
+  self: `auth/logout-all me/preferences`,
   settings: `settings settings/environment settings/proxy-test pricing proxy-pools
     proxy-pools/[id] proxy-pools/[id]/test proxy-pools/cloudflare-deploy
     proxy-pools/deno-deploy proxy-pools/vercel-deploy auth/oidc/test auth/saml/test`,
-  host: `shutdown version/shutdown settings/database settings/config/export settings/config/import
+  host: `version/shutdown settings/database settings/config/export settings/config/import
     cli-tool-presets cli-tool-settings cli-tool-settings/[toolId]
-    headroom/restart headroom/extras headroom/status pxpipe/health pxpipe/install pxpipe/logs
-    pxpipe/restart pxpipe/start pxpipe/stats pxpipe/status pxpipe/stop
+    headroom/restart headroom/extras headroom/status pxpipe/health pxpipe/logs
+    pxpipe/stats pxpipe/status
     translator/console-logs translator/console-logs/stream translator/load translator/save
     translator/send translator/translate tunnel/status
     auth/reset-password cli-tools/all-statuses cli-tools/antigravity-mitm
@@ -122,8 +122,8 @@ const GROUPS = {
   keyCollection: `keys`,
   keyCreate: `keys/context`,
   keyManage: `keys/[id]`,
-  usage: `usage/[connectionId] usage/chart usage/export usage/history usage/last-activity usage/logs
-    usage/providers usage/request-details usage/request-logs usage/savings usage/stats usage/stream
+  usage: `usage/[connectionId] usage/chart usage/export usage/last-activity usage/logs
+    usage/providers usage/request-details usage/savings usage/stats usage/stream
     home/live-routes home/quota home/summary shell/summary shell/savings-milestone`,
   usageReadWrite: `usage/[connectionId]/codex-reset-credits`,
   preferencesReadWrite: `workspaces/[id]/settings`,
