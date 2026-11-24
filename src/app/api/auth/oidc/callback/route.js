@@ -29,8 +29,11 @@ import { readGroupsClaim, ssoAdmit, SsoAdmissionError } from "@/lib/users/ssoPro
 import {
   accountKey,
   checkLoginLocks,
-  recordLoginFail,
+  checkProofLocks,
   clearAccount,
+  clearProofAccount,
+  recordLoginFail,
+  recordProofFail,
   getClientIp,
 } from "@/lib/auth/loginLimiter";
 
@@ -66,7 +69,9 @@ async function completeOwnerTransfer(request, cookieStore, st) {
   const account = accountKey({ userId: st.ownerId });
   try {
     if (!(await isMultiUserEnabled())) throw new Error("multi_user_disabled");
-    if (checkLoginLocks({ ip, account }).locked) throw new Error("locked");
+    // YAN-1999: a transfer re-auth is a fresh SSO proof, so it uses the proof
+    // buckets (YAN-1076). They still honor login locks; failures never lock login.
+    if (checkProofLocks({ ip, account }).locked) throw new Error("locked");
     const url = new URL(request.url);
     const code = url.searchParams.get("code");
     if (!st.nonce || !st.verifier || !code || url.searchParams.get("error")) {
@@ -104,11 +109,12 @@ async function completeOwnerTransfer(request, cookieStore, st) {
       authenticatedAtMs: payload.auth_time * 1000,
     });
   } catch (err) {
-    recordLoginFail({ ip, account });
+    recordProofFail({ ip, account });
     console.warn("[OIDC] ownership re-auth failed:", err?.code || "error");
     return NextResponse.redirect(new URL("/login?error=ownership_reauth_failed", origin));
   }
-  clearAccount(account);
+  // Clears only the proof bucket: an SSO proof says nothing about the password.
+  clearProofAccount(account);
   // Both owners' sessions were revoked by the sessionVersion bump.
   cookieStore.delete("auth_token");
   return NextResponse.redirect(new URL("/login?transferred=1", origin));

@@ -70,6 +70,8 @@ const { GET } = await import("@/app/api/auth/oidc/callback/route.js");
 const { sealOwnerTransferState, OWNER_TRANSFER_COOKIE } = await import(
   "@/lib/auth/ownershipTransferState.js"
 );
+const limiter = await import("@/lib/auth/loginLimiter.js");
+const OWNER_ACCOUNT = limiter.accountKey({ userId: "owner-1" });
 
 function stubIdp(idToken) {
   const fetchMock = vi.fn(async (url) => ({
@@ -132,6 +134,7 @@ async function setup(sealed, extraCookies = {}) {
 }
 
 beforeEach(() => {
+  limiter.resetLoginLimiter();
   vi.stubEnv("BASE_URL", "http://localhost");
   vi.spyOn(console, "warn").mockImplementation(() => {});
   mocks.setDashboardAuthCookie.mockClear();
@@ -220,5 +223,45 @@ describe("OIDC callback ownership-transfer re-auth (YAN-360)", () => {
     expect(res.location).toBe(FAILED);
     expect(fetchMock).not.toHaveBeenCalled();
     expect(mocks.completeSsoOwnershipTransfer).not.toHaveBeenCalled();
+  });
+});
+
+// YAN-1999: transfer re-auth is a fresh SSO proof, so it uses the proof buckets
+// (YAN-1076), never the ordinary login ones.
+describe("OIDC callback ownership-transfer limiter buckets (YAN-1999)", () => {
+  it("failed transfer proofs lock the proof bucket, never password login", async () => {
+    for (let i = 0; i < 5; i++) {
+      await setup(await sealTransfer());
+      stubIdp(await hsToken());
+      expect((await callback()).location).toBe(FAILED);
+    }
+    expect(limiter.checkLoginLocks({ ip: "unknown", account: OWNER_ACCOUNT }).locked).toBe(false);
+    expect(limiter.checkProofLocks({ ip: "unknown", account: OWNER_ACCOUNT }).locked).toBe(true);
+
+    // A proof-locked owner can't finish another transfer.
+    await setup(await sealTransfer());
+    const fetchMock = stubIdp(await hsToken({ auth_time: AUTH_TIME }));
+    expect((await callback()).location).toBe(FAILED);
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(mocks.completeSsoOwnershipTransfer).not.toHaveBeenCalled();
+  });
+
+  it("a successful transfer keeps the owner's password failures", async () => {
+    for (let i = 0; i < 4; i++) limiter.recordLoginFail({ ip: "pw-ip", account: OWNER_ACCOUNT });
+    await setup(await sealTransfer());
+    stubIdp(await hsToken({ auth_time: AUTH_TIME }));
+    expect((await callback()).location).toBe("http://localhost/login?transferred=1");
+    // One more password failure reaches the 5-failure lock: the count survived.
+    limiter.recordLoginFail({ ip: "pw-ip-2", account: OWNER_ACCOUNT });
+    expect(limiter.checkLoginLocks({ ip: "other", account: OWNER_ACCOUNT }).locked).toBe(true);
+  });
+
+  it("a successful transfer clears the owner's proof failures", async () => {
+    for (let i = 0; i < 4; i++) limiter.recordProofFail({ ip: "p-ip", account: OWNER_ACCOUNT });
+    await setup(await sealTransfer());
+    stubIdp(await hsToken({ auth_time: AUTH_TIME }));
+    expect((await callback()).location).toBe("http://localhost/login?transferred=1");
+    limiter.recordProofFail({ ip: "p-ip-2", account: OWNER_ACCOUNT });
+    expect(limiter.checkProofLocks({ ip: "other", account: OWNER_ACCOUNT }).locked).toBe(false);
   });
 });
