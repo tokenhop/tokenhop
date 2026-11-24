@@ -62,6 +62,8 @@ const { POST } = await import("@/app/api/auth/saml/acs/route.js");
 const { sealOwnerTransferState, OWNER_TRANSFER_COOKIE } = await import(
   "@/lib/auth/ownershipTransferState.js"
 );
+const limiter = await import("@/lib/auth/loginLimiter.js");
+const OWNER_ACCOUNT = limiter.accountKey({ userId: "owner-1" });
 
 const seal = (overrides = {}) =>
   sealOwnerTransferState({
@@ -84,6 +86,7 @@ const acs = () =>
   );
 
 beforeEach(() => {
+  limiter.resetLoginLimiter();
   vi.stubEnv("BASE_URL", "http://localhost");
   vi.spyOn(console, "warn").mockImplementation(() => {});
   mocks.enforced.mockReset().mockResolvedValue(false);
@@ -160,5 +163,44 @@ describe("SAML ACS ownership-transfer re-auth (YAN-360)", () => {
       expect(mocks.complete).not.toHaveBeenCalled();
       expect(mocks.cookies.has(OWNER_TRANSFER_COOKIE)).toBe(false);
     }
+  });
+});
+
+// YAN-1999: transfer re-auth is a fresh SSO proof, so it uses the proof buckets
+// (YAN-1076), never the ordinary login ones.
+describe("SAML ACS ownership-transfer limiter buckets (YAN-1999)", () => {
+  it("failed transfer proofs lock the proof bucket, never password login", async () => {
+    mocks.verifyFresh.mockImplementation(() => {
+      throw new Error("stale");
+    });
+    for (let i = 0; i < 5; i++) {
+      mocks.cookies = new Map([[OWNER_TRANSFER_COOKIE, await seal()]]);
+      expect((await acs()).location).toBe(FAILED);
+    }
+    expect(limiter.checkLoginLocks({ ip: "unknown", account: OWNER_ACCOUNT }).locked).toBe(false);
+    expect(limiter.checkProofLocks({ ip: "unknown", account: OWNER_ACCOUNT }).locked).toBe(true);
+
+    // A proof-locked owner can't finish another transfer.
+    mocks.verifyFresh.mockReset().mockReturnValue({ authnInstant: Date.now() });
+    mocks.validateSamlResponse.mockClear();
+    mocks.cookies = new Map([[OWNER_TRANSFER_COOKIE, await seal()]]);
+    expect((await acs()).location).toBe(FAILED);
+    expect(mocks.validateSamlResponse).not.toHaveBeenCalled();
+    expect(mocks.complete).not.toHaveBeenCalled();
+  });
+
+  it("a successful transfer keeps password failures and clears proof failures", async () => {
+    for (let i = 0; i < 4; i++) {
+      limiter.recordLoginFail({ ip: "pw-ip", account: OWNER_ACCOUNT });
+      limiter.recordProofFail({ ip: "p-ip", account: OWNER_ACCOUNT });
+    }
+    mocks.cookies = new Map([[OWNER_TRANSFER_COOKIE, await seal()]]);
+    expect((await acs()).location).toBe("http://localhost/login?transferred=1");
+    // Proof count was cleared (checked first: proof checks also honor login locks).
+    limiter.recordProofFail({ ip: "p-ip-2", account: OWNER_ACCOUNT });
+    expect(limiter.checkProofLocks({ ip: "other", account: OWNER_ACCOUNT }).locked).toBe(false);
+    // Password count survived: one more failure reaches the 5-failure lock.
+    limiter.recordLoginFail({ ip: "pw-ip-2", account: OWNER_ACCOUNT });
+    expect(limiter.checkLoginLocks({ ip: "other", account: OWNER_ACCOUNT }).locked).toBe(true);
   });
 });

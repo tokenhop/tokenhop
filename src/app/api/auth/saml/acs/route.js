@@ -34,8 +34,11 @@ import {
   recordSuccess,
   getClientIp,
   checkLoginLocks,
-  recordLoginFail,
+  checkProofLocks,
   clearAccount,
+  clearProofAccount,
+  recordLoginFail,
+  recordProofFail,
   accountKey,
 } from "@/lib/auth/loginLimiter";
 
@@ -77,13 +80,15 @@ export async function POST(request) {
   if (transfer) {
     const st = transfer;
     const account = accountKey({ userId: st.ownerId });
+    // YAN-1999: a transfer re-auth is a fresh SSO proof, so it uses the proof
+    // buckets (YAN-1076). They still honor login locks; failures never lock login.
     const failed = () => {
-      recordLoginFail({ ip, account });
+      recordProofFail({ ip, account });
       return NextResponse.redirect(new URL("/login?error=ownership_reauth_failed", origin));
     };
     try {
       if (!(await isMultiUserEnabled())) return failed();
-      if (checkLoginLocks({ ip, account }).locked) return failed();
+      if (checkProofLocks({ ip, account }).locked) return failed();
       if (!resolveAuthModes(settings).saml || !isSamlConfigured(settings)) return failed();
       const SAMLResponse = (await request.formData()).get("SAMLResponse");
       if (!SAMLResponse) return failed();
@@ -101,7 +106,8 @@ export async function POST(request) {
       console.warn("[SAML] ownership re-auth failed:", err?.code || "error");
       return failed();
     }
-    clearAccount(account);
+    // Clears only the proof bucket: an SSO proof says nothing about the password.
+    clearProofAccount(account);
     // Both owners' sessions were revoked by the sessionVersion bump.
     cookieStore.delete("auth_token");
     return NextResponse.redirect(new URL("/login?transferred=1", origin));
