@@ -24,6 +24,10 @@ import {
   resolveApiKey,
   manualApiKey,
 } from "../../src/lib/cliToolConfigs/shared.js";
+import {
+  apiKeyPatch,
+  resolveSelectedApiKey,
+} from "../../src/app/(dashboard)/dashboard/cli-tools/hooks/useSetupSettings.js";
 import { ACTIVE } from "../../src/shared/brand/index.js";
 
 const LEGACY_KEYS = [
@@ -156,10 +160,7 @@ describe("resolveApiKey hashed mode", () => {
 });
 
 describe("preset refs are display-only, never credentials", () => {
-  it("resolveSelectedApiKey yields no secret from a ref preset", async () => {
-    const { resolveSelectedApiKey } = await import(
-      "../../src/app/(dashboard)/dashboard/cli-tools/hooks/useSetupSettings.js"
-    );
+  it("resolveSelectedApiKey yields no secret from a ref preset", () => {
     expect(
       resolveSelectedApiKey({
         customKey: null,
@@ -170,10 +171,7 @@ describe("preset refs are display-only, never credentials", () => {
     ).toBe("");
   });
 
-  it("external markers never resolve to a key either", async () => {
-    const { resolveSelectedApiKey } = await import(
-      "../../src/app/(dashboard)/dashboard/cli-tools/hooks/useSetupSettings.js"
-    );
+  it("external markers never resolve to a key either", () => {
     expect(
       resolveSelectedApiKey({
         customKey: null,
@@ -184,10 +182,7 @@ describe("preset refs are display-only, never credentials", () => {
     ).toBe("");
   });
 
-  it("apiKeyPatch keeps a pasted raw out of persisted fields", async () => {
-    const { apiKeyPatch } = await import(
-      "../../src/app/(dashboard)/dashboard/cli-tools/hooks/useSetupSettings.js"
-    );
+  it("apiKeyPatch keeps a pasted raw out of persisted fields", () => {
     // Legacy: known raw key saves by id — unchanged.
     expect(apiKeyPatch("sk-b", LEGACY_KEYS, [])).toEqual({
       apiKeyId: "b",

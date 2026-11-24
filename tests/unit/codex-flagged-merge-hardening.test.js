@@ -118,15 +118,18 @@ describe("F2: flagged-replacement respects the creator (security)", () => {
     }
     const ctxA = { userId: "user-a", workspaceIds: [wsId], role: "owner" };
     const ctxB = { userId: "user-b", workspaceIds: [wsId], role: "owner" };
+    const baseMs = Date.now();
     const token = (n) =>
-      `h.${Buffer.from(JSON.stringify({ exp: Math.floor((Date.now() + n * 3600_000) / 1000) })).toString("base64url")}.s`;
+      `h.${Buffer.from(JSON.stringify({ exp: Math.floor((baseMs + n * 3600_000) / 1000) })).toString("base64url")}.s`;
+    const tokenA = token(1);
+    const tokenB = token(2);
 
     const a = await db.createConnection(ctxA, wsId, {
       provider: "codex",
       authType: "access_token",
       name: "a-import",
       email: "f2@example.com",
-      accessToken: token(1),
+      accessToken: tokenA,
       providerSpecificData: { authMethod: "access_token", chatgptAccountId: "acct-f2" },
     });
     await flagRow(a.id);
@@ -137,7 +140,7 @@ describe("F2: flagged-replacement respects the creator (security)", () => {
       authType: "access_token",
       name: "b-import",
       email: "f2@example.com",
-      accessToken: token(2),
+      accessToken: tokenB,
       testStatus: "active",
       providerSpecificData: { authMethod: "access_token", chatgptAccountId: "acct-f2" },
     });
@@ -145,14 +148,14 @@ describe("F2: flagged-replacement respects the creator (security)", () => {
     // A's row is untouched: still flagged, still the old token.
     const aAfter = await db.getProviderConnectionByIdUnscoped(a.id);
     expect(aAfter.reauthRequired).toMatchObject({ reason: "refresh_token_rejected" });
-    expect(aAfter.accessToken).toBe(token(1));
+    expect(aAfter.accessToken).toBe(tokenA);
     // B's import landed as its own live row.
     const bRows = (await db.getProviderConnectionsUnscoped({ provider: "codex" })).filter(
       (r) => r.workspaceId === wsId && r.id !== a.id,
     );
     expect(bRows).toHaveLength(1);
     expect(bRows[0].createdByUserId).toBe("user-b");
-    expect(bRows[0].accessToken).toBe(token(2));
+    expect(bRows[0].accessToken).toBe(tokenB);
     expect(bRows[0].reauthRequired ?? null).toBeNull();
   });
 });
