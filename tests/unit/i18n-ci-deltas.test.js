@@ -28,10 +28,11 @@ function runNode(script, args, env = {}) {
     const child = spawn(process.execPath, [join(repoRoot, script), ...args], {
       env: { ...process.env, ...env },
     });
-    let out = "";
-    child.stdout.on("data", (chunk) => (out += chunk));
-    child.stderr.on("data", (chunk) => (out += chunk));
-    child.on("close", (code) => done({ code, out }));
+    let stdout = "";
+    let stderr = "";
+    child.stdout.on("data", (chunk) => (stdout += chunk));
+    child.stderr.on("data", (chunk) => (stderr += chunk));
+    child.on("close", (code) => done({ code, stdout, stderr, out: stdout + stderr }));
   });
 }
 
@@ -128,12 +129,30 @@ describe("translate-literals --delta → i18n-apply-deltas", () => {
       deltas,
     ]);
     expect(apply.code, apply.out).toBe(0);
-    expect(JSON.parse(apply.out.trim())).toEqual({ es: 1 });
+    expect(JSON.parse(apply.stdout.trim())).toEqual({ es: 1 });
     expect(readJson(join(checkout, "es.json"))).toEqual({
       Cancel: "Cancelar",
       "Claude Code": "Claude Code",
       "Save changes": "Guardar cambios",
     });
+  });
+
+  it("ignores stderr warnings (e.g. FORCE_COLOR + NO_COLOR) when reading i18n-apply-deltas JSON", async () => {
+    const root = tempDir();
+    const checkout = join(root, "checkout");
+    const deltas = join(root, "deltas");
+    mkdirSync(checkout);
+    mkdirSync(deltas);
+    writeJson(join(checkout, "es.json"), { Cancel: "Cancelar" });
+    writeJson(join(deltas, "es.json"), { Save: "Guardar" });
+
+    const apply = await runNode(
+      "scripts/i18n-apply-deltas.mjs",
+      ["--locales", checkout, "--deltas", deltas],
+      { FORCE_COLOR: "1", NO_COLOR: "1" },
+    );
+    expect(apply.code, apply.out).toBe(0);
+    expect(JSON.parse(apply.stdout.trim())).toEqual({ es: 1 });
   });
 
   it("refuses --delta with more than one locale", async () => {
