@@ -251,6 +251,8 @@ describe("quota snapshot sync", () => {
       ["ollama", "Session (5h)", "5h"],
       ["ollama", "Weekly (7d)", "7d"],
       ["xiaomi-mimo", "Weekly", "7d"],
+      ["grok-cli", "Weekly SuperGrok", "7d"],
+      ["grok-cli", "Monthly included", "month"],
     ];
     for (const [provider, key, kind] of cases) {
       expect(sync.kindForName(provider, key, { remainingPercentage: 50 })).toBe(kind);
@@ -265,6 +267,9 @@ describe("quota snapshot sync", () => {
       ["meta-code", "Credits"],
       ["ollama", "Weekly"],
       ["xiaomi-mimo", "Monthly"],
+      ["grok-cli", "Credits"],
+      ["grok-cli", "On-demand"],
+      ["grok-cli", "Prepaid"],
       ["minimax", "M-series (5h)"],
       ["minimax-cn", "M-series (7d)"],
       ["unknown-provider", "Weekly"],
@@ -289,6 +294,62 @@ describe("quota snapshot sync", () => {
     expect(store.getSnapshot("kimi-1").windows).toEqual([
       expect.objectContaining({ kind: "5h", usedFraction: 1 }),
     ]);
+  });
+
+  it("records grok-cli weekly and monthly windows while skipping balance rows", async () => {
+    await sync.recordUsageSnapshot({
+      connectionId: "grok-1",
+      provider: "grok-cli",
+      usage: {
+        quotas: {
+          "Weekly SuperGrok": { used: 35, total: 100, remainingPercentage: 65, resetAt: RESET_AT },
+          "Monthly included": {
+            used: 275,
+            total: 1000,
+            remainingPercentage: 72.5,
+            resetAt: RESET_AT,
+          },
+          Credits: { used: 5, total: 10, remainingPercentage: 50, resetAt: RESET_AT },
+          "On-demand": { used: 1, total: 1, remainingPercentage: 0, resetAt: RESET_AT },
+          Prepaid: { used: 0, total: 500, remainingPercentage: 100, resetAt: null },
+        },
+      },
+      source: "probe",
+    });
+
+    const snapshot = store.getSnapshot("grok-1");
+    expect(snapshot.windows).toHaveLength(2);
+    expect(snapshot.windows).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          kind: "7d",
+          usedFraction: expect.closeTo(0.35, 6),
+          used: 35,
+          limit: 100,
+        }),
+        expect.objectContaining({
+          kind: "month",
+          usedFraction: expect.closeTo(0.275, 6),
+          used: 275,
+          limit: 1000,
+        }),
+      ]),
+    );
+
+    await sync.recordUsageSnapshot({
+      connectionId: "grok-balances-only",
+      provider: "grok-cli",
+      usage: {
+        quotas: {
+          Credits: { used: 10, total: 10, remainingPercentage: 0, resetAt: RESET_AT },
+          "On-demand": { used: 1, total: 1, remainingPercentage: 0, resetAt: RESET_AT },
+          Prepaid: { used: 0, total: 100, remainingPercentage: 100, resetAt: null },
+        },
+      },
+      source: "probe",
+    });
+
+    expect(store.getSnapshot("grok-balances-only")).toBeNull();
   });
 
   it("builds ISO reset timestamps and effective-weight decomposition", () => {
