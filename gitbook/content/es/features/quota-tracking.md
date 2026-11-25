@@ -684,11 +684,11 @@ Respuesta:
 
 ### Endpoints de uso del dashboard (sesión / autenticación CLI local)
 
-Las rutas de uso del dashboard bajo `/api/usage/*` (como `/api/usage/stats`, `/api/usage/logs` y `/api/usage/export`) y `/api/home/quota` son APIs del dashboard que se autentican con la cookie de una sesión iniciada en el dashboard o con el token de la CLI local; no aceptan claves API Bearer del gateway. No existe ninguna ruta `/api/quota` ni `/api/usage`; las rutas `/api/*` no mapeadas fallan de forma cerrada con `403 LOCAL_ONLY`.
+Las rutas de uso del dashboard bajo `/api/usage/*` (como `/api/usage/stats`, `/api/usage/logs` y `/api/usage/export`) y `/api/home/quota` son APIs del dashboard que se autentican con la cookie de una sesión iniciada en el dashboard o con el token de la CLI local; no aceptan claves API Bearer del gateway. No existe ninguna ruta `/api/quota` ni `/api/usage`; las rutas `/api/*` no mapeadas se rechazan por defecto (fail closed) con `403 LOCAL_ONLY`.
 
 ### Exportar el historial de uso
 
-El botón Exportar de la página Uso (pestaña Resumen) descarga el periodo actual, incluido un rango personalizado, con los filtros activos de workspace/miembro/clave API aplicados. La misma descarga está disponible directamente:
+El botón Exportar de la página Estadísticas (pestaña Resumen) descarga el periodo actual, incluido un rango personalizado, con los filtros activos de workspace/miembro/clave API aplicados. La misma descarga está disponible directamente:
 
 ```bash
 GET http://localhost:20128/api/usage/export?period=7d&format=csv&granularity=day

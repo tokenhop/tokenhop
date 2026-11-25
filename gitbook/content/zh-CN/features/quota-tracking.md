@@ -679,16 +679,16 @@ curl -H "Authorization: Bearer your-api-key" \
 ```
 
 - `fiveHour` 和 `weekly` 直接呈现 `5h` 和 `7d` 窗口（如果该提供商不报告该窗口，或没有缓存的有效窗口，则为 `null`）。`windows` 包含该账户所有缓存的有效窗口，例如 `month`（Cursor、GitHub）或按模型划分的窗口（`model:*`）。
-- `used` 和 `limit` 在可用时反映提供商报告的值（`unit: "provider"`，例如 Kimi 的令牌数或 Claude/Codex 的 0–100 使用率）；如果只观测到使用率比例（例如来自响应头），则回退为 `0–100` 百分比刻度（`unit: "percentage"`）。`percentage`（已用 %，限制在 `0–100`）和 `remainingPercentage`（剩余 %）始终是归一化的百分比；`nextReset` 是未来的 ISO-8601 UTC 时间戳或 `null`（重置时间已过的窗口会被丢弃）。
-- 快照由被动读取的上游响应头、仪表板配额检查以及后台快照轮询器（针对加权策略和组合成员运行）在内存中填充。当不存在有效窗口时（包括快照缺失、过期或仅含套餐信息），或最新窗口的 `observedAt` 已有 15 分钟或更久时，`stale` 为 `true`。
+- `used` 和 `limit` 在可用时反映提供商报告的值（`unit: "provider"`，例如 Kimi 的 Token 数或 Claude/Codex 的 0–100 使用率）；如果只观测到使用率比例（例如来自响应头），则回退为 `0–100` 百分比刻度（`unit: "percentage"`）。`percentage`（已用 %，限制在 `0–100`）和 `remainingPercentage`（剩余 %）始终是归一化的百分比；`nextReset` 是未来的 ISO-8601 UTC 时间戳或 `null`（重置时间已过的窗口会被丢弃）。
+- 快照由被动读取的上游响应头、仪表盘配额检查以及后台快照轮询器（针对加权策略和组合成员运行）在内存中填充。当不存在有效窗口时（包括快照缺失、过期或仅含套餐信息），或最新窗口的 `observedAt` 已有 15 分钟或更久时，`stale` 为 `true`。
 
-### 仪表板用量端点（会话 / 本地 CLI 认证）
+### 仪表盘用量端点（会话 / 本地 CLI 认证）
 
-`/api/usage/*` 下的仪表板用量路由（例如 `/api/usage/stats`、`/api/usage/logs` 和 `/api/usage/export`）以及 `/api/home/quota` 是仪表板 API，通过已登录仪表板会话的 Cookie 或本地 CLI 令牌进行认证，不接受网关 Bearer API 密钥。不存在 `/api/quota` 或 `/api/usage` 路由；未映射的 `/api/*` 路径会以 `403 LOCAL_ONLY` 默认拒绝（fail closed）。
+`/api/usage/*` 下的仪表盘用量路由（例如 `/api/usage/stats`、`/api/usage/logs` 和 `/api/usage/export`）以及 `/api/home/quota` 是仪表盘 API，通过已登录仪表盘会话的 Cookie 或本地 CLI 令牌进行认证，不接受网关 Bearer API 密钥。不存在 `/api/quota` 或 `/api/usage` 路由；未映射的 `/api/*` 路径会以 `403 LOCAL_ONLY` 默认拒绝（fail closed）。
 
 ### 导出用量历史
 
-用量页面（概览标签页）的导出按钮会下载当前时间段（包括自定义范围），并应用当前生效的工作区/成员/API 密钥筛选。也可以直接下载同样的内容：
+使用情况页面（概览标签页）的导出按钮会下载当前时间段（包括自定义范围），并应用当前生效的工作区/成员/API 密钥筛选。也可以直接下载同样的内容：
 
 ```bash
 GET http://localhost:20128/api/usage/export?period=7d&format=csv&granularity=day
@@ -696,12 +696,12 @@ GET http://localhost:20128/api/usage/export?period=7d&format=csv&granularity=day
 
 - `period`：命名时间段（`today`、`24h`、`7d`、`30d`、`60d`、`90d`、`all`），或 `custom` 搭配 `from`/`to`，以包含首尾的本地日期 `YYYY-MM-DD` 指定（最多 366 天）。
 - `format`：`csv`（默认；为 `json` 时返回 JSON 数组）。响应以流式传输，并作为文件下载发送（`tokenhop-usage-<range>-<granularity>.csv|json`）。
-- `granularity`：`day`（默认）基于每日汇总，按 日期 × 提供商/模型/账户/API 密钥/端点 每组输出一行（对于 `today`/`24h`，从逐请求历史折叠而来，以便与卡片数据一致）；`request` 基于已存储的请求历史，对任意时间段或自定义范围按每个请求输出一行。历史保留需手动开启，因此如果你启用了它，已清理日期的请求行可能缺失；每日行不受影响，因为它们来自每日汇总。
+- `granularity`：`day`（默认）基于每日汇总，按「日期 × 提供商/模型/账户/API 密钥/端点」每组输出一行（对于 `today`/`24h`，从逐请求历史折叠而来，以便与卡片数据一致）；`request` 基于已存储的请求历史，对任意时间段或自定义范围按每个请求输出一行。历史保留需手动开启，因此如果你启用了它，已清理日期的请求行可能缺失；每日行不受影响，因为它们来自每日汇总。
 - `bom`：`1` 会在 CSV 输出前加上 UTF-8 字节顺序标记，使 Windows 上的 Excel 能正确读取含非 ASCII 字符的模型、账户和密钥名称（导出菜单中的 **CSV for Excel** 选项会设置它）。默认 `0`/不传：无 BOM，普通 RFC 4180。仅在 `format=csv` 时有效；其他任何值都会返回 400。
 
-列：时间戳（或日期）、提供商、模型、账户、账户 id、API 密钥名称、掩码后的 API 密钥、端点、提示/补全/缓存令牌数、费用、状态（请求行），以及令牌节省估算（`saved_tokens_est`：请求行中为每个请求的值；每日行中为该分组当天的汇总节省量，因此在请求历史清理后仍会保留）。原始 API 密钥从不导出，只导出密钥名称和掩码前缀。无效的 `format`、`granularity`、`period`、`bom` 或日期范围会返回 400；与其他用量端点一样，适用相同的登录要求和工作区范围限制。
+列：时间戳（或日期）、提供商、模型、账户、账户 id、API 密钥名称、掩码后的 API 密钥、端点、提示/补全/缓存 Token 数、费用、状态（请求行），以及Token 节省估算（`saved_tokens_est`：请求行中为每个请求的值；每日行中为该分组当天的汇总节省量，因此在请求历史清理后仍会保留）。原始 API 密钥从不导出，只导出密钥名称和掩码前缀。无效的 `format`、`granularity`、`period`、`bom` 或日期范围会返回 400；与其他用量端点一样，适用相同的登录要求和工作区范围限制。
 
-表头名称是稳定的、机器可读的约定：在所有仪表板语言中都使用英文 `snake_case`（`date`、`timestamp`、`prompt_tokens`、`api_key_masked` 等），因此读取导出文件的脚本和电子表格在界面语言改变后仍能正常工作。CSV 分隔符始终是逗号；在默认使用 `;` 的地区，请通过 Excel 的 **数据 → 从文本/CSV** 导入文件，并选择逗号作为分隔符。
+表头名称是稳定的、机器可读的约定：在所有仪表盘语言中都使用英文 `snake_case`（`date`、`timestamp`、`prompt_tokens`、`api_key_masked` 等），因此读取导出文件的脚本和电子表格在界面语言改变后仍能正常工作。CSV 分隔符始终是逗号；在默认使用 `;` 的地区，请通过 Excel 的 **数据 → 从文本/CSV** 导入文件，并选择逗号作为分隔符。
 
 ---
 

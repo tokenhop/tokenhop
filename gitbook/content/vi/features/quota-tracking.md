@@ -688,7 +688,7 @@ Các route usage của dashboard dưới `/api/usage/*` (như `/api/usage/stats`
 
 ### Xuất lịch sử usage
 
-Nút Export trên trang Usage (tab Overview) tải xuống khoảng thời gian hiện tại, kể cả khoảng tùy chỉnh, với các bộ lọc workspace/thành viên/API key đang áp dụng. Bạn cũng có thể tải trực tiếp:
+Nút Xuất trên trang Thống kê (tab Tổng quan) tải xuống khoảng thời gian hiện tại, kể cả khoảng tùy chỉnh, với các bộ lọc workspace/thành viên/API key đang áp dụng. Bạn cũng có thể tải trực tiếp:
 
 ```bash
 GET http://localhost:20128/api/usage/export?period=7d&format=csv&granularity=day
@@ -697,7 +697,7 @@ GET http://localhost:20128/api/usage/export?period=7d&format=csv&granularity=day
 - `period`: một khoảng thời gian có tên (`today`, `24h`, `7d`, `30d`, `60d`, `90d`, `all`) hoặc `custom` với `from`/`to` là các ngày cục bộ `YYYY-MM-DD`, tính cả hai đầu (tối đa 366 ngày).
 - `format`: `csv` (mặc định; một mảng JSON khi là `json`). Response được stream và gửi dưới dạng file tải xuống (`tokenhop-usage-<range>-<granularity>.csv|json`).
 - `granularity`: `day` (mặc định) cho một dòng mỗi ngày × provider/model/tài khoản/API key/endpoint từ bản tổng hợp hàng ngày (với `today`/`24h`, được gộp từ lịch sử từng request để khớp với các thẻ); `request` cho một dòng mỗi request từ lịch sử request đã lưu, với bất kỳ khoảng thời gian hay khoảng tùy chỉnh nào. Việc lưu giữ lịch sử là tùy chọn bật, nên nếu bạn đã bật, các dòng request có thể thiếu ở những ngày đã bị dọn; các dòng hàng ngày không bị ảnh hưởng vì chúng lấy từ bản tổng hợp.
-- `bom`: `1` thêm byte order mark UTF-8 vào đầu output CSV để Excel trên Windows đọc đúng tên model, tài khoản và key có ký tự không phải ASCII (các mục **CSV for Excel** trong menu Export đặt giá trị này). Mặc định `0`/không truyền: không có BOM, RFC 4180 thuần. Chỉ hợp lệ với `format=csv`; mọi giá trị khác trả về 400.
+- `bom`: `1` thêm byte order mark UTF-8 vào đầu output CSV để Excel trên Windows đọc đúng tên model, tài khoản và key có ký tự không phải ASCII (các mục **CSV for Excel** trong menu Xuất đặt giá trị này). Mặc định `0`/không truyền: không có BOM, RFC 4180 thuần. Chỉ hợp lệ với `format=csv`; mọi giá trị khác trả về 400.
 
 Các cột: timestamp (hoặc ngày), provider, model, tài khoản, id tài khoản, tên API key, API key đã che, endpoint, token prompt/completion/cache, chi phí, trạng thái (dòng request), và ước tính của token saver (`saved_tokens_est`: theo từng request trên dòng request; trên dòng hàng ngày là tổng mức tiết kiệm trong ngày của nhóm đó, nên vẫn còn sau khi lịch sử request bị dọn). API key gốc không bao giờ được xuất, chỉ có tên key và tiền tố đã che. `format`, `granularity`, `period`, `bom` hoặc khoảng ngày không hợp lệ trả về 400; áp dụng cùng yêu cầu đăng nhập và phạm vi workspace như các endpoint usage khác.
 
