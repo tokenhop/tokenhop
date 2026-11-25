@@ -224,7 +224,13 @@ export function createDismissLayer({
 }) {
   const handler = () => onClose?.();
   const allows = (flag) => (typeof flag === "function" ? flag() : flag);
+  // A layer created while an event is still dispatching (an Esc handler that
+  // opens a confirm dialog, committed in that handler's microtask) would see
+  // the same event at the document and close at once. Ignore that one event.
+  const opening = doc.defaultView?.event;
+  const isOpening = (event) => opening != null && event === opening;
   const onKeyDown = (event) => {
+    if (isOpening(event)) return;
     // Bubble phase runs after the target/React listeners, so an inline editor
     // inside the dialog can cancel its own Esc first (preventDefault or
     // stopPropagation). Honor that: only an unterminated Esc is a dismiss.
@@ -242,6 +248,7 @@ export function createDismissLayer({
     }
   };
   const onPointerDown = (event) => {
+    if (isOpening(event)) return;
     const container = getContainer?.();
     if (
       stack.top() === handler &&
@@ -349,8 +356,8 @@ export function useScrollLock(active = true) {
  * Close on Escape and outside pointer press while `enabled`. Registers in the
  * shared dismiss stack so nested overlays close inside-out. Disabled items
  * never fire `onClose`. `onClose`, `closeOnEscape` and `closeOnOutside` are
- * read from refs at event time, so the layer registers once per open: a
- * passive effect re-registering on `closeOnEscape` would leave a gap after the
+ * read from refs at event time, so the layer registers once per open, in a
+ * layout effect: re-registering on `closeOnEscape` would leave a gap after the
  * DOM already shows the idle phase in which Esc is dropped (YAN-2452), and
  * would re-push the layer above any nested one.
  * @param {object} options
@@ -377,7 +384,12 @@ export function useDismiss({
     escapeRef.current = closeOnEscape;
     outsideRef.current = closeOnOutside;
   }, [closeOnEscape, closeOnOutside]);
-  useEffect(() => {
+  // Registered in the commit that opens the overlay (YAN-2462): a passive
+  // effect attaches the listener a task later, dropping an Esc pressed in
+  // between. Only dismissStack is touched here; the focus trap (trapStack,
+  // passive) is independent, and every layer goes through this hook, so
+  // nested layers keep React's effect order (child before parent).
+  useIsomorphicLayoutEffect(() => {
     if (!enabled || typeof document === "undefined") return undefined;
     return createDismissLayer({
       doc: document,

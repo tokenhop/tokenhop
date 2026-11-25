@@ -157,13 +157,20 @@ function createDom() {
         prevented = true;
       },
     };
-    for (const [target, capture] of [
-      [win, true],
-      [doc, true],
-      [doc, false],
-    ]) {
-      if (stopped) break;
-      target.fire(event, capture);
+    // window.event names the event in flight, as browsers set it per listener.
+    const outer = win.event;
+    win.event = event;
+    try {
+      for (const [target, capture] of [
+        [win, true],
+        [doc, true],
+        [doc, false],
+      ]) {
+        if (stopped) break;
+        target.fire(event, capture);
+      }
+    } finally {
+      win.event = outer;
     }
     return { prevented, stopped };
   };

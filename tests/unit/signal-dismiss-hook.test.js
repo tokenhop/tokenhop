@@ -142,3 +142,70 @@ describe("useDismiss busy → idle", () => {
     expect(dom.listenerCount()).toBe(0);
   });
 });
+
+// YAN-2462: the layer itself must register in the commit that opens the
+// overlay, not in a later passive-effect task, or an Esc in that gap is dropped.
+describe("useDismiss open → immediate dismiss", () => {
+  const open = (props, enabled) => ({ ...props(false), enabled });
+
+  it("Esc closes in the commit that opens the overlay, before passive effects run", () => {
+    const { dom, closed, props } = setup();
+    harness.commit(useDismiss, open(props, false));
+    harness.flushPassive();
+    dom.key("Escape");
+    expect(closed).toEqual([]);
+
+    harness.commit(useDismiss, open(props, true)); // panel committed; effects not yet flushed
+    dom.key("Escape");
+    expect(closed).toEqual(["modal"]);
+  });
+
+  it("outside press closes in the opening commit too", () => {
+    const { dom, closed, props } = setup();
+    harness.commit(useDismiss, open(props, true));
+    dom.doc.dispatch({ type: "pointerdown", target: dom.doc.body });
+    expect(closed).toEqual(["modal"]);
+  });
+
+  it("closing unregisters in the commit, so a stale layer never sees Esc", () => {
+    const { dom, closed, props } = setup();
+    harness.commit(useDismiss, open(props, true));
+    harness.commit(useDismiss, open(props, false));
+    dom.key("Escape");
+    expect(closed).toEqual([]);
+    expect(dom.listenerCount()).toBe(0);
+  });
+
+  it("the Esc whose handler opens the overlay does not also close it", () => {
+    const { dom, closed, props } = setup();
+    harness.commit(useDismiss, open(props, false));
+    harness.flushPassive();
+    // Stand-in for a React keydown handler that opens a dialog on Esc and
+    // commits before the event reaches the document listeners.
+    dom.win.addEventListener("keydown", () => harness.commit(useDismiss, open(props, true)), true);
+    dom.key("Escape");
+    expect(closed).toEqual([]);
+    expect(dom.win.event).toBeUndefined();
+  });
+
+  it("a nested overlay opened over a settled one takes Esc first, before passive effects", () => {
+    const { dom, props } = setup();
+    const closed = [];
+    const layer = (name, enabled) => ({
+      ...props(false),
+      onClose: () => closed.push(name),
+      enabled,
+    });
+    // React runs a child's effects before its parent's; mirror that order.
+    const nested = ({ outer, inner }) => {
+      useDismiss(layer("inner", inner));
+      useDismiss(layer("outer", outer));
+    };
+    harness.commit(nested, { outer: true, inner: false });
+    harness.flushPassive();
+
+    harness.commit(nested, { outer: true, inner: true }); // inner's trap still pending
+    dom.key("Escape");
+    expect(closed).toEqual(["inner"]);
+  });
+});
