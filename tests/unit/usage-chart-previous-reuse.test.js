@@ -601,15 +601,20 @@ describe("useChartBuckets previous-series reuse", () => {
     expect(second.buckets.map((b) => b.start)).toEqual(["2026-10-15", "2026-10-16"]);
     expect(second.buckets.map((b) => b.prevTokens)).toEqual([88, 99]);
 
-    // If fallback compare=previous fails, surface error and leave cache empty so next refresh sends compare=previous.
+    // If fallback compare=previous fails, keep the fresh current series without
+    // error or previous comparison, and leave cache empty so next refresh sends compare=previous.
     calls.length = 0;
     failFallback = true;
     shiftServerDay = false;
     const failedFallback = await runRender("7d", true, 2);
-    expect(failedFallback.error).toBe("chart 503");
+    expect(failedFallback.error).toBeNull();
+    expect(failedFallback.loading).toBe(false);
+    expect(failedFallback.buckets.map((b) => b.start)).toEqual(["2026-10-14", "2026-10-15"]);
+    expect(failedFallback.buckets.map((b) => b.prevTokens)).toEqual([undefined, undefined]);
     failFallback = false;
-    await runRender("7d", true, 3);
+    const recoveredAfterFallback = await runRender("7d", true, 3);
     expect(calls.at(-1)).toBe("/api/usage/chart?period=7d&compare=previous");
+    expect(recoveredAfterFallback.buckets.map((b) => b.prevTokens)).toEqual([11, 22]);
   });
 
   it("reuses historical custom ranges indefinitely, switches between custom ranges, and never sends compare=previous for all", async () => {
@@ -714,13 +719,14 @@ describe("useChartBuckets previous-series reuse", () => {
 
   it("recovers from degraded server payloads, supports retry(), and ignores late aborted successes", async () => {
     let omitPreviousOnServer = true;
+    let currentPrevValues = [44, 55];
     globalThis.fetch = vi.fn(async (url) => {
       calls.push(url);
       const withPrev = url.includes("compare=previous") && !omitPreviousOnServer;
       return jsonResponse(
         makeRawDayBuckets(["2026-10-14", "2026-10-15"], {
           withPrevious: withPrev,
-          prevValues: [44, 55],
+          prevValues: currentPrevValues,
         }),
       );
     });
@@ -736,12 +742,12 @@ describe("useChartBuckets previous-series reuse", () => {
     ]);
     expect(recovered.buckets.map((b) => b.prevTokens)).toEqual([44, 55]);
 
-    // Explicit retry clears cache and forces compare=previous.
+    // Explicit retry clears cache, forces compare=previous, and commits the retried series.
+    currentPrevValues = [66, 77];
     recovered.retry();
-    await flush();
-    const afterRetry = render("7d", true, 1);
+    const afterRetry = await runRender("7d", true, 1);
     expect(calls[2]).toBe("/api/usage/chart?period=7d&compare=previous");
-    expect(afterRetry.buckets.map((b) => b.prevTokens)).toEqual([44, 55]);
+    expect(afterRetry.buckets.map((b) => b.prevTokens)).toEqual([66, 77]);
 
     // Aborted request never populates cache or state even if it resolves later.
     let resolveAborted;
@@ -753,12 +759,27 @@ describe("useChartBuckets previous-series reuse", () => {
             resolve(jsonResponse(makeRawDayBuckets(["2026-10-14"], { prevValues: [999] })));
         });
       }
-      return Promise.resolve(jsonResponse(makeRawDayBuckets(["2026-10-14"], { prevValues: [77] })));
+      return Promise.resolve(
+        jsonResponse(
+          makeRawDayBuckets(["2026-10-14"], {
+            withPrevious: url.includes("compare=previous"),
+            prevValues: [77],
+          }),
+        ),
+      );
     });
     render("30d", true, 2);
     const out60 = await runRender("60d", true, 2);
+    expect(out60.buckets.map((b) => b.prevTokens)).toEqual([77]);
     resolveAborted();
     await flush();
-    expect(out60.buckets.map((b) => b.prevTokens)).toEqual([77]);
+    const settled60 = render("60d", true, 2);
+    expect(settled60.buckets.map((b) => b.prevTokens)).toEqual([77]);
+
+    // Subsequent refresh reuses the 60d cache [77] without compare=previous, proving [999] didn't overwrite cache.
+    vi.setSystemTime(T0 + 10_000);
+    const refreshed60 = await runRender("60d", true, 3);
+    expect(calls.at(-1)).toBe("/api/usage/chart?period=60d");
+    expect(refreshed60.buckets.map((b) => b.prevTokens)).toEqual([77]);
   });
 });

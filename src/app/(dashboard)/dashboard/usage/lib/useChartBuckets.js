@@ -115,20 +115,30 @@ export function useChartBuckets(period, enabled, refreshKey, filters = null, ran
           // clear stale cache and fall back to one full compare=previous fetch.
           previousCache.current = null;
           const fallbackStartedAt = Date.now();
-          return fetchChart(true).then((fullJson) => {
-            if (controller.signal.aborted) return;
-            const fullShaped = shapeChartSeries(fullJson);
-            previousCache.current = capturePreviousSnapshot(fullJson, fullShaped, {
-              period,
-              windowKey,
-              scopeKey,
-              now: fallbackStartedAt,
+          return fetchChart(true)
+            .then((fullJson) => {
+              if (controller.signal.aborted) return;
+              const fullShaped = shapeChartSeries(fullJson);
+              previousCache.current = capturePreviousSnapshot(fullJson, fullShaped, {
+                period,
+                windowKey,
+                scopeKey,
+                now: fallbackStartedAt,
+              });
+              lastFetch.current = key;
+              loadedScope.current = scopeKey;
+              setBuckets(fullShaped);
+              setBucketsPeriod(windowKey);
+            })
+            .catch((cause) => {
+              if (controller.signal.aborted || cause?.name === "AbortError") return;
+              // Keep the fresh current-period series from the first response
+              // without previous comparison rather than discarding it for an error state.
+              lastFetch.current = null;
+              loadedScope.current = scopeKey;
+              setBuckets(shaped);
+              setBucketsPeriod(windowKey);
             });
-            lastFetch.current = key;
-            loadedScope.current = scopeKey;
-            setBuckets(fullShaped);
-            setBucketsPeriod(windowKey);
-          });
         }
         previousCache.current = includeCompare
           ? capturePreviousSnapshot(json, shaped, {
