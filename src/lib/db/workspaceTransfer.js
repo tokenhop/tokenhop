@@ -282,7 +282,7 @@ function mergeWorkspacePreferences(db, workspaceId, prefs) {
 
 // ─── import: apply (single transaction, all-or-nothing) ───────────────────
 
-function applyImport(db, credCtx, ctx, workspaceId, sections, { ip = null } = {}) {
+function applyImport(db, credCtx, ctx, workspaceId, sections, { ip = null, onProvision } = {}) {
   // Re-check in-tx: only a live owner membership of an active, non-pending
   // user may mutate this workspace's rows (defense in depth; the route gate
   // alone is not enough once imports run inside one transaction).
@@ -306,6 +306,7 @@ function applyImport(db, credCtx, ctx, workspaceId, sections, { ip = null } = {}
     (sections.nodes.some((n) => hasCoveredSecret(n.data, "providerNodes")) ||
       sections.connections.some((c) => hasCoveredSecret(c.data, "providerConnections")))
   ) {
+    onProvision?.();
     provisionWorkspaceImportDekSync(db, workspaceId, credCtx);
   }
 
@@ -466,12 +467,22 @@ export async function importWorkspace(ctx, workspaceId, payload, { passphrase, i
     const db = await getAdapter();
     const credCtx = await prepareCredentialCtx(db);
     let counts;
+    let provisioned = false;
     try {
-      counts = db.transaction(() => applyImport(db, credCtx, ctx, workspaceId, sections, { ip }));
+      counts = db.transaction(() =>
+        applyImport(db, credCtx, ctx, workspaceId, sections, {
+          ip,
+          onProvision: () => {
+            provisioned = true;
+          },
+        }),
+      );
     } catch (err) {
       // A DEK provisioned (and cached) inside a rolled-back import must not
       // linger in memory.
-      if (credCtx.encrypted) clearCredentialCache(db, workspaceId);
+      if (provisioned && typeof workspaceId === "string" && workspaceId.length > 0) {
+        clearCredentialCache(db, workspaceId);
+      }
       throw err;
     }
     if (counts.budgets) bumpBudgetsGeneration();

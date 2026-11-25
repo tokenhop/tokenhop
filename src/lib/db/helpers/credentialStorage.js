@@ -221,8 +221,12 @@ function blobHasEnvelope(raw, table) {
 
 // Distinguish a genuinely keyless workspace from one whose DEK was lost/deleted
 // while encrypted rows remain. Runs only when workspaceKeys has no row.
-function workspaceHasEncryptedRows(db, workspaceId) {
+// `skipTables` is used only when a write replaces the sole encrypted row of a
+// single-row table (budgetWebhooks rotateSecret), so orphaned ciphertext in
+// every other store still fails closed.
+function workspaceHasEncryptedRows(db, workspaceId, { skipTables = [] } = {}) {
   for (const table of ["providerConnections", "providerNodes", "budgetWebhooks"]) {
+    if (skipTables.includes(table)) continue;
     const rows = db.all(`SELECT data FROM ${table} WHERE workspaceId = ?`, [workspaceId]);
     if (rows.some((r) => blobHasEnvelope(r.data, table))) return true;
   }
@@ -250,7 +254,12 @@ function workspaceHasEncryptedRows(db, workspaceId) {
  * KEY_MISSING instead of masking a lost key. Not re-exported from any barrel.
  * @returns {{kid:string,dek:Buffer}}
  */
-function provisionRuntimeDekSync(db, workspaceId, ctx, { rejectExistingCiphertext = false } = {}) {
+function provisionRuntimeDekSync(
+  db,
+  workspaceId,
+  ctx,
+  { rejectExistingCiphertext = false, skipTables = [] } = {},
+) {
   if (typeof workspaceId !== "string" || workspaceId.length === 0) {
     fail("KEY_MISSING", "workspace id required");
   }
@@ -267,7 +276,7 @@ function provisionRuntimeDekSync(db, workspaceId, ctx, { rejectExistingCiphertex
   }
   const existing = liveDek(db, workspaceId, ctx);
   if (existing) return existing;
-  if (rejectExistingCiphertext && workspaceHasEncryptedRows(db, workspaceId)) {
+  if (rejectExistingCiphertext && workspaceHasEncryptedRows(db, workspaceId, { skipTables })) {
     fail("KEY_MISSING", "workspace key missing for existing encrypted credentials");
   }
   insertWrappedDek(db, workspaceId, ctx);
@@ -280,8 +289,16 @@ export function provisionMoveTargetDekSync(db, workspaceId, ctx) {
 }
 
 /** YAN-1831 budget webhook secret entry point; see provisionRuntimeDekSync. */
-export function provisionBudgetWebhookDekSync(db, workspaceId, ctx) {
-  return provisionRuntimeDekSync(db, workspaceId, ctx);
+export function provisionBudgetWebhookDekSync(
+  db,
+  workspaceId,
+  ctx,
+  { replacingWebhook = false } = {},
+) {
+  return provisionRuntimeDekSync(db, workspaceId, ctx, {
+    rejectExistingCiphertext: true,
+    skipTables: replacingWebhook ? ["budgetWebhooks"] : [],
+  });
 }
 
 /** YAN-1055 workspace-import entry point; see provisionRuntimeDekSync. */

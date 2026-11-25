@@ -240,10 +240,25 @@ describe("connection creation in keyless encrypted workspaces", () => {
     const ws = (await db.createSharedWorkspace(t.a.ctx, { name: "Rollback" })).id;
     const ctx = ownerCtxFor(t.a, ws);
 
-    // Non-member workspace → NOT_FOUND, no DEK.
-    await expect(db.createConnection(t.b.ctx, ws, apiKeyConn("outsider"))).rejects.toMatchObject({
-      code: "NOT_FOUND",
-    });
+    // Non-member workspace and undefined workspaceId → NOT_FOUND, no DEK, and
+    // unrelated workspaces' cached DEKs are NOT evicted.
+    const warmWs = t.a.personal;
+    await db.createConnection(t.a.ctx, warmWs, apiKeyConn("warm-cache"));
+    const envWarm = await import("@/lib/security/envelope.js");
+    const zeroWarmSpy = vi.spyOn(envWarm, "zeroBuffer");
+    try {
+      await expect(db.createConnection(t.b.ctx, ws, apiKeyConn("outsider"))).rejects.toMatchObject({
+        code: "NOT_FOUND",
+      });
+      await expect(
+        db.createConnection(t.a.ctx, undefined, apiKeyConn("undef-ws")),
+      ).rejects.toMatchObject({
+        code: "NOT_FOUND",
+      });
+      expect(zeroWarmSpy).not.toHaveBeenCalled();
+    } finally {
+      zeroWarmSpy.mockRestore();
+    }
     expect(dekRow(ws)).toBeUndefined();
 
     // Caller-supplied envelope alongside a plaintext secret → ENVELOPE_REJECTED, rolled back + cache evicted.
@@ -373,6 +388,36 @@ describe("workspace import into keyless encrypted workspaces", () => {
     expect(dekRow(dst)).toBeUndefined();
   });
 
+  it("provisions a fresh DEK for a node-only secret import (without any connections)", async () => {
+    const src = t.shared.id;
+    const dst = (await db.createSharedWorkspace(t.a.ctx, { name: "Node-Only-Dst" })).id;
+    const ctx = ownerCtxFor(t.a, src, dst);
+
+    const node = await db.createNode(ctx, src, {
+      type: "openai-compatible",
+      name: "Secret Node",
+      prefix: "sn",
+      apiType: "chat",
+      baseUrl: "https://node.example.com/v1",
+    });
+    // Ensure src has a DEK (e.g. via connection or migration) before sealing node secret.
+    const { loadMasterKey } = await import("@/lib/security/masterKey.js");
+    cs.ensureWorkspaceDekSync(a2, src, cs.createMigrationContext(a2, await loadMasterKey()));
+    await db.updateNode(ctx, node.id, { apiKey: "node-only-secret" });
+
+    const doc = await transfer.exportWorkspace(ctx, src, { passphrase: "strong passphrase" });
+    expect(doc.connections).toHaveLength(0);
+    expect(doc.nodes).toHaveLength(1);
+    expect(dekRow(dst)).toBeUndefined();
+
+    const res = await transfer.importWorkspace(ctx, dst, doc, { passphrase: "strong passphrase" });
+    expect(res).toMatchObject({ success: true, imported: { connections: 0, nodes: 1 } });
+    expect(dekRow(dst)).toBeTruthy();
+    const dstNodeRow = a2.get(`SELECT * FROM providerNodes WHERE workspaceId = ?`, [dst]);
+    expect(dstNodeRow.data).not.toContain("node-only-secret");
+    expect((await db.listNodes(ctx, dst))[0].apiKey).toBe("node-only-secret");
+  });
+
   it("does not provision a DEK on conflicts, auth failure, or rolled-back import failure", async () => {
     const src = t.shared.id;
     const dst = (await db.createSharedWorkspace(t.a.ctx, { name: "Conflict-Target" })).id;
@@ -381,6 +426,32 @@ describe("workspace import into keyless encrypted workspaces", () => {
     await db.createConnection(ctx, src, apiKeyConn("imp"));
     await db.createCombo(ctx, src, { name: "shared-combo", models: [] });
     const doc = await transfer.exportWorkspace(ctx, src, { passphrase: "strong passphrase" });
+
+    // Non-owner auth failure → FORBIDDEN, no DEK minted.
+    const memberCtx = {
+      ...t.b.ctx,
+      workspaceIds: [...t.b.ctx.workspaceIds, dst],
+      workspaceRoles: { ...t.b.ctx.workspaceRoles, [dst]: "member" },
+    };
+    a2.run(
+      `INSERT INTO memberships(workspaceId, userId, role, source, createdAt) VALUES(?, ?, 'member', 'manual', ?)`,
+      [dst, t.b.user.id, new Date().toISOString()],
+    );
+    await expect(
+      transfer.importWorkspace(memberCtx, dst, doc, { passphrase: "strong passphrase" }),
+    ).rejects.toMatchObject({ code: "FORBIDDEN" });
+    expect(dekRow(dst)).toBeUndefined();
+
+    // Pending owner auth failure (in-tx re-check) → FORBIDDEN, no DEK minted.
+    a2.run(`UPDATE users SET instanceRole = 'pending' WHERE id = ?`, [t.a.user.id]);
+    try {
+      await expect(
+        transfer.importWorkspace(ctx, dst, doc, { passphrase: "strong passphrase" }),
+      ).rejects.toMatchObject({ code: "FORBIDDEN" });
+      expect(dekRow(dst)).toBeUndefined();
+    } finally {
+      a2.run(`UPDATE users SET instanceRole = 'owner' WHERE id = ?`, [t.a.user.id]);
+    }
 
     // Conflict on combo name → TRANSFER_CONFLICT, no DEK minted.
     await db.createCombo(ctx, dst, { name: "shared-combo", models: [] });
@@ -550,6 +621,10 @@ describe("provisioner guardrails and runtime confinement", () => {
     );
     expect(() => cs.provisionWorkspaceImportDekSync(a2, wsNode, real)).toThrow(code("KEY_MISSING"));
     expect(() => cs.provisionMoveTargetDekSync(a2, wsNode, real)).toThrow(code("KEY_MISSING"));
+    expect(() => cs.provisionBudgetWebhookDekSync(a2, wsNode, real)).toThrow(code("KEY_MISSING"));
+    expect(() =>
+      cs.provisionBudgetWebhookDekSync(a2, wsNode, real, { replacingWebhook: true }),
+    ).toThrow(code("KEY_MISSING"));
 
     // 2. Encrypted budgetWebhook with deleted DEK blocks create/import/move provisioners.
     const wsHook = (await db.createSharedWorkspace(t.a.ctx, { name: "Lost-Hook" })).id;

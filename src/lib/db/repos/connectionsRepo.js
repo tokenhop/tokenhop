@@ -876,21 +876,24 @@ export async function createConnection(ctx, workspaceId, data, opts = {}) {
   const db = await getAdapter();
   const credCtx = await prepareCredentialCtx(db);
   const removed = [];
+  let authorizedWs = null;
   let conn;
   try {
     conn = await db.transaction(() => {
-      memberWorkspaceId(ctx, db, workspaceId);
+      authorizedWs = memberWorkspaceId(ctx, db, workspaceId);
       return createInTx(
         db,
         data,
         opts,
-        { workspaceId, createdByUserId: ctx.userId },
+        { workspaceId: authorizedWs, createdByUserId: ctx.userId },
         credCtx,
         removed,
       );
     });
   } catch (err) {
-    if (credCtx.encrypted) clearCredentialCache(db, workspaceId);
+    // Scope cleanup to a workspace that passed authorization so a rejected
+    // or undefined workspaceId never evicts unrelated workspaces' cached DEKs.
+    if (credCtx.encrypted && authorizedWs) clearCredentialCache(db, authorizedWs);
     throw err;
   }
   recordAbsorbed(removed, conn);
