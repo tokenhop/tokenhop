@@ -59,6 +59,14 @@ export const CACHE_AFFINITY_PROMPT_PIN_MAX_AGE_MS = envMs(
   15 * 60 * 1000,
 );
 
+// Like envMs, but an explicit 0 is kept (0 = feature disabled).
+function envMsOrOff(name, def) {
+  const raw = process.env[name];
+  if (raw == null || raw === "") return def;
+  const n = parseInt(raw, 10);
+  return Number.isFinite(n) && n >= 0 ? n : def;
+}
+
 function envUrl(name, def) {
   const raw = process.env[name]?.trim();
   return raw || def;
@@ -71,6 +79,13 @@ export const SEARXNG_URL = envUrl("SEARXNG_URL", "http://localhost:8888/search")
 // Inter-chunk stall timeout (once tokens are flowing). Generous headroom so
 // slow reasoning models aren't aborted mid-stream. Env: STREAM_STALL_TIMEOUT_MS.
 export const STREAM_STALL_TIMEOUT_MS = envMs("STREAM_STALL_TIMEOUT_MS", 360 * 1000);
+
+// Client-side SSE keepalive: while a streamed response is open and nothing has
+// been written to the client for this long, send an SSE comment (": keepalive")
+// so proxies with idle timeouts (Cloudflare drops after ~100s) keep the
+// connection. Doesn't count as upstream activity. 0 disables.
+// Env: STREAM_KEEPALIVE_INTERVAL_MS.
+export const STREAM_KEEPALIVE_INTERVAL_MS = envMsOrOff("STREAM_KEEPALIVE_INTERVAL_MS", 15 * 1000);
 
 // Time-to-first-token timeout (prompt prefill). Env: STREAM_FIRST_CHUNK_TIMEOUT_MS.
 export const STREAM_FIRST_CHUNK_TIMEOUT_MS = envMs("STREAM_FIRST_CHUNK_TIMEOUT_MS", 200 * 1000);
