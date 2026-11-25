@@ -1,5 +1,6 @@
 // Stream handler with disconnect detection - shared for all providers
-import { STREAM_STALL_TIMEOUT_MS } from "../config/runtimeConfig.js";
+import { STREAM_KEEPALIVE_INTERVAL_MS, STREAM_STALL_TIMEOUT_MS } from "../config/runtimeConfig.js";
+import { SSE_KEEPALIVE } from "./sseConstants.js";
 import { dbg, isDebugEnabled } from "./debugLog.js";
 import { clockTime } from "./clockTime.js";
 
@@ -98,6 +99,26 @@ export function createStreamController({
   };
 }
 
+const KEEPALIVE_BYTES = new TextEncoder().encode(SSE_KEEPALIVE);
+const LF = 0x0a;
+const CR = 0x0d;
+
+// Trailing line feeds of an output chunk (CRs ignored), carried across chunks
+// that are all newlines. >= 2 means the client sits on an SSE event boundary.
+function trailingNewlines(chunk, prev) {
+  const len = chunk?.length ?? 0;
+  if (!len) return prev;
+  const at = typeof chunk === "string" ? (i) => chunk.charCodeAt(i) : (i) => chunk[i];
+  let n = 0;
+  for (let i = len - 1; i >= 0; i--) {
+    const c = at(i);
+    if (c === CR) continue;
+    if (c !== LF) return n;
+    n++;
+  }
+  return prev + n;
+}
+
 /**
  * Create transform stream with disconnect detection
  * Wraps existing transform stream and adds abort capability.
@@ -107,17 +128,67 @@ export function createStreamController({
  * for long periods while raw bytes still flow (e.g. Kiro EventStream
  * binary frames buffering, Claude reasoning streams).
  *
+ * Keepalive: with `keepaliveIntervalMs` > 0, an SSE comment is written to the
+ * client whenever nothing was written for that long (including before the
+ * first chunk), so idle-timeout proxies don't cut a silent stream. It is only
+ * written on an event boundary, never inside a partially written event, and
+ * it never reaches the transform (translators, usage, logs) or the upstream
+ * stall watchdog. The timer stops on end, error, cancel and disconnect.
+ *
  * @param {function} [onAbortTerminal] - Receives a human-readable abort
  * message and returns terminal SSE bytes to emit downstream.
+ * @param {{ keepaliveIntervalMs?: number }} [options]
  */
 export function createDisconnectAwareStream(
   transformStream,
   streamController,
   onAbortTerminal = null,
+  { keepaliveIntervalMs = 0 } = {},
 ) {
   const reader = transformStream.readable.getReader();
   const writer = transformStream.writable.getWriter();
   let terminalEmitted = false;
+  let closed = false;
+  let keepaliveTimer = null;
+  // Nothing written yet counts as a boundary: a keepalive may lead the stream.
+  let newlines = 2;
+
+  const clearKeepalive = () => {
+    if (keepaliveTimer) {
+      clearTimeout(keepaliveTimer);
+      keepaliveTimer = null;
+    }
+  };
+  const markClosed = () => {
+    closed = true;
+    clearKeepalive();
+  };
+  const armKeepalive = (controller) => {
+    clearKeepalive();
+    if (!(keepaliveIntervalMs > 0) || closed) return;
+    keepaliveTimer = setTimeout(() => {
+      keepaliveTimer = null;
+      if (closed || !streamController.isConnected()) {
+        markClosed();
+        return;
+      }
+      if (newlines >= 2) {
+        try {
+          controller.enqueue(KEEPALIVE_BYTES);
+        } catch {
+          markClosed(); // stream already closed/errored downstream
+          return;
+        }
+      }
+      armKeepalive(controller);
+    }, keepaliveIntervalMs);
+    keepaliveTimer.unref?.();
+  };
+  const write = (controller, chunk) => {
+    controller.enqueue(chunk);
+    newlines = trailingNewlines(chunk, newlines);
+    armKeepalive(controller);
+  };
 
   // Emit a synthesized terminal payload (e.g. Responses response.failed + [DONE]) once
   const emitTerminal = (controller) => {
@@ -132,8 +203,13 @@ export function createDisconnectAwareStream(
   };
 
   return new ReadableStream({
+    start(controller) {
+      armKeepalive(controller);
+    },
+
     async pull(controller) {
       if (!streamController.isConnected()) {
+        markClosed();
         emitTerminal(controller);
         controller.close();
         return;
@@ -143,12 +219,14 @@ export function createDisconnectAwareStream(
         const { done, value } = await reader.read();
 
         if (done) {
+          markClosed();
           streamController.handleComplete();
           controller.close();
           return;
         }
-        controller.enqueue(value);
+        write(controller, value);
       } catch (error) {
+        markClosed();
         const wasConnected = streamController.isConnected();
         // Controller already closed = downstream ended; not an upstream error, skip noisy log.
         const msg0 = error?.message || "";
@@ -189,6 +267,7 @@ export function createDisconnectAwareStream(
     },
 
     cancel(reason) {
+      markClosed();
       streamController.handleDisconnect(reason || "cancelled");
       reader.cancel();
       writer.abort();
@@ -211,6 +290,10 @@ export function createDisconnectAwareStream(
  * @param {Response} providerResponse - Response from provider
  * @param {TransformStream} transformStream - Transform stream for SSE
  * @param {object} streamController - Stream controller from createStreamController
+ * @param {function} [onAbortTerminal] - Terminal bytes after an abort (see createDisconnectAwareStream)
+ * @param {number} [stallTimeoutMs] - Upstream inactivity before the fetch is aborted
+ * @param {number} [keepaliveIntervalMs] - Client-side silence before an SSE keepalive comment; 0 = off.
+ *   Keepalives are added after the transform, so the stall timer above never sees them.
  */
 export function pipeWithDisconnect(
   providerResponse,
@@ -218,6 +301,7 @@ export function pipeWithDisconnect(
   streamController,
   onAbortTerminal = null,
   stallTimeoutMs = STREAM_STALL_TIMEOUT_MS,
+  keepaliveIntervalMs = STREAM_KEEPALIVE_INTERVAL_MS,
 ) {
   let stallTimer = null;
   let chunkCount = 0;
@@ -321,5 +405,6 @@ export function pipeWithDisconnect(
     },
     wrappedController,
     onAbortTerminal ? () => onAbortTerminal(abortMessage) : null,
+    { keepaliveIntervalMs },
   );
 }
