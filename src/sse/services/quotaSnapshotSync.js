@@ -16,6 +16,7 @@ import {
   getProviderConnectionByIdUnscoped,
   updateProviderConnectionUnscoped,
 } from "@/lib/db/index.js";
+import { recordQuotaHistorySamplesUnscoped } from "@/lib/db/repos/quotaHistoryRepo.js";
 import { releaseExactQuotaBlocks } from "./antigravityQuota.js";
 import { releaseQuotaLocksFromPoll } from "./quotaLockRelease.js";
 
@@ -257,10 +258,20 @@ export async function recordUsageSnapshot({
 
     // One window per kind; keep the tightest (highest used) when keys collapse.
     const byKind = new Map();
+    const historySamples = [];
     for (const [quotaKey, quota] of Object.entries(usage.quotas || {})) {
       const kind = kindForName(provider, quotaKey, quota);
       const usedFraction = kind ? usedFractionFor(quota) : null;
       if (usedFraction === null) continue;
+      if (source === "probe") {
+        historySamples.push({
+          windowKind: kind,
+          quotaKey,
+          usedFraction,
+          resetsAt: quota.resetAt ?? null,
+          source: "probe",
+        });
+      }
       const prev = byKind.get(kind);
       if (!prev || usedFraction > prev.usedFraction) {
         const rawUsed = toFinite(quota.used);
@@ -269,7 +280,13 @@ export async function recordUsageSnapshot({
           rawUsed !== null && rawUsed >= 0 && rawTotal !== null && rawTotal > 0
             ? { used: rawUsed, limit: rawTotal }
             : {};
-        byKind.set(kind, { kind, usedFraction, ...counts, resetsAt: quota.resetAt ?? null });
+        byKind.set(kind, {
+          kind,
+          quotaKey,
+          usedFraction,
+          ...counts,
+          resetsAt: quota.resetAt ?? null,
+        });
       }
     }
 
@@ -294,6 +311,18 @@ export async function recordUsageSnapshot({
       (provider === "codex" ? codexTier(fallbackTier) : sanitizePlanTier(fallbackTier));
 
     const snapshot = recordProbeWindows(connectionId, provider, windows, { planTier });
+    // Persist rate-limited history samples (YAN-422); fail-open, never breaks probe path.
+    if (historySamples.length > 0) {
+      try {
+        await recordQuotaHistorySamplesUnscoped(
+          connectionId,
+          provider,
+          historySamples.map((s) => ({ ...s, planTier })),
+        );
+      } catch (error) {
+        console.warn(`[QuotaSnapshot] history persist failed for ${provider}: ${error?.message}`);
+      }
+    }
     // Own try (inside), before the tier persist: a persist failure never skips it.
     await releaseQuotaLocks(connectionId, provider, usage, windows, probeStartedAt);
     if (detectedTier) await persistPlanTier(connectionId, detectedTier);
@@ -368,7 +397,10 @@ function toIso(ms) {
 }
 
 /** API view of a connection's snapshot (owned here), or null when none exists. */
-export function buildQuotaSnapshotView(connectionId, { manualWeight, model } = {}) {
+export function buildQuotaSnapshotView(
+  connectionId,
+  { manualWeight, model, includeQuotaKeys = false } = {},
+) {
   try {
     const snapshot = getSnapshot(connectionId);
     if (!snapshot) return null;
@@ -376,6 +408,7 @@ export function buildQuotaSnapshotView(connectionId, { manualWeight, model } = {
       planTier: snapshot.planTier ?? null,
       windows: snapshot.windows.map((window) => ({
         kind: window.kind,
+        ...(includeQuotaKeys && window.quotaKey ? { quotaKey: window.quotaKey } : {}),
         usedFraction: window.usedFraction,
         ...(window.used !== undefined && window.limit !== undefined
           ? { used: window.used, limit: window.limit }

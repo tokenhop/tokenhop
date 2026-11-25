@@ -7,6 +7,7 @@ import {
 } from "@/app/(dashboard)/dashboard/quota/lib/quotaUtils.js";
 import Meter from "@/shared/components/Meter";
 import QuotaForecastLine from "@/shared/components/QuotaForecastLine";
+import QuotaHistorySparkline from "@/shared/components/QuotaHistorySparkline";
 
 /**
  * Signal quota row: name, level-colored remaining text,
@@ -78,6 +79,8 @@ export default function QuotaRow({ quota, compact = false, onHide }) {
 
       {!isUnlimited && !isCredit && <QuotaForecastLine forecast={quota.forecast} />}
 
+      {!isUnlimited && !isCredit && <QuotaHistorySparkline history={quota.history} />}
+
       <div className="flex min-w-0 items-center gap-2">
         <span
           className="min-w-0 flex-1 truncate text-xs text-muted"
@@ -128,6 +131,12 @@ QuotaRow.propTypes = {
     resetAt: PropTypes.string,
     recurring: PropTypes.bool,
     forecast: PropTypes.object,
+    history: PropTypes.arrayOf(
+      PropTypes.shape({
+        ts: PropTypes.number,
+        usedPct: PropTypes.number,
+      }),
+    ),
   }).isRequired,
   compact: PropTypes.bool,
   onHide: PropTypes.func,

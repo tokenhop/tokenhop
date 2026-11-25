@@ -193,6 +193,19 @@ export {
   getDistinctProviders,
 } from "./repos/requestDetailsRepo.js";
 
+// Quota snapshot history (YAN-422)
+export {
+  recordQuotaHistorySamplesUnscoped,
+  seedQuotaHistoryWriteCacheUnscoped,
+  getConnectionQuotaHistory,
+  listConnectionQuotaHistoryRows,
+  loadLatestSnapshotsUnscoped,
+  loadRecentForecastSamplesUnscoped,
+  pruneQuotaHistoryUnscoped,
+  downsampleHistoryPoints,
+  _resetQuotaHistoryWriteCache,
+} from "./repos/quotaHistoryRepo.js";
+
 // Users & teams identity and tenancy (YAN-353). Inert until the multi-user
 // switch is on; scoped functions take a Principal (`@/lib/users/principal.js`).
 export {

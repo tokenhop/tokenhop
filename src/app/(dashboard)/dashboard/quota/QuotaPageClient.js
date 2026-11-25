@@ -53,6 +53,7 @@ export default function QuotaPageClient() {
   const {
     connections,
     quotaData,
+    cachedQuota,
     loading,
     errors,
     connectionsError,
@@ -362,6 +363,8 @@ export default function QuotaPageClient() {
               quotaVisibility,
             );
             const hiddenRows = getHiddenQuotaRows(conn.provider, rawQuotas, quotaVisibility);
+            // Restored snapshot: display-only until the live refresh succeeds.
+            const cached = quota ? null : cachedQuota[conn.id];
             const isCodex = conn.provider === "codex";
             const resetCredits = getCodexResetCreditCount(quota);
             const isResetting = resettingLimitId === conn.id;
@@ -372,6 +375,13 @@ export default function QuotaPageClient() {
                 key={conn.id}
                 connection={conn}
                 quotas={visibleQuotas}
+                cachedQuotas={
+                  cached
+                    ? filterQuotasByVisibility(conn.provider, cached.quotas, quotaVisibility)
+                    : undefined
+                }
+                cachedUpdatedAt={cached?.updatedAt}
+                cachedStale={cached?.stale}
                 hiddenQuotaRows={hiddenRows}
                 loading={loading[conn.id]}
                 error={errors[conn.id]}

@@ -10,6 +10,26 @@ export const QUOTA_SNAPSHOT = {
   maxWindowsPerConnection: 32,
   profileRecheckMs: 86_400_000,
   poller: { tickMs: 60_000, staleMs: 900_000, failureCooldownMs: 900_000 },
+  // Persisted quota snapshot history (YAN-422).
+  history: {
+    // At most one persisted sample per (connection, window, key) per 5 minutes.
+    minSampleIntervalMs: 5 * 60_000,
+    // Minimum usedFraction change (0.5%) to record a new sample before heartbeat.
+    minChangeDelta: 0.005,
+    // Reset timestamp shift (>= 5m) marks a window rollover and records once rate limit passes.
+    resetShiftMs: 5 * 60_000,
+    // Record a heartbeat even when unchanged after 6h so 7d sparklines stay continuous.
+    heartbeatIntervalMs: 6 * 3_600_000,
+    // Bounded retention window (30–90 days; default 60d), pruned in batches.
+    defaultRetentionDays: 60,
+    minRetentionDays: 30,
+    maxRetentionDays: 90,
+    pruneBatchSize: 1000,
+    // Quota page 7d sparkline query window and max points per window.
+    sparklineWindowMs: 7 * 24 * 3_600_000,
+    maxSparklinePoints: 48,
+    maxWriteCacheKeys: 4000,
+  },
   // Per-minute rate windows: a 0 without a reset is re-probed after a transient cooldown.
   shortWindowKinds: ["requests", "tokens", "input-tokens", "output-tokens"],
 };

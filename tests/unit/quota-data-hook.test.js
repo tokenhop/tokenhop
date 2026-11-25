@@ -74,6 +74,9 @@ const connB = { id: "b", provider: "gemini-cli" };
 function route(url) {
   if (url.startsWith("/api/providers/client")) return routes.connections();
   const id = url.match(/^\/api\/usage\/([^/?]+)/)?.[1];
+  if (url.includes("cached=1")) {
+    return (routes.cached?.[id] || (() => json(200, { cached: true, quotaSnapshot: null })))();
+  }
   return (routes[id] || (() => json(200, {})))();
 }
 
@@ -499,5 +502,92 @@ describe("useQuotaData", () => {
     expect(latest.connectionsLoading).toBe(true);
     expect(latest.initialQuotaLoaded).toBe(false);
     expect(fetch.mock.calls.filter(([u]) => u.startsWith("/api/providers/client"))).toHaveLength(0);
+  });
+  describe("restored snapshot preview", () => {
+    const snap = {
+      cached: true,
+      quotaSnapshot: {
+        windows: [{ kind: "5h", usedFraction: 0.25, resetsAt: "2026-11-24T10:00:00.000Z" }],
+        updatedAt: "2026-11-24T08:00:00.000Z",
+        stale: true,
+      },
+      forecasts: {},
+      history: {
+        "5h": [
+          { ts: 1, usedPct: 10 },
+          { ts: 2, usedPct: 25 },
+        ],
+      },
+    };
+
+    it("shows the restored snapshot before the live refresh settles, without touching quotaData", async () => {
+      const pending = [];
+      routes.a = () => new Promise((resolve) => pending.push(resolve));
+      routes.cached = { a: () => json(200, snap) };
+      render();
+      await flush();
+      const r = render();
+      expect(r.quotaData.a).toBeUndefined();
+      expect(r.loading.a).toBe(true);
+      expect(r.cachedQuota.a.stale).toBe(true);
+      expect(r.cachedQuota.a.quotas[0]).toMatchObject({ name: "5h", used: 25, total: 100 });
+      expect(r.cachedQuota.a.quotas[0].history).toHaveLength(2);
+      expect(JSON.parse(window.localStorage.getItem(QUOTA_CACHE_KEY) || "{}").a).toBeUndefined();
+      pending[0](json(200, { plan: "pro" }));
+      await flush();
+      const done = render();
+      expect(done.quotaData.a.plan).toBe("pro");
+      expect(done.cachedQuota.a).toBeUndefined();
+    });
+
+    it("keeps the snapshot visible when the live refresh fails", async () => {
+      routes.a = () => json(500, { error: "upstream down" });
+      routes.cached = { a: () => json(200, snap) };
+      const r = await mount();
+      expect(r.errors.a).toMatch(/500/);
+      expect(r.quotaData.a).toBeUndefined();
+      expect(r.cachedQuota.a).toBeDefined();
+    });
+
+    it("keeps the saved preview when provider credentials cannot refresh", async () => {
+      routes.a = () => json(401, { error: "expired", code: "quota_credential_refresh_failed" });
+      routes.cached = { a: () => json(200, snap) };
+      const r = await mount();
+      expect(r.errors.a).toMatch(/401/);
+      expect(r.quotaData.a).toBeUndefined();
+      expect(r.cachedQuota.a).toBeDefined();
+    });
+
+    it("drops a late snapshot response once the live response has settled", async () => {
+      const cachedPending = [];
+      routes.cached = { a: () => new Promise((resolve) => cachedPending.push(resolve)) };
+      await mount();
+      expect(render().quotaData.a.plan).toBe("pro");
+      cachedPending[0](json(200, snap));
+      await flush();
+      expect(render().cachedQuota.a).toBeUndefined();
+    });
+
+    it("ignores non-cached, empty or failed snapshot payloads", async () => {
+      routes.cached = {
+        a: () => json(200, { plan: "pro", quotaSnapshot: snap.quotaSnapshot }),
+        b: () => json(500, { error: "nope" }),
+      };
+      routes.a = () => new Promise(() => {});
+      routes.b = () => new Promise(() => {});
+      render();
+      await flush();
+      expect(render().cachedQuota).toEqual({});
+    });
+
+    it("requests the snapshot only on first load, not on forced or background refresh", async () => {
+      const r = await mount();
+      fetch.mockClear();
+      await r.refreshAll(true);
+      await render().refreshAll();
+      await render().refreshProvider("a", "codex");
+      const urls = fetch.mock.calls.map(([u]) => u);
+      expect(urls.some((u) => u.includes("cached=1"))).toBe(false);
+    });
   });
 });

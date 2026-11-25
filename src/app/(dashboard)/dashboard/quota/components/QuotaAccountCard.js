@@ -15,6 +15,15 @@ import { memo } from "react";
 import Menu, { MenuItem } from "@/shared/components/Menu";
 import QuotaRow from "./QuotaRow";
 
+function formatCachedLabel({ loading, error, cachedUpdatedAt, cachedStale }) {
+  const parsed = cachedUpdatedAt ? new Date(cachedUpdatedAt) : null;
+  const when =
+    parsed && !Number.isNaN(parsed.getTime()) ? ` · saved ${parsed.toLocaleString()}` : "";
+  if (error) return `Last known snapshot · refresh failed${when}`;
+  if (loading) return `Last known snapshot · refreshing${when}`;
+  return `Last known snapshot${cachedStale ? " (stale)" : ""}${when}`;
+}
+
 /**
  * Signal account card: tile + provider + account label, a status pill,
  * enable toggle, refresh / edit / delete actions, quota rows with the
@@ -25,6 +34,9 @@ import QuotaRow from "./QuotaRow";
 function QuotaAccountCard({
   connection,
   quotas,
+  cachedQuotas,
+  cachedUpdatedAt,
+  cachedStale,
   hiddenQuotaRows,
   loading,
   error,
@@ -49,6 +61,9 @@ function QuotaAccountCard({
   const label = getConnectionLabel(connection);
   const secondaryLabel = getConnectionSecondaryLabel(connection);
   const status = getAccountStatus({ isActive: connection.isActive, quotas, error, loading });
+  // Restored snapshot shown only while no live data exists; never drives status or bulk actions.
+  const showCached = !message && quotas.length === 0 && cachedQuotas?.length > 0;
+  const cachedLabel = formatCachedLabel({ loading, error, cachedUpdatedAt, cachedStale });
 
   return (
     <Card padding="none" className="flex min-w-0 flex-col p-5" data-testid="quota-account-card">
@@ -146,7 +161,29 @@ function QuotaAccountCard({
 
       {/* Quota rows */}
       <div className="mt-4 flex min-w-0 flex-1 flex-col gap-4">
-        {loading ? (
+        {showCached ? (
+          <>
+            <span
+              className="self-start rounded-md border border-line bg-raised px-2 py-1 text-[10px] text-muted"
+              role="status"
+              data-testid="quota-cached-label"
+            >
+              {cachedLabel}
+            </span>
+            {cachedQuotas.map((quota) => (
+              <QuotaRow key={`cached-${quota.quotaType || quota.name}`} quota={quota} compact />
+            ))}
+            {error && !loading && (
+              <button
+                type="button"
+                onClick={() => onRefresh(connection.id, connection.provider)}
+                className="min-h-10 self-start rounded-lg border border-line bg-raised px-3 text-xs font-semibold text-text hover:bg-line/60 focus-visible:shadow-focus"
+              >
+                Retry refresh
+              </button>
+            )}
+          </>
+        ) : loading ? (
           <div className="flex flex-col gap-3" role="status" aria-label="Loading quotas">
             <Skeleton className="h-3 w-full" />
             <Skeleton className="h-3 w-2/3" />
@@ -224,6 +261,9 @@ QuotaAccountCard.propTypes = {
     authType: PropTypes.string,
   }).isRequired,
   quotas: PropTypes.arrayOf(PropTypes.object).isRequired,
+  cachedQuotas: PropTypes.arrayOf(PropTypes.object),
+  cachedUpdatedAt: PropTypes.string,
+  cachedStale: PropTypes.bool,
   hiddenQuotaRows: PropTypes.arrayOf(PropTypes.object),
   loading: PropTypes.bool,
   error: PropTypes.string,

@@ -113,6 +113,17 @@ Cost: $4.80
 
 ---
 
+## Recent quota trends
+
+On **Dashboard → Quota**, the **7d used** line shows sampled utilization for a
+quota window once there are at least two readings. The runway estimate uses
+recent readings from the current reset window; it may be unavailable when
+there are too few samples or the provider does not report a reset time.
+
+Tokenhop keeps sampled quota history locally for 60 days by default. Recent
+unexpired readings survive a restart, but a cached reading is not a live
+provider check. Deleting a connection removes its stored quota history.
+
 ## Quota Limits & Reset Times
 
 ### Subscription Providers
