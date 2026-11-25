@@ -211,7 +211,7 @@ describe("capacity-adapter bridge on a pinned turn", () => {
   const imageBody = {
     messages: [{ role: "user", content: [{ type: "image_url", image_url: { url: "x" } }] }],
   };
-  const run = (handle, models, pinExclude) =>
+  const run = (handle, models, pinExclude, pinBridge = []) =>
     handleComboChat({
       body: imageBody,
       models,
@@ -222,6 +222,7 @@ describe("capacity-adapter bridge on a pinned turn", () => {
       conversationKey: "conv1",
       cacheAffinity: true,
       pinExclude,
+      pinBridge,
     });
 
   it("bridges an input the pinned model cannot read, without moving the pin", async () => {
@@ -232,6 +233,26 @@ describe("capacity-adapter bridge on a pinned turn", () => {
     const res = await run(handle, models, ["anthropic/claude-sonnet-4.6"]);
     expect(res.status).toBe(200);
     expect(calls).toEqual(["anthropic/claude-sonnet-4.6"]);
+    expect(comboPins.get("\nc\nconv1")).toBe("deepseek/deepseek-chat");
+  });
+
+  it("bridges through a configured adapter model that is already a combo member", async () => {
+    const { handle, calls } = makeHandler();
+    const models = ["deepseek/deepseek-chat", "p/b", "anthropic/claude-sonnet-4.6"];
+    comboPins.set("\nc\nconv1", "deepseek/deepseek-chat");
+    const res = await run(handle, models, [], ["anthropic/claude-sonnet-4.6"]);
+    expect(res.status).toBe(200);
+    expect(calls).toEqual(["anthropic/claude-sonnet-4.6"]);
+    expect(comboPins.get("\nc\nconv1")).toBe("deepseek/deepseek-chat");
+  });
+
+  it("never bridges through a capable member that is not a configured adapter model", async () => {
+    const { handle, calls } = makeHandler();
+    const models = ["deepseek/deepseek-chat", "p/b", "anthropic/claude-sonnet-4.6"];
+    comboPins.set("\nc\nconv1", "deepseek/deepseek-chat");
+    const res = await run(handle, models, []);
+    expect(res.status).toBe(200);
+    expect(calls).toEqual(["deepseek/deepseek-chat"]);
     expect(comboPins.get("\nc\nconv1")).toBe("deepseek/deepseek-chat");
   });
 

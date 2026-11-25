@@ -26,6 +26,7 @@ import {
 import { loadComboHeadroomFn } from "../services/comboHeadroom.js";
 import {
   augmentModelsWithCapacityAdapter,
+  capacityAdapterBridgeModels,
   withCapacityAdapterStripping,
   getActiveAdapterStrategy,
 } from "open-sse/services/capacityAdapter.js";
@@ -326,6 +327,7 @@ export async function handleChat(request, clientRawRequest = null, options = nul
       cacheAffinity,
       workspaceId: gateway?.workspaceId ?? null,
       pinExclude: adapterAdded,
+      pinBridge: capacityAdapterBridgeModels(augmentedModels, requiredCapabilities, settings),
       clientSignal: request?.signal ?? null,
       headroomFn,
       onAttempt: comboObserver,
@@ -667,6 +669,7 @@ async function handleSingleModelChat(
         cacheAffinity,
         workspaceId: gateway?.workspaceId ?? null,
         pinExclude: adapterAdded,
+        pinBridge: capacityAdapterBridgeModels(filteredAdapter, requiredCapabilities, chatSettings),
         clientSignal: request?.signal ?? null,
         headroomFn,
         onAttempt: nestedObserver,
