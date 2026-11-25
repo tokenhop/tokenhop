@@ -95,6 +95,15 @@ describe("hub gate (authorizeHubRequest)", () => {
       const verdict = await hub.authorizeHubRequest(req(path, { method, bearer: key }));
       expect(verdict.ok, `${method} ${path}`).toBe(true);
     }
+    // Case never changes the verdict (Next routes case-insensitively).
+    expect(
+      (await hub.authorizeHubRequest(req("/V0/Management/Auth-Files", { bearer: key }))).ok,
+    ).toBe(true);
+    expect(
+      await hub.authorizeHubRequest(
+        req("/v0/management/RESET-QUOTA", { method: "POST", bearer: key }),
+      ),
+    ).toMatchObject({ status: 403 });
     // The rewritten /api form resolves the same way.
     expect(
       (await hub.authorizeHubRequest(req("/api/v0/management/auth-files", { bearer: key }))).ok,
@@ -241,6 +250,8 @@ describe("dashboardGuard edge", () => {
       "/v0/management/a%2Fb",
       "/api/v0/management/%2e%2e/x",
       "/v0/other",
+      "/V0/management/config",
+      "/API/V0/management/config",
     ]) {
       expect((await proxy(req(path, { bearer: key }))).status, path).toBe(403);
       expect((await proxy(req(path))).status, path).toBe(401);

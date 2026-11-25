@@ -14,6 +14,8 @@
 //   path per minute so polling can't flood the audit log; denials always log
 //   until the IP is rate limited.
 // Hidden behind TOKENHOP_USAGE_HUB (default off) until the hub routes land.
+// The hub route handlers (YAN-2020) must call authorizeHubRequest again, like
+// the gateway handlers re-run resolveGatewayAuth: the edge is not the only gate.
 import { audit } from "@/lib/users/audit.js";
 import { getClientIp } from "@/lib/auth/loginLimiter.js";
 import { findActiveHubKeyUnscoped } from "@/lib/db/repos/hubKeysRepo.js";
@@ -40,7 +42,9 @@ const state = globalThis.__tokenhopHubAuth;
 
 /** `/api/v0/management/x` and `/v0/management/x` both normalize to the root form. */
 export function normalizeHubPath(pathname) {
-  let path = String(pathname || "");
+  // Lower-cased: Next routes case-insensitively, so case must not change the
+  // allow-list verdict (an upper-case read route is still that route).
+  let path = String(pathname || "").toLowerCase();
   if (path.startsWith("/api/v0/")) path = path.slice(4);
   return path.length > 1 && path.endsWith("/") ? path.slice(0, -1) : path;
 }

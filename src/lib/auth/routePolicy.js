@@ -473,12 +473,17 @@ const GATEWAY = Object.freeze({ cap: "gateway.use", gateway: true });
 // YAN-2019: CLIProxyAPI-compatible usage hub prefixes (boundary match), read
 // by T3 Code with a hub management key only. dashboardGuard hands these to
 // src/lib/hub/hubAuth.js: no session, CLI token or gateway key authorizes
-// them, and the hub key authorizes nothing else. The whole /v0 tree is
-// claimed, so a dot-segment path that normalizes out of /v0/management still
-// meets the hub gate. Both the root form and the rewritten /api form get the
-// row (middleware runs before rewrites).
-export const HUB_PREFIXES = Object.freeze(["/v0", "/api/v0"]);
+// them, and the hub key authorizes nothing else. The whole /v0 and /api/v0
+// trees are claimed (isHubSegs), so a dot-segment path that normalizes out of
+// /v0/management still meets the hub gate. Both the root form and the
+// rewritten /api form match (middleware runs before rewrites).
 const HUB = Object.freeze({ cap: null, hub: true });
+// Case-insensitive on purpose: Next matches routes and rewrites without case
+// (caseSensitiveRoutes: false), so `/V0/...` must meet the hub gate too.
+function isHubSegs(segs) {
+  const a = segs[0]?.toLowerCase();
+  return a === "v0" || (a === "api" && segs[1]?.toLowerCase() === "v0");
+}
 
 /**
  * Any /api/* path without a row (no route file: Next answers 404) gets the
@@ -532,11 +537,11 @@ function routeKey(pathname) {
   if (segs.some((s) => s.includes("/") || s === "." || s === "..")) {
     // An encoded or dot segment under /v0 is never a hub route: hand it to the
     // hub gate anyway so it answers 401/403 instead of falling through.
-    if (segs[0] === "v0" || (segs[0] === "api" && segs[1] === "v0")) return "hub";
+    if (isHubSegs(segs)) return "hub";
     if (segs[0] === "api" || segs[0]?.startsWith("api/")) return UNMAPPED;
     return GATEWAY_PREFIXES.includes(`/${segs[0]}`) ? "gateway" : null;
   }
-  if (HUB_PREFIXES.some((p) => clean === p || clean.startsWith(`${p}/`))) return "hub";
+  if (isHubSegs(segs)) return "hub";
   if (GATEWAY_PREFIXES.some((p) => clean === p || clean.startsWith(`${p}/`))) return "gateway";
   if (Object.hasOwn(ROUTE_POLICY, clean) && !clean.includes("[")) return clean;
   const hit = PATTERNS.find((p) => matches(p.segs, segs));
