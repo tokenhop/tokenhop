@@ -246,6 +246,16 @@ describe("capacity-adapter bridge on a pinned turn", () => {
     expect(comboPins.get("\nc\nconv1")).toBe("deepseek/deepseek-chat");
   });
 
+  it("bridges through a configured adapter model outside the combo", async () => {
+    const { handle, calls } = makeHandler();
+    const models = ["deepseek/deepseek-chat", "anthropic/claude-sonnet-4.6"];
+    comboPins.set("\nc\nconv1", "deepseek/deepseek-chat");
+    const res = await run(handle, models, [], ["openai/gpt-4o"]);
+    expect(res.status).toBe(200);
+    expect(calls).toEqual(["openai/gpt-4o"]);
+    expect(comboPins.get("\nc\nconv1")).toBe("deepseek/deepseek-chat");
+  });
+
   it("never bridges through a capable member that is not a configured adapter model", async () => {
     const { handle, calls } = makeHandler();
     const models = ["deepseek/deepseek-chat", "p/b", "anthropic/claude-sonnet-4.6"];
