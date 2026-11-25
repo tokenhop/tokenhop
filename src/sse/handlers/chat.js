@@ -299,6 +299,9 @@ export async function handleChat(request, clientRawRequest = null, options = nul
     const pinBridge = affinityApplies(cacheAffinity, comboStrategy, options, comboObserver)
       ? await pinBridgeModels(lookups, requiredCapabilities, body, settings, [modelStr])
       : [];
+    // Only bridge models outside the combo get adapter stripping: a combo member keeps
+    // its full history whether it serves as the pin, as a normal pick or as a bridge.
+    const bridgeOnly = pinBridge.filter((m) => !augmentedModels.includes(m));
     log.info(
       "CHAT",
       `Combo "${modelStr}" with ${augmentedModels.length} models (strategy: ${comboStrategy}, sticky: ${comboStickyLimit})`,
@@ -319,7 +322,7 @@ export async function handleChat(request, clientRawRequest = null, options = nul
             options,
             attempt,
           ),
-        [...adapterAdded, ...pinBridge],
+        [...adapterAdded, ...bridgeOnly],
       ),
       log,
       comboName: comboRotationKey(gateway?.workspaceId, modelStr),
@@ -669,6 +672,7 @@ async function handleSingleModelChat(
       const pinBridge = affinityApplies(cacheAffinity, comboStrategy, options, nestedObserver)
         ? await pinBridgeModels(lookups, requiredCapabilities, body, chatSettings, nextPath)
         : [];
+      const bridgeOnly = pinBridge.filter((m) => !filteredAdapter.includes(m));
       log.info(
         "CHAT",
         `Combo "${modelStr}" with ${augmentedModels.length} models (strategy: ${comboStrategy}, sticky: ${comboStickyLimit})`,
@@ -689,7 +693,7 @@ async function handleSingleModelChat(
               options,
               innerAttempt,
             ),
-          [...adapterAdded, ...pinBridge],
+          [...adapterAdded, ...bridgeOnly],
         ),
         log,
         comboName: comboRotationKey(gateway?.workspaceId, modelStr),

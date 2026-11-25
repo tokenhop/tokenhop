@@ -641,6 +641,44 @@ describe("pinned-turn capacity-adapter bridge under a scoped key", () => {
   });
 });
 
+// #1219 review: a combo member that is also a vision-pool model is not a bridge
+// when it serves as the pin; it keeps its full history (no adapter stripping).
+describe("pinned pool member keeps its history", () => {
+  it("an image turn on a pinned member that is also in the vision pool is not stripped", async () => {
+    executeMock.mockReset();
+    executeMock.mockImplementation(async () => okUpstream());
+    comboPins.clear();
+    resetComboRotation();
+    insertConnection("conn-openai", "openai", "w1");
+    insertConnection("conn-deepseek", "deepseek", "w1");
+    insertCombo("pm", "pinm", ["openai/gpt-4o", "deepseek/deepseek-chat"]);
+    setWorkspaceStrategies("w1", { pm: { fallbackStrategy: "round-robin" } });
+    setSettings({
+      comboStrategies: { pinm: { fallbackStrategy: "round-robin" } },
+      capacityAdapter: { vision: { enabled: true, models: ["openai/gpt-4o"] } },
+    });
+    insertHashedApiKeySync(db, hashedKeyRow());
+    const headers = { "x-session-id": "conv-pool-member" };
+    const first = await handleChat(chatRequest({ ...msg("hi"), model: "pinm" }, { headers }));
+    expect(first.status).toBe(200);
+    expect(executeMock.mock.calls[0][0].body.model).toBe("gpt-4o");
+    executeMock.mockClear();
+
+    const history = [];
+    for (let i = 0; i < 12; i++) {
+      history.push({ role: i % 2 ? "assistant" : "user", content: `turn ${i}` });
+    }
+    const body = { ...imgMsg(), model: "pinm" };
+    body.messages = [{ role: "user", content: "hi" }, ...history, ...body.messages];
+    const res = await handleChat(chatRequest(body, { headers }));
+    expect(res.status).toBe(200);
+    expect(executeMock).toHaveBeenCalledTimes(1);
+    const sent = executeMock.mock.calls[0][0].body;
+    expect(sent.model).toBe("gpt-4o");
+    expect(sent.messages).toHaveLength(body.messages.length);
+  });
+});
+
 describe("sanitizeGatewayCapture units", () => {
   it("redacts every gateway secret carrier incl. cookie, and query key in urls", () => {
     const out = sanitizeGatewayCapture({
