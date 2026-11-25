@@ -70,7 +70,7 @@ export function reasonLabel(reason) {
  * Localize PXPIPE daily timeline bucket dates from their `YYYY-MM-DD` bounds
  * using the shared `localizeBucketLabels` formatter (YAN-1707).
  *
- * @param {Array<object>|null|undefined} data PXPIPE `timeline` rows (`{ date, ... }`)
+ * @param {Array<object>|null|undefined} data PXPIPE timeline rows (`{ date, ... }`)
  * @param {string|null|undefined} locale BCP 47 tag; falsy uses the runtime default
  * @param {Date} [now] "today" for the current-year rule
  * @returns {Array<object>}
