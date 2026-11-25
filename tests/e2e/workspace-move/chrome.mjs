@@ -33,11 +33,14 @@ export function waitForDevTools(child, { timeout = CHROME_STARTUP_TIMEOUT_MS } =
       log = (log + text).slice(-LOG_TAIL);
       // Match whole lines only: the URL can arrive split across chunks.
       const lines = (pending + text).split("\n");
-      pending = lines.pop();
+      pending = lines.pop().slice(-LOG_TAIL);
       for (const line of lines) {
         const match = LISTENING.exec(line);
         if (!match) continue;
-        const port = Number(new URL(match[1]).port);
+        let port = 0;
+        try {
+          port = Number(new URL(match[1]).port);
+        } catch {}
         if (!port) return fail(`Chrome reported an unusable DevTools URL: ${match[1]}`);
         finish();
         return resolve({ port, browserWsUrl: match[1] });

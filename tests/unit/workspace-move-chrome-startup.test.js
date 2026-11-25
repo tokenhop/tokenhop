@@ -86,6 +86,13 @@ describe("waitForDevTools (YAN-2451)", () => {
     await expect(ready).rejects.toThrow(/Chrome unavailable: .*ENOENT.*CHROME_BIN/);
   });
 
+  it("rejects, not throws, on a malformed DevTools URL", async () => {
+    const chrome = fakeChrome();
+    const ready = waitForDevTools(chrome);
+    chrome.stderr.write("DevTools listening on ws://[bad\n");
+    await expect(ready).rejects.toThrow(/unusable DevTools URL/);
+  });
+
   it("detaches its listeners once settled", async () => {
     const chrome = fakeChrome();
     const ready = waitForDevTools(chrome);
