@@ -1,3 +1,6 @@
+import { localizeBucketLabels } from "@/shared/utils/chartBucketLabels";
+import { isValidDateKey } from "@/shared/utils/period";
+
 const REASON_LABELS = {
   applied: "Prompt exceeded threshold",
   below_threshold: "Below size threshold",
@@ -61,4 +64,27 @@ export function statusLabel(status, health) {
  */
 export function reasonLabel(reason) {
   return REASON_LABELS[reason] || reason;
+}
+
+/**
+ * Localize PXPIPE daily timeline bucket dates from their `YYYY-MM-DD` bounds
+ * using the shared `localizeBucketLabels` formatter (YAN-1707).
+ *
+ * @param {Array<object>|null|undefined} data PXPIPE timeline rows (`{ date, ... }`)
+ * @param {string|null|undefined} locale BCP 47 tag; falsy uses the runtime default
+ * @param {Date} [now] "today" for the current-year rule
+ * @returns {Array<object>}
+ */
+export function localizePxpipeTimeline(data, locale, now = new Date()) {
+  if (!Array.isArray(data) || data.length === 0) return [];
+  return localizeBucketLabels(
+    data.map((row) => ({
+      ...row,
+      grain: "day",
+      start: typeof row?.date === "string" && isValidDateKey(row.date) ? row.date : undefined,
+      label: String(row?.date ?? ""),
+    })),
+    locale,
+    now,
+  );
 }
