@@ -15,6 +15,7 @@ import { useSettingsField } from "../useSettingsField";
 import PersonalSharingSetting from "./PersonalSharingSetting";
 import BudgetWebhookPrivateNetworksSetting from "./BudgetWebhookPrivateNetworksSetting";
 import UsersTeamsSetting from "./UsersTeamsSetting";
+import HubKeysSetting from "./HubKeysSetting";
 
 // Mirrors server MIN_PASSWORD_LENGTH (src/lib/auth/userPassword.js); server stays authoritative.
 const MIN_PASSWORD_LENGTH = 8;
@@ -269,6 +270,8 @@ export default function SecuritySection({ settings, onSettingsChange }) {
           settings={settings}
           onSaved={onSaved("budgetWebhookAllowPrivateNetworks")}
         />
+
+        <HubKeysSetting />
 
         <SettingRow
           label="Secure session cookie"

@@ -488,6 +488,21 @@ export const TABLES = {
       updatedAt: "TEXT NOT NULL",
     },
   },
+  // Usage hub management keys (migration 026, YAN-2019): read-only keys for
+  // the T3 Code hub routes. SHA-256 keyHash only (never the raw key); revoked
+  // rows stay as tombstones. Instance-level, owner/admin managed.
+  hubKeys: {
+    columns: {
+      id: "TEXT PRIMARY KEY",
+      keyHash: "TEXT UNIQUE NOT NULL",
+      prefix: "TEXT NOT NULL",
+      name: "TEXT",
+      createdByUserId: "TEXT REFERENCES users(id) ON DELETE SET NULL",
+      createdAt: "TEXT NOT NULL",
+      lastUsedAt: "TEXT",
+      revokedAt: "TEXT",
+    },
+  },
   // YAN-751: one row per signed-in device, keyed by the non-secret `sid` JWT
   // claim. userAgent/ip hold derived labels only (never the raw UA or full IP).
   // Soft revoke (revokedAt) stays as a tombstone until expiresAt.

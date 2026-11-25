@@ -294,6 +294,10 @@ export const ROUTE_POLICY = {
   "/api/settings": { cap: SETTINGS },
   "/api/settings/environment": { cap: SETTINGS },
   "/api/settings/proxy-test": { cap: SETTINGS },
+  // YAN-2019: usage hub management keys (owner/admin). Handlers refuse
+  // gateway credentials and answer 404 while TOKENHOP_USAGE_HUB is off.
+  "/api/hub-keys": { cap: SETTINGS },
+  "/api/hub-keys/[id]": { cap: SETTINGS },
   "/api/pricing": { cap: SETTINGS },
   "/api/proxy-pools": { cap: SETTINGS },
   "/api/proxy-pools/[id]": { cap: SETTINGS },
@@ -466,6 +470,16 @@ export const GATEWAY_PREFIXES = Object.freeze([
 ]);
 const GATEWAY = Object.freeze({ cap: "gateway.use", gateway: true });
 
+// YAN-2019: CLIProxyAPI-compatible usage hub prefixes (boundary match), read
+// by T3 Code with a hub management key only. dashboardGuard hands these to
+// src/lib/hub/hubAuth.js: no session, CLI token or gateway key authorizes
+// them, and the hub key authorizes nothing else. The whole /v0 tree is
+// claimed, so a dot-segment path that normalizes out of /v0/management still
+// meets the hub gate. Both the root form and the rewritten /api form get the
+// row (middleware runs before rewrites).
+export const HUB_PREFIXES = Object.freeze(["/v0", "/api/v0"]);
+const HUB = Object.freeze({ cap: null, hub: true });
+
 /**
  * Any /api/* path without a row (no route file: Next answers 404) gets the
  * strictest gate: local-only, session or CLI token, hostOps. Covers the old
@@ -516,9 +530,13 @@ function routeKey(pathname) {
   // An encoded "/" or dot segment never names a static route: Next would serve
   // it through a dynamic param (or 404), so don't let it borrow another row.
   if (segs.some((s) => s.includes("/") || s === "." || s === "..")) {
+    // An encoded or dot segment under /v0 is never a hub route: hand it to the
+    // hub gate anyway so it answers 401/403 instead of falling through.
+    if (segs[0] === "v0" || (segs[0] === "api" && segs[1] === "v0")) return "hub";
     if (segs[0] === "api" || segs[0]?.startsWith("api/")) return UNMAPPED;
     return GATEWAY_PREFIXES.includes(`/${segs[0]}`) ? "gateway" : null;
   }
+  if (HUB_PREFIXES.some((p) => clean === p || clean.startsWith(`${p}/`))) return "hub";
   if (GATEWAY_PREFIXES.some((p) => clean === p || clean.startsWith(`${p}/`))) return "gateway";
   if (Object.hasOwn(ROUTE_POLICY, clean) && !clean.includes("[")) return clean;
   const hit = PATTERNS.find((p) => matches(p.segs, segs));
@@ -531,12 +549,13 @@ function routeKey(pathname) {
  * /skills, /login…), which dashboardGuard handles itself.
  * @param {string} pathname
  * @param {string} [method]
- * @returns {{ key: string, capability: string|null, public: boolean, gateway: boolean, localOnly: boolean, alwaysProtected: boolean, cliAllowed: boolean, scoped: boolean, passwordChange: boolean, multiUserOnly: boolean }|null}
+ * @returns {{ key: string, capability: string|null, public: boolean, gateway: boolean, hub: boolean, localOnly: boolean, alwaysProtected: boolean, cliAllowed: boolean, scoped: boolean, passwordChange: boolean, multiUserOnly: boolean }|null}
  */
 export function resolveRoutePolicy(pathname, method = "GET") {
   const key = routeKey(pathname);
   if (!key) return null;
   if (key === "gateway") return { key, ...flags(GATEWAY), capability: GATEWAY.cap };
+  if (key === "hub") return { key, ...flags(HUB), capability: null };
   if (key === UNMAPPED) return { key, ...flags(UNMAPPED_ROW), capability: HOST };
   const row = ROUTE_POLICY[key];
   const m = String(method || "GET").toUpperCase();
@@ -553,6 +572,7 @@ function flags(row) {
   return {
     public: row.public === true,
     gateway: row.gateway === true,
+    hub: row.hub === true,
     localOnly: row.localOnly === true,
     alwaysProtected: row.alwaysProtected === true,
     cliAllowed: row.cliAllowed !== false,

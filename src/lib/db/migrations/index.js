@@ -37,6 +37,7 @@ import m022 from "./022-usage-untracked-index.js";
 import m023 from "./023-budget-notices.js";
 import m024 from "./024-budget-webhooks.js";
 import m025 from "./025-quota-history.js";
+import m026 from "./026-hub-keys.js";
 
 export const MIGRATIONS = [
   m001,
@@ -64,6 +65,7 @@ export const MIGRATIONS = [
   m023,
   m024,
   m025,
+  m026,
 ].sort((a, b) => a.version - b.version);
 
 for (let i = 1; i < MIGRATIONS.length; i++) {
