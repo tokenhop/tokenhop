@@ -324,8 +324,10 @@ export async function fetchGrokCliCreditsConfig(accessToken, proxyOptions = null
 
 function quotasFromGrpcCredits(decoded) {
   if (!decoded || !Number.isFinite(decoded.percentUsed)) return null;
-  // Round for bar display (fixed32 ratio * 100 can be 34.999… for 0.35)
-  const used = Math.round(Math.max(0, Math.min(100, decoded.percentUsed)));
+  const percentUsed = Math.max(0, Math.min(100, decoded.percentUsed));
+  const rounded = Math.round(percentUsed);
+  // Clean up float32 display noise without marking a partial snapshot exhausted.
+  const used = rounded === 100 && percentUsed < 100 ? percentUsed : rounded;
   return {
     "Weekly SuperGrok": makeQuota({
       used,
