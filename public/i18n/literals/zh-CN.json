@@ -2532,6 +2532,7 @@
   "Tokens in / out": "输入 / 输出令牌数",
   "Tokens over time": "令牌用量趋势",
   "Tokens per minute (optional)": "每分钟令牌数（可选）",
+  "Tokens saved": "已节省的令牌",
   "Tokens saved — last 30 days": "节省的令牌 — 最近 30 天",
   "Tomorrow": "明天",
   "Tool not found or disabled.": "未找到或工具已禁用。",
