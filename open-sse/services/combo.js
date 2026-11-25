@@ -14,8 +14,8 @@ import { effectiveComboWeight } from "./comboWeights.js";
 import { boundedMap } from "../utils/boundedMap.js";
 import { probeStreamHead } from "../utils/streamProbe.js";
 import { COMBO_HEDGE_DELAY_DEFAULT_MS, COMBO_HEDGE_DELAY_MAX_MS } from "./comboStrategy.js";
-import { clearComboPins, comboPins, orderAroundPin } from "./cacheAffinity.js";
-import { comboAffinityKey, validComboPin } from "./comboAffinityOrder.js";
+import { clearComboPins, comboPins } from "./cacheAffinity.js";
+import { comboAffinityKey, pinnedCandidates, validComboPin } from "./comboAffinityOrder.js";
 import {
   COMBO_STREAM_PROBE_MAX_BYTES,
   COMBO_STREAM_PROBE_MAX_MS,
@@ -714,7 +714,7 @@ export async function handleComboChat({
     workspaceId,
     onAttempt,
   });
-  const pin = validComboPin(affinityKey, models, { comboStrategy, comboWeights, headroomFn });
+  const pin = validComboPin(affinityKey, models, { comboStrategy, comboWeights });
   const pinned = pin !== undefined;
   const pinExcludeSet = new Set(pinExclude);
   let provisional;
@@ -749,14 +749,10 @@ export async function handleComboChat({
     parentAttempt.commitOnServe(commit, dropProvisional);
   };
 
-  // Apply rotation strategy if enabled
+  // Apply rotation strategy if enabled. A pinned turn tries only the pinned model
+  // (YAN-2467): no other model, so a fallback never hands one model's turns to another.
   let rotatedModels = pinned
-    ? comboStrategy === "round-robin"
-      ? rotateModelsFromIndex(models, models.indexOf(pin))
-      : orderAroundPin(
-          comboStrategy === "fastest" ? getFastestModels(models, comboName, () => 1) : models,
-          pin,
-        )
+    ? pinnedCandidates(models, pin, pinExcludeSet)
     : comboStrategy === "weighted"
       ? getWeightedModels(models, comboName, comboWeights, headroomFn, comboStickyLimit)
       : comboStrategy === "fastest"
@@ -775,7 +771,16 @@ export async function handleComboChat({
   if (autoSwitch) {
     const required = detectRequiredCapabilities(body);
     if (required.size > 0) {
-      const reordered = reorderByCapabilities(rotatedModels, required);
+      let reordered = reorderByCapabilities(rotatedModels, required);
+      // Pinned: a capacity-adapter member may still bridge an input the pinned model
+      // cannot read (as before, never pinned), but only when it floats to the front.
+      if (pinned) {
+        const adapters = models.filter((m) => pinExcludeSet.has(m) && !rotatedModels.includes(m));
+        const bridged = adapters.length
+          ? reorderByCapabilities([...rotatedModels, ...adapters], required)
+          : reordered;
+        if (pinExcludeSet.has(bridged[0])) reordered = bridged;
+      }
       if (reordered[0] !== rotatedModels[0]) {
         log.info("COMBO", `auto-switch for [${[...required].join(",")}] → ${reordered[0]}`);
       }
@@ -838,6 +843,9 @@ export async function handleComboChat({
       if (step.outcome === "served") repin(rotatedModels[i]);
       if (step.outcome !== "next") return step.response;
       agg.add(step);
+    }
+    if (pinned) {
+      log.warn("COMBO", `Conversation pinned to ${pin}: not switching to another model`);
     }
     return agg.response(log);
   } finally {

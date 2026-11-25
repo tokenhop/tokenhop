@@ -148,28 +148,34 @@ describe("conversation cache affinity end-to-end", () => {
     expect([strip(a), strip(b)]).toContain(s2[0]);
   });
 
-  it("re-pins to the fallback member when the pinned model fails", async () => {
-    const { combo, a, b } = await makeRoundRobinCombo();
-    const strip = (m) => m.slice("openai/".length);
+  it("keeps the pinned model when it fails: the error is returned, never another model (YAN-2467)", async () => {
+    const { combo: combo_ } = await makeRoundRobinCombo();
 
-    await turn(combo, "s1");
-    await turn(combo, "s1");
+    await turn(combo_, "s1");
+    await turn(combo_, "s1");
     const first = servedModels()[0];
-    const other = first === strip(a) ? strip(b) : strip(a);
     executeMock.mockClear();
 
-    // Turn 3: the pinned model fails once, the other member serves.
+    // Turn 3: the pinned model fails; the other member is never tried.
     executeMock.mockImplementation(async (args) => ({
       response: args.body?.model === first ? failResponse() : okResponse(),
       url: "https://fake.local/v1/chat/completions",
       headers: {},
       transformedBody: null,
     }));
-    const res3 = await turn(combo, "s1");
-    expect(res3.status).toBe(200);
-    expect(servedModels()).toEqual([first, other]);
+    const res3 = await turn(combo_, "s1");
+    expect(res3.ok).toBe(false);
+    expect(new Set(servedModels())).toEqual(new Set([first]));
 
-    // Turn 4: both healthy again, the conversation stays on the replacement.
+    // Turn 4: healthy again (fresh account, so no model lock from turn 3); the
+    // conversation is still on its model.
+    await resetConnections();
+    await db.createProviderConnectionUnscoped({
+      provider: "openai",
+      name: "aff-main",
+      apiKey: "sk-aff-main",
+      isActive: true,
+    });
     executeMock.mockClear();
     executeMock.mockImplementation(async () => ({
       response: okResponse(),
@@ -177,8 +183,8 @@ describe("conversation cache affinity end-to-end", () => {
       headers: {},
       transformedBody: null,
     }));
-    await turn(combo, "s1");
-    expect(servedModels()[0]).toBe(other);
+    await turn(combo_, "s1");
+    expect(servedModels()).toEqual([first]);
   });
 
   it("nested combo: a conversation stays on the same inner model across turns", async () => {
