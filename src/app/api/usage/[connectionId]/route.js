@@ -206,6 +206,7 @@ export async function GET(request, { params }) {
         return Response.json(
           {
             error: `Credential refresh failed: ${refreshError.message}`,
+            code: "quota_credential_refresh_failed",
           },
           { status: 401 },
         );

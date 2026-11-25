@@ -549,6 +549,15 @@ describe("useQuotaData", () => {
       expect(r.cachedQuota.a).toBeDefined();
     });
 
+    it("keeps the saved preview when provider credentials cannot refresh", async () => {
+      routes.a = () => json(401, { error: "expired", code: "quota_credential_refresh_failed" });
+      routes.cached = { a: () => json(200, snap) };
+      const r = await mount();
+      expect(r.errors.a).toMatch(/401/);
+      expect(r.quotaData.a).toBeUndefined();
+      expect(r.cachedQuota.a).toBeDefined();
+    });
+
     it("drops a late snapshot response once the live response has settled", async () => {
       const cachedPending = [];
       routes.cached = { a: () => new Promise((resolve) => cachedPending.push(resolve)) };

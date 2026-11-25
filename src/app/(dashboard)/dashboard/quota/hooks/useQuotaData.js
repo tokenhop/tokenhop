@@ -198,7 +198,13 @@ export function useQuotaData({ page, setPage, pageSize, accountFilter, providerF
         if (!response.ok) {
           const errorData = await response.json().catch(() => ({}));
           const errorMsg = errorData.error || response.statusText;
-          if (response.status === 401 && isCurrent()) {
+          if (
+            response.status === 401 &&
+            errorData.code !== "quota_credential_refresh_failed" &&
+            isCurrent()
+          ) {
+            liveSettled = true;
+            setCachedQuota((prev) => filterOutId(prev, connectionId));
             const quotaEntry = { quotas: [], message: errorMsg };
             setQuotaData((prev) => ({ ...prev, [connectionId]: quotaEntry }));
             setQuotaCache(connectionId, quotaEntry);
