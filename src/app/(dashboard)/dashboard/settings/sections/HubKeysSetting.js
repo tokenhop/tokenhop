@@ -84,7 +84,7 @@ export default function HubKeysSetting() {
     <div className="py-4">
       <SettingRow
         label="Usage hub keys"
-        description="Read-only keys for T3 Code's Add hub. They can read quota snapshots only: no /v1 calls, no settings."
+        description="Read-only keys for a usage hub client such as T3. They read quota snapshots only: no /v1 calls, no settings."
       />
       {created && (
         <Callout variant="ok" title="Copy this key now. It won't be shown again.">
@@ -99,7 +99,7 @@ export default function HubKeysSetting() {
             value={name}
             onChange={(e) => setName(e.target.value)}
             maxLength={64}
-            placeholder="T3 Code on my laptop"
+            placeholder="My laptop"
             disabled={creating}
           />
         </div>
