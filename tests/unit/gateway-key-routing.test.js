@@ -62,6 +62,8 @@ import { listApiKeys } from "@/lib/users/apiKeyManagement.js";
 import { getProviderCredentials } from "@/sse/services/auth.js";
 import { getModelInfo } from "@/sse/services/model.js";
 import { handleChat } from "@/sse/handlers/chat.js";
+import { comboPins } from "../../open-sse/services/cacheAffinity.js";
+import { resetComboRotation } from "../../open-sse/services/combo.js";
 import { runComboProbe, resetProbeRateLimit } from "@/sse/services/comboProbe.js";
 
 const NOW = "2026-10-04T00:00:00.000Z";
@@ -575,6 +577,67 @@ describe("hashed chat handler authorization", () => {
     expect(loggedRaw.value.headers.cookie).toBe("[REDACTED]");
     expect(loggedRaw.value.headers.authorization).toBe("[REDACTED]");
     expect(loggedRaw.value.endpoint).not.toContain("th_SECRETCARRIER");
+  });
+});
+
+// YAN-2467/2471: a pinned combo turn whose model cannot read an image may bridge
+// through a vision-pool model outside the combo, but only one the key may use.
+describe("pinned-turn capacity-adapter bridge under a scoped key", () => {
+  const session = { "x-session-id": "conv-bridge-1" };
+  const served = () => executeMock.mock.calls.map(([a]) => a.body?.model);
+
+  beforeEach(() => {
+    executeMock.mockReset();
+    executeMock.mockImplementation(async () => okUpstream()); // fresh body per call
+    comboPins.clear();
+    resetComboRotation();
+    for (const p of ["deepseek", "anthropic", "openai"]) insertConnection(`conn-${p}`, p, "w1");
+    // deepseek-chat has no vision; claude-sonnet (a member, not in the pool) does.
+    insertCombo("pc", "pinc", ["deepseek/deepseek-chat", "anthropic/claude-sonnet-4.6"]);
+    // Instance blob keys strategies by name; a multi-user workspace row by combo id.
+    setWorkspaceStrategies("w1", { pc: { fallbackStrategy: "round-robin" } });
+    setSettings({
+      comboStrategies: { pinc: { fallbackStrategy: "round-robin" } },
+      capacityAdapter: { vision: { enabled: true, models: ["openai/gpt-4o"] } },
+    });
+  });
+
+  async function pinThenImage() {
+    const first = await handleChat(
+      chatRequest({ ...msg("hi"), model: "pinc" }, { headers: session }),
+    );
+    expect(first.status).toBe(200);
+    expect(served()).toEqual(["deepseek-chat"]);
+    executeMock.mockClear();
+    const res = await handleChat(chatRequest({ ...imgMsg(), model: "pinc" }, { headers: session }));
+    expect(res.status).toBe(200);
+    return served();
+  }
+
+  it("bridges through an in-scope pool model outside the combo; the pin stays", async () => {
+    insertHashedApiKeySync(
+      db,
+      hashedKeyRow({
+        allowedModels: ["deepseek/deepseek-chat", "anthropic/claude-sonnet-4.6", "openai/gpt-4o"],
+        allowedCombos: ["pc"],
+      }),
+    );
+    expect(await pinThenImage()).toEqual(["gpt-4o"]);
+    executeMock.mockClear();
+    await handleChat(chatRequest({ ...msg("again"), model: "pinc" }, { headers: session }));
+    expect(served()).toEqual(["deepseek-chat"]);
+  });
+
+  it("never bridges through a pool model outside the key's scope", async () => {
+    insertHashedApiKeySync(
+      db,
+      hashedKeyRow({
+        allowedModels: ["deepseek/deepseek-chat", "anthropic/claude-sonnet-4.6"],
+        allowedCombos: ["pc"],
+      }),
+    );
+    // Out-of-scope gpt-4o is never called; the turn stays on the pinned model.
+    expect(await pinThenImage()).toEqual(["deepseek-chat"]);
   });
 });
 
