@@ -94,6 +94,8 @@ export const DEFAULT_SETTINGS = {
   headroomUrl: DEFAULT_HEADROOM_URL,
   headroomCompressUserMessages: false,
   headroomTimeoutMs: 3000,
+  // Skip Headroom above this projected messages payload size (bytes); 0 = no cap.
+  headroomMaxBodyBytes: 262144,
   cavemanEnabled: false,
   cavemanLevel: "full",
   ponytailEnabled: false,

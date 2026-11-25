@@ -309,6 +309,12 @@ export const CORE_SECTIONS = [
         keywords: "headroom timeout ms",
       },
       {
+        key: "headroomMaxBodyBytes",
+        label: "Headroom size cap",
+        description: "Skip compression above this many bytes of messages. 0 = no cap.",
+        keywords: "headroom size cap max body bytes payload limit",
+      },
+      {
         key: "headroomCompressUserMessages",
         label: "Compress user messages",
         description: "Also compress user turns, not just tool output.",

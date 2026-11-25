@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getSettings } from "@/lib/db/index.js";
 import { DEFAULT_HEADROOM_URL } from "@/lib/headroom/detect";
+import { getHeadroomProxyToken, HEADROOM_PROXY_TOKEN_HEADER } from "open-sse/rtk/headroomAuth.js";
 
 export const dynamic = "force-dynamic";
 
@@ -37,7 +38,7 @@ function buildTargetUrl(base, path, search) {
 
 function forwardedHeaders(request, target) {
   const headers = new Headers(request.headers);
-  for (const header of headers.keys()) {
+  for (const header of [...headers.keys()]) {
     if (HOP_BY_HOP_HEADERS.has(header.toLowerCase())) headers.delete(header);
   }
   headers.delete("host");
@@ -45,6 +46,14 @@ function forwardedHeaders(request, target) {
   if (!LOOPBACK_HOSTS.has(target.hostname.replace(/^\[|\]$/g, "").toLowerCase())) {
     headers.delete("cookie");
     headers.delete("authorization");
+  }
+  // Only the server's HEADROOM_PROXY_TOKEN authenticates to Headroom: drop any
+  // browser-supplied token, and Authorization too when the server sends its own.
+  headers.delete(HEADROOM_PROXY_TOKEN_HEADER);
+  const token = getHeadroomProxyToken();
+  if (token) {
+    headers.delete("authorization");
+    headers.set(HEADROOM_PROXY_TOKEN_HEADER, token);
   }
   return headers;
 }

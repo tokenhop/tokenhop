@@ -189,6 +189,8 @@ describe("YAN-310 token saver validation", () => {
     );
     await expect200({ headroomUrl: "" }, "headroomUrl", "");
     await expect200({ headroomTimeoutMs: 3000 }, "headroomTimeoutMs", 3000);
+    await expect200({ headroomMaxBodyBytes: 262144 }, "headroomMaxBodyBytes", 262144);
+    await expect200({ headroomMaxBodyBytes: 0 }, "headroomMaxBodyBytes", 0);
     await expect200({ headroomCompressUserMessages: true }, "headroomCompressUserMessages", true);
     await expect200({ cavemanEnabled: true }, "cavemanEnabled", true);
     await expect200({ cavemanLevel: "ultra" }, "cavemanLevel", "ultra");
@@ -214,6 +216,10 @@ describe("YAN-310 token saver validation", () => {
     await expect400({ headroomTimeoutMs: 0 });
     await expect400({ headroomTimeoutMs: -5 });
     await expect400({ headroomTimeoutMs: 1.5 });
+    await expect400({ headroomMaxBodyBytes: -1 });
+    await expect400({ headroomMaxBodyBytes: 1.5 });
+    await expect400({ headroomMaxBodyBytes: "262144" });
+    await expect400({ headroomMaxBodyBytes: 2 * 1024 ** 3 });
     await expect400({ cavemanLevel: "extreme" });
     await expect400({ ponytailLevel: "wenyan" });
     await expect400({ pxpipeMinChars: -1 });
