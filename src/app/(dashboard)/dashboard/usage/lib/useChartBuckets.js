@@ -1,15 +1,22 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  canReusePrevious,
+  capturePreviousSnapshot,
+  mergeReusedPrevious,
+} from "./chartPreviousReuse";
 import { appendUsageFilters } from "./filterParams";
 import { periodKey, periodQuery, readUsageJson } from "./periodRequest";
 import { shapeChartSeries } from "./usageShapes";
 
 /**
  * Shared /api/usage/chart fetch for the Usage page: one request feeds both
- * the stat-tile sparklines and the tokens chart. Always asks for the
- * previous-period overlay (`compare=previous`, YAN-1235); the server omits it
- * for `all`.
+ * the stat-tile sparklines and the tokens chart. Sends `compare=previous`
+ * (YAN-1235) on initial loads and whenever the cached previous series expires
+ * or rolls over; eligible background refreshes omit `compare=previous` and
+ * reuse the cached `prevTokens` per bucket (YAN-1789). `all` has no previous
+ * window and never requests `compare=previous`.
  * @param {string|null} period selected period ("custom" for a date range); null disables the fetch
  * @param {boolean} enabled false keeps the fetch off (quiet state / logs tab)
  * @param {number} [refreshKey] re-runs the fetch as a background refresh
@@ -30,16 +37,25 @@ export function useChartBuckets(period, enabled, refreshKey, filters = null, ran
   const [error, setError] = useState(null);
   const [attempt, setAttempt] = useState(0);
 
-  const retry = useCallback(() => setAttempt((count) => count + 1), []);
   // Callers may pass a fresh object each render: key the fetch on the encoded scope.
   const scopeKey = appendUsageFilters("", filters);
   // Last fetch that completed: re-enabling for the same period and trigger
   // values (logs tab → overview) must not re-fetch, only a real trigger does.
   const lastFetch = useRef("");
+  const loadedScope = useRef(null);
+  const previousCache = useRef(null);
+
+  const retry = useCallback(() => {
+    previousCache.current = null;
+    setAttempt((count) => count + 1);
+  }, []);
 
   // Scope switch: reset buckets like a new period so old-scope data never flashes.
   // biome-ignore lint/correctness/useExhaustiveDependencies: scopeKey is the reset trigger.
   useEffect(() => {
+    lastFetch.current = "";
+    loadedScope.current = null;
+    previousCache.current = null;
     setBuckets([]);
     setBucketsPeriod(null);
     setError(null);
@@ -47,34 +63,89 @@ export function useChartBuckets(period, enabled, refreshKey, filters = null, ran
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: attempt re-runs the fetch on retry; refreshKey re-runs it on catch-up; scopeKey re-runs it on a scope change; windowKey covers period and range.
   useEffect(() => {
-    if (!enabled || !windowKey) return;
+    if (!enabled || !windowKey) {
+      setLoading(false);
+      return;
+    }
     const key = `${windowKey}|${attempt}|${refreshKey ?? 0}|${scopeKey}`;
     if (lastFetch.current === key) {
       // Back on already-loaded data: a fetch aborted by this switch can't clear its own skeleton.
       setLoading(false);
+      setError(null);
       return;
     }
     const controller = new AbortController();
-    // Only a first fetch (or a new period) flips the skeleton; background
+    // Only a first fetch (or a new period/scope) flips the skeleton; background
     // refreshes keep the current buckets on screen.
-    if (bucketsPeriod !== windowKey) setLoading(true);
+    if (bucketsPeriod !== windowKey || loadedScope.current !== scopeKey) setLoading(true);
     setError(null);
-    const url = `/api/usage/chart?${periodQuery(period, range)}&compare=previous`;
-    fetch(appendUsageFilters(url, filters), {
-      signal: controller.signal,
-    })
+    const requestStartedAt = Date.now();
+    const reuse = canReusePrevious(previousCache.current, {
+      period,
+      range,
+      windowKey,
+      scopeKey,
+      now: requestStartedAt,
+    });
+    const includeCompare = period !== "all" && !reuse;
+    const fetchChart = (withCompare) => {
+      const url = `/api/usage/chart?${periodQuery(period, range)}${withCompare ? "&compare=previous" : ""}`;
+      return fetch(appendUsageFilters(url, filters), {
+        signal: controller.signal,
+      }).then((response) => readUsageJson(response, "chart"));
+    };
+
+    fetchChart(includeCompare)
       // A 400 (invalid custom range) surfaces the server's `error` message.
-      .then((response) => readUsageJson(response, "chart"))
       .then((json) => {
         // Late success after abort (scope/period switch): the next effect run
         // owns state, so drop this payload instead of overwriting fresh data.
-        if (controller.signal.aborted) return;
+        if (controller.signal.aborted) return undefined;
+        const shaped = shapeChartSeries(json);
+        if (reuse) {
+          const merged = mergeReusedPrevious(shaped, previousCache.current, period);
+          if (merged) {
+            lastFetch.current = key;
+            loadedScope.current = scopeKey;
+            setBuckets(merged);
+            setBucketsPeriod(windowKey);
+            return undefined;
+          }
+          // Server bucket skeleton shifted (e.g. midnight rollover under clock skew):
+          // clear stale cache and fall back to one full compare=previous fetch.
+          previousCache.current = null;
+          const fallbackStartedAt = Date.now();
+          return fetchChart(true).then((fullJson) => {
+            if (controller.signal.aborted) return;
+            const fullShaped = shapeChartSeries(fullJson);
+            previousCache.current = capturePreviousSnapshot(fullJson, fullShaped, {
+              period,
+              windowKey,
+              scopeKey,
+              now: fallbackStartedAt,
+            });
+            lastFetch.current = key;
+            loadedScope.current = scopeKey;
+            setBuckets(fullShaped);
+            setBucketsPeriod(windowKey);
+          });
+        }
+        previousCache.current = includeCompare
+          ? capturePreviousSnapshot(json, shaped, {
+              period,
+              windowKey,
+              scopeKey,
+              now: requestStartedAt,
+            })
+          : null;
         lastFetch.current = key;
-        setBuckets(shapeChartSeries(json));
+        loadedScope.current = scopeKey;
+        setBuckets(shaped);
         setBucketsPeriod(windowKey);
+        return undefined;
       })
       .catch((cause) => {
-        if (cause?.name === "AbortError") return;
+        if (controller.signal.aborted || cause?.name === "AbortError") return;
         setError(cause?.message || "chart request failed");
       })
       .finally(() => {
