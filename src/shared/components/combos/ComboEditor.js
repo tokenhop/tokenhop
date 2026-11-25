@@ -333,7 +333,7 @@ export default function ComboEditor({
           checked={cacheAffinity !== false}
           onChange={(next) => onCacheAffinityChange?.(next)}
           label="Keep each conversation on one model"
-          description="Each conversation stays on the model that answered it, so the provider's prompt cache stays warm. It switches only if that model fails. New conversations are still spread by the strategy."
+          description="Each conversation stays on the model that answered it, so the provider's prompt cache stays warm. If that model fails, the request returns its error instead of moving the conversation to another model. New conversations are still spread by the strategy."
         />
       )}
 
