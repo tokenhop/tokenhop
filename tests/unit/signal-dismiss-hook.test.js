@@ -2,11 +2,12 @@
 // and runs layout effects synchronously, but runs passive effects in a later
 // task; an Esc in between must already see the idle phase. A tiny hooks
 // harness stands in for React so the test can stop between those two steps.
-import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { createDom } from "../helpers/signalFocusFakeDom.js";
 
 const harness = vi.hoisted(() => {
   // The hook module picks useLayoutEffect only when `window` exists.
+  const hadWindow = "window" in globalThis;
   globalThis.window ??= {};
   const slots = [];
   const queues = { layout: [], passive: [] };
@@ -48,6 +49,9 @@ const harness = vi.hoisted(() => {
       flush("layout");
     },
     flushPassive: () => flush("passive"),
+    restoreWindow() {
+      if (!hadWindow) delete globalThis.window;
+    },
     unmount() {
       for (const slot of slots) if (typeof slot.cleanup === "function") slot.cleanup();
       slots.length = 0;
@@ -69,20 +73,30 @@ afterEach(() => {
   harness.unmount();
   delete globalThis.document;
 });
+afterAll(() => harness.restoreWindow());
 
 function setup() {
   const dom = createDom();
   globalThis.document = dom.doc;
   const panel = dom.el("div");
   dom.doc.body.appendChild(panel);
+  // Callers pass a stable useRef object; a fresh one per render would itself
+  // re-register the layer and hide the behavior under test.
+  const containerRef = { current: panel };
+  const added = [];
+  const add = dom.doc.addEventListener.bind(dom.doc);
+  dom.doc.addEventListener = (type, fn, capture) => {
+    added.push(type);
+    add(type, fn, capture);
+  };
   const closed = [];
   const props = (busy) => ({
     onClose: () => closed.push("modal"),
-    containerRef: { current: panel },
+    containerRef,
     closeOnEscape: !busy,
     closeOnOutside: !busy,
   });
-  return { dom, closed, props };
+  return { dom, closed, props, added };
 }
 
 describe("useDismiss busy → idle", () => {
@@ -111,16 +125,18 @@ describe("useDismiss busy → idle", () => {
   });
 
   it("idle → busy blocks Esc as soon as it commits, and the layer never re-registers", () => {
-    const { dom, closed, props } = setup();
+    const { dom, closed, props, added } = setup();
     harness.commit(useDismiss, props(false));
     harness.flushPassive();
-    const listeners = dom.listenerCount();
+    expect(added).toEqual(["keydown", "pointerdown"]);
 
     harness.commit(useDismiss, props(true));
     dom.key("Escape");
     expect(closed).toEqual([]);
     harness.flushPassive();
-    expect(dom.listenerCount()).toBe(listeners);
+    harness.commit(useDismiss, props(false));
+    harness.flushPassive();
+    expect(added).toEqual(["keydown", "pointerdown"]);
 
     harness.unmount();
     expect(dom.listenerCount()).toBe(0);
