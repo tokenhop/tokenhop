@@ -23,6 +23,16 @@ export async function activate(cdp, label, dialog = false) {
   await cdp.pressEnter();
 }
 
+/**
+ * Esc is handled by a document listener the dialog (re)registers in a passive
+ * effect whenever `busy` flips. Seeing the settled phase in the DOM does not
+ * mean that effect ran yet, so flush pending effects before pressing Esc.
+ */
+async function pressEscapeWhenLive(cdp) {
+  assert.equal(await cdp.evaluate(`window.fixture.flushEffects()`), true, "effects flushed");
+  await cdp.pressEscape();
+}
+
 async function checkbox(cdp, label) {
   await poll(
     () =>
@@ -128,7 +138,7 @@ export async function runCase(cdp, baseUrl, definition) {
     } else if (step === "cancel") {
       await activate(cdp, "Cancel", true);
     } else if (step === "escape") {
-      await cdp.pressEscape();
+      await pressEscapeWhenLive(cdp);
     } else if (step === "conflict-assert") {
       await poll(
         () =>
@@ -180,7 +190,7 @@ export async function runCase(cdp, baseUrl, definition) {
       );
       assert.equal((await snapshot(cdp, trigger)).inside, true, "Review keeps focus trapped");
       if (step === "bulk-cancel") await activate(cdp, "Cancel", true);
-      else if (step === "bulk-escape") await cdp.pressEscape();
+      else if (step === "bulk-escape") await pressEscapeWhenLive(cdp);
       else {
         await activate(cdp, "Check move", true);
         await activate(cdp, "Move", true);

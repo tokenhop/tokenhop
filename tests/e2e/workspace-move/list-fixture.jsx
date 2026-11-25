@@ -19,11 +19,14 @@ const mode = new URLSearchParams(location.search).get("mode") || "delayed";
 /** Apply the list refresh in the timing the mode names (see fixture.jsx). */
 export function scheduleRefresh(apply) {
   window.fixture.refreshPending = true;
-  const run = () => {
-    apply();
+  const markRefreshed = () => {
     window.fixture.refreshed = true;
     window.fixture.refreshPending = false;
     window.fixture.releaseRefresh = null;
+  };
+  const run = () => {
+    apply();
+    markRefreshed();
   };
   if (mode === "immediate" || mode === "immediate-flush") {
     // syncDelta = commits that happened synchronously inside this call: 0 means
@@ -39,9 +42,14 @@ export function scheduleRefresh(apply) {
     return;
   }
   // Delayed modes wait for the runner to release the gate, proving focus
-  // already landed before any refresh can race it.
+  // already landed before any refresh can race it. The release comes from a
+  // CDP evaluate, outside any React event, so a plain setState would commit in
+  // a later scheduler task while `refreshed` is already true; the runner could
+  // then snapshot the old rows (YAN-1263). flushSync commits the removal before
+  // the flag flips, so `refreshed` means "removal is in the DOM".
   window.fixture.releaseRefresh = () => {
-    run();
+    flushSync(apply);
+    markRefreshed();
   };
 }
 
