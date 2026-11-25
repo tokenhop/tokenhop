@@ -674,9 +674,8 @@ function createAttemptFeedback(startedAt, record, parent) {
  *   or when a bulk pin reset removed the entry in between (YAN-1676).
  * @param {string|null} [options.workspaceId=null] - Gateway workspace owning the pins (null = legacy)
  * @param {Iterable<string>} [options.pinExclude] - Capacity-adapter-added members; never pinned
- * @param {Iterable<string>} [options.pinBridge] - Configured capacity-adapter members (added or
- *   already in the combo) that may answer one pinned turn whose model cannot read the input;
- *   never pinned (YAN-2467)
+ * @param {Iterable<string>} [options.pinBridge] - Capacity-adapter pool models (combo members or
+ *   not) that may answer one pinned turn whose model cannot read the input; never pinned (YAN-2467)
  * @param {Function} [options.onFallback] - Awaited before trying the next model: ({ model, status }) => void
  * @param {Function} [options.onAttempt] - Attempt observer: (attempt) => void. Fail-open: any throw is swallowed.
  *   Called after each step resolves (success, fallback-eligible failure, or non-fallback failure).
@@ -780,14 +779,13 @@ export async function handleComboChat({
     const required = detectRequiredCapabilities(body);
     if (required.size > 0) {
       let reordered = reorderByCapabilities(rotatedModels, required);
-      // Pinned: a configured capacity-adapter model (added for this request or already
-      // a combo member) may still bridge an input the pinned model cannot read, only
-      // when it floats to the front. It is never pinned.
+      // Pinned: a capacity-adapter pool model (added for this request, already a combo
+      // member, or outside the combo) may still bridge an input the pinned model cannot
+      // read, only when it floats to the front. It is never pinned.
       if (pinned) {
-        const bridgeSet = new Set(pinBridge);
-        const adapters = models.filter(
-          (m) => (pinExcludeSet.has(m) || bridgeSet.has(m)) && !lockedSet.has(m),
-        );
+        const adapters = [
+          ...new Set([...models.filter((m) => pinExcludeSet.has(m)), ...pinBridge]),
+        ].filter((m) => !lockedSet.has(m));
         const bridged = adapters.length
           ? reorderByCapabilities([...rotatedModels, ...adapters], required)
           : reordered;

@@ -296,6 +296,10 @@ export async function handleChat(request, clientRawRequest = null, options = nul
     }
 
     const headroomFn = comboStrategy === "weighted" ? await loadComboHeadroomFn() : undefined;
+    const pinBridge = await pinBridgeModels(lookups, requiredCapabilities, body, settings, [
+      modelStr,
+    ]);
+    const bridgeOnly = pinBridge.filter((m) => !augmentedModels.includes(m));
     log.info(
       "CHAT",
       `Combo "${modelStr}" with ${augmentedModels.length} models (strategy: ${comboStrategy}, sticky: ${comboStickyLimit})`,
@@ -316,7 +320,7 @@ export async function handleChat(request, clientRawRequest = null, options = nul
             options,
             attempt,
           ),
-        adapterAdded,
+        [...adapterAdded, ...bridgeOnly],
       ),
       log,
       comboName: comboRotationKey(gateway?.workspaceId, modelStr),
@@ -328,7 +332,7 @@ export async function handleChat(request, clientRawRequest = null, options = nul
       cacheAffinity,
       workspaceId: gateway?.workspaceId ?? null,
       pinExclude: adapterAdded,
-      pinBridge: capacityAdapterBridgeModels(augmentedModels, requiredCapabilities, settings),
+      pinBridge,
       clientSignal: request?.signal ?? null,
       headroomFn,
       onAttempt: comboObserver,
@@ -429,6 +433,17 @@ function fallbackRecorder(comboName, workspaceId = null) {
 
 // Filter authorization denials BEFORE engine fallback classification. Engine 403s
 // are upstream credential errors; gateway denials must never enter that path.
+/**
+ * Capacity-adapter models a pinned combo turn may bridge through when its model cannot
+ * read the request's input (YAN-2467). Pool models need not be combo members, so a
+ * gateway key's model/combo scope filters them like any other candidate.
+ */
+async function pinBridgeModels(lookups, requiredCapabilities, body, settings, path) {
+  const bridge = capacityAdapterBridgeModels(requiredCapabilities, settings);
+  if (!bridge.length || !lookups.gateway) return bridge;
+  return allowedGatewayModels(lookups, bridge, body, settings, path);
+}
+
 async function allowedGatewayModels(lookups, models, body, settings, path = []) {
   const allowed = [];
   for (const model of models) {
@@ -638,6 +653,14 @@ async function handleSingleModelChat(
       }
 
       const headroomFn = comboStrategy === "weighted" ? await loadComboHeadroomFn() : undefined;
+      const pinBridge = await pinBridgeModels(
+        lookups,
+        requiredCapabilities,
+        body,
+        chatSettings,
+        nextPath,
+      );
+      const bridgeOnly = pinBridge.filter((m) => !filteredAdapter.includes(m));
       log.info(
         "CHAT",
         `Combo "${modelStr}" with ${augmentedModels.length} models (strategy: ${comboStrategy}, sticky: ${comboStickyLimit})`,
@@ -658,7 +681,7 @@ async function handleSingleModelChat(
               options,
               innerAttempt,
             ),
-          adapterAdded,
+          [...adapterAdded, ...bridgeOnly],
         ),
         log,
         comboName: comboRotationKey(gateway?.workspaceId, modelStr),
@@ -670,7 +693,7 @@ async function handleSingleModelChat(
         cacheAffinity,
         workspaceId: gateway?.workspaceId ?? null,
         pinExclude: adapterAdded,
-        pinBridge: capacityAdapterBridgeModels(filteredAdapter, requiredCapabilities, chatSettings),
+        pinBridge,
         clientSignal: request?.signal ?? null,
         headroomFn,
         onAttempt: nestedObserver,
