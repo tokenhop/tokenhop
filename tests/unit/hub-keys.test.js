@@ -7,9 +7,19 @@
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { NextRequest } from "next/server";
 
+// Route handlers read the session through next/headers: a cookie jar the
+// management tests fill per call (empty elsewhere).
+const jar = vi.hoisted(() => ({ cookie: "" }));
 vi.mock("next/headers", () => ({
-  cookies: async () => ({ get: () => undefined, set: () => {}, delete: () => {} }),
-  headers: async () => new Headers(),
+  cookies: async () => ({
+    get: (n) => {
+      const m = jar.cookie.match(new RegExp(`(?:^|; )${n}=([^;]*)`));
+      return m ? { name: n, value: m[1] } : undefined;
+    },
+    set: () => {},
+    delete: () => {},
+  }),
+  headers: async () => new Headers(jar.cookie ? { cookie: jar.cookie } : {}),
 }));
 
 const ENV = "TOKENHOP_USAGE_HUB";
@@ -292,30 +302,65 @@ describe("hub key management routes", () => {
     item: await import("@/app/api/hub-keys/[id]/route.js"),
   });
 
+  // Sessions work in both switch states (CI runs the suite with the users &
+  // teams switch on and off): an owner session, and a plain user session.
+  let ownerCookie;
+  let userCookie;
+  beforeEach(async () => {
+    const { seedTenancy } = await import("../setup/tenancyHarness.js");
+    const { createDashboardAuthToken } = await import("@/lib/auth/dashboardSession.js");
+    const t = await seedTenancy();
+    const cookieFor = async (u) =>
+      `auth_token=${await createDashboardAuthToken({ sub: u.id, sv: u.sessionVersion })}`;
+    ownerCookie = await cookieFor(t.a.user);
+    userCookie = await cookieFor(t.b.user);
+  });
+  afterEach(() => {
+    jar.cookie = "";
+  });
+
+  async function as(cookie, handler, path, opts = {}, params) {
+    jar.cookie = cookie ?? "";
+    try {
+      return await handler(
+        req(path, { ...opts, headers: { ...(opts.headers ?? {}), ...(cookie ? { cookie } : {}) } }),
+        { params: Promise.resolve(params ?? {}) },
+      );
+    } finally {
+      jar.cookie = "";
+    }
+  }
+
   it("creates (key shown once), lists metadata only and revokes", async () => {
     const { list, item } = await routes();
-    const created = await list.POST(req("/api/hub-keys", { method: "POST", body: { name: "T3" } }));
+    const created = await as(ownerCookie, list.POST, "/api/hub-keys", {
+      method: "POST",
+      body: { name: "T3" },
+    });
     expect(created.status).toBe(201);
     const { key, metadata } = await created.json();
     expect(key).toMatch(/^thm_/);
-    const listed = await (await list.GET(req("/api/hub-keys"))).json();
+    const listed = await (await as(ownerCookie, list.GET, "/api/hub-keys")).json();
     expect(listed.keys).toEqual([expect.objectContaining({ id: metadata.id, name: "T3" })]);
     expect(JSON.stringify(listed)).not.toContain(key);
 
-    const del = await item.DELETE(req(`/api/hub-keys/${metadata.id}`, { method: "DELETE" }), {
-      params: Promise.resolve({ id: metadata.id }),
-    });
+    const path = `/api/hub-keys/${metadata.id}`;
+    const del = await as(ownerCookie, item.DELETE, path, { method: "DELETE" }, { id: metadata.id });
     expect(del.status).toBe(200);
     expect(
       await hub.authorizeHubRequest(req("/v0/management/auth-files", { bearer: key })),
     ).toMatchObject({ status: 401 });
-    const again = await item.DELETE(req(`/api/hub-keys/${metadata.id}`, { method: "DELETE" }), {
-      params: Promise.resolve({ id: metadata.id }),
-    });
+    const again = await as(
+      ownerCookie,
+      item.DELETE,
+      path,
+      { method: "DELETE" },
+      { id: metadata.id },
+    );
     expect(again.status).toBe(404);
     await settle();
     const actions = db
-      .all("SELECT action, after, before FROM auditEvents WHERE action LIKE 'hubKey.%'")
+      .all("SELECT action FROM auditEvents WHERE action LIKE 'hubKey.%'")
       .map((r) => r.action);
     expect(actions).toEqual(expect.arrayContaining(["hubKey.create", "hubKey.revoke"]));
     expect(JSON.stringify(db.all("SELECT * FROM auditEvents"))).not.toContain(key);
@@ -324,18 +369,36 @@ describe("hub key management routes", () => {
   it("refuses credentials, bad bodies, and hides while the hub is off", async () => {
     const { list } = await routes();
     const { key } = await repo.createHubKeyUnscoped();
-    expect((await list.GET(req("/api/hub-keys", { bearer: key }))).status).toBe(401);
+    expect((await as(ownerCookie, list.GET, "/api/hub-keys", { bearer: key })).status).toBe(401);
     expect(
-      (await list.GET(req("/api/hub-keys", { headers: { "x-api-key": "sk-x" } }))).status,
+      (await as(ownerCookie, list.GET, "/api/hub-keys", { headers: { "x-api-key": "sk-x" } }))
+        .status,
     ).toBe(401);
     expect(
-      (await list.POST(req("/api/hub-keys", { method: "POST", body: { name: "a", extra: 1 } })))
-        .status,
+      (
+        await as(ownerCookie, list.POST, "/api/hub-keys", {
+          method: "POST",
+          body: { name: "a", extra: 1 },
+        })
+      ).status,
     ).toBe(400);
     expect(
-      (await list.POST(req("/api/hub-keys", { method: "POST", body: { name: 7 } }))).status,
+      (await as(ownerCookie, list.POST, "/api/hub-keys", { method: "POST", body: { name: 7 } }))
+        .status,
     ).toBe(400);
     process.env[ENV] = "off";
-    expect((await list.GET(req("/api/hub-keys"))).status).toBe(404);
+    expect((await as(ownerCookie, list.GET, "/api/hub-keys")).status).toBe(404);
+  });
+
+  it("refuses a non-admin user once user security is enforced", async () => {
+    const { isUserSecurityEnforced } = await import("@/lib/users/securityState.js");
+    if (!(await isUserSecurityEnforced())) return; // switch-off run: single admin only
+    expect.hasAssertions();
+    const { list } = await routes();
+    expect((await as(userCookie, list.GET, "/api/hub-keys")).status).toBe(403);
+    expect(
+      (await as(userCookie, list.POST, "/api/hub-keys", { method: "POST", body: {} })).status,
+    ).toBe(403);
+    expect((await as(null, list.GET, "/api/hub-keys")).status).toBe(401);
   });
 });
