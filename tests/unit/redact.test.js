@@ -157,6 +157,8 @@ describe("redactText token patterns", () => {
     ["hf oauth", `hf_oauth_${A(20)}`],
     ["nvidia", `nvapi-${A(40)}`],
     ["budget webhook secret", `whsec_${A(43)}`],
+    // YAN-2019: usage hub management key (thm_ + 32 base62).
+    ["usage hub key", `thm_${A(32)}`],
   ];
 
   it("masks every source-backed provider form whole, incl. escape prefixes", () => {
@@ -191,6 +193,7 @@ describe("redactText token patterns", () => {
       `hf_jwt_${A(19)}`,
       `nvapi-${A(39)}`,
       "whsec_short",
+      `thm_${A(31)}`,
       `x${`ghp_${A(36)}`}`, // glued to prose: documented ceiling, not censored
     ]) {
       assert.equal(redactText(`see ${benign} now`), `see ${benign} now`, benign);

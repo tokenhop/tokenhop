@@ -363,6 +363,14 @@ describe("hub key management routes", () => {
       .all("SELECT action FROM auditEvents WHERE action LIKE 'hubKey.%'")
       .map((r) => r.action);
     expect(actions).toEqual(expect.arrayContaining(["hubKey.create", "hubKey.revoke"]));
+
+    // A key pasted into the (audited) name never persists in the audit log.
+    const pasted = await as(ownerCookie, list.POST, "/api/hub-keys", {
+      method: "POST",
+      body: { name: key },
+    });
+    expect(pasted.status).toBe(201);
+    await settle();
     expect(JSON.stringify(db.all("SELECT * FROM auditEvents"))).not.toContain(key);
   });
 

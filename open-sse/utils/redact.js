@@ -58,6 +58,8 @@ const TOKEN_RULES = [
   ["nvapi-", /^nvapi-[A-Za-z0-9-]{40,}/, false],
   // YAN-1831: budget webhook signing secret (32 bytes base64url).
   ["whsec_", /^whsec_[A-Za-z0-9_-]{43}/, false],
+  // YAN-2019: usage hub management key (generateHubKey: thm_ + 32 base62).
+  ["thm_", /^thm_[A-Za-z0-9]{32,}/, false],
 ];
 
 const TOKEN_CHAR = /[A-Za-z0-9_.-]/;
