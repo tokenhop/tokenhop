@@ -4,7 +4,10 @@ import { parseJson } from "../db/helpers/jsonCol.js";
 import { deepFreeze } from "../utils/deepFreeze.js";
 import { decodeRequestCredentialRows, requestScopeOf } from "../security/requestCredentialScope.js";
 import { TABLE_NAMES } from "../security/envelope.js";
-import { getProviderConnectionsUnscoped } from "../db/repos/connectionsRepo.js";
+import {
+  getProviderConnectionsMetadataUnscoped,
+  getProviderConnectionsUnscoped,
+} from "../db/repos/connectionsRepo.js";
 import {
   getProviderNodesUnscoped,
   getProviderNodesRoutingUnscoped,
@@ -137,6 +140,69 @@ export async function getGatewayConnections(principal, filter = {}) {
     grantTpm: granted[i].tpm ?? null,
   }));
   return [...own, ...grantedOut];
+}
+
+// Secret-free connection metadata read for read-only gateway endpoints (e.g.
+// GET /v1/quota): never selects or decrypts the `data` blob and never loads
+// the root key. Same workspace + active-grant scoping as getGatewayConnections;
+// granted connections omit grantor email and any email-shaped default name to
+// avoid cross-workspace PII disclosure.
+function safeGrantedName(name, email) {
+  if (typeof name !== "string") return null;
+  const trimmed = name.trim();
+  if (!trimmed) return null;
+  if (email && trimmed.toLowerCase() === String(email).trim().toLowerCase()) return null;
+  if (trimmed.includes("@")) return null;
+  return trimmed;
+}
+
+function projectConnectionMetadata(row, { workspaceId = null, grant = null } = {}) {
+  return {
+    id: row.id,
+    provider: row.provider,
+    authType: row.authType,
+    name: grant ? safeGrantedName(row.name, row.email) : (row.name ?? null),
+    email: grant ? null : (row.email ?? null),
+    priority: row.priority ?? null,
+    isActive: row.isActive === 1 || row.isActive === true,
+    workspaceId: row.workspaceId ?? workspaceId,
+    ...(grant
+      ? {
+          grantId: grant.grantId,
+          grantAllowedModels: grant.allowedModels ?? null,
+        }
+      : {}),
+  };
+}
+
+export async function getGatewayConnectionsMetadata(principal, filter = {}) {
+  const { db, workspaceId } = await requireGatewayWorkspace(principal);
+  if (!workspaceId) {
+    const rows = await getProviderConnectionsMetadataUnscoped(filter);
+    return rows.map((row) => projectConnectionMetadata(row));
+  }
+  const where = ["workspaceId = ?"];
+  const params = [workspaceId];
+  if (filter.provider) {
+    where.push("provider = ?");
+    params.push(filter.provider);
+  }
+  if (filter.isActive !== undefined) {
+    where.push("isActive = ?");
+    params.push(filter.isActive ? 1 : 0);
+  }
+  const ownRows = db
+    .all(
+      `SELECT id, provider, authType, name, email, priority, isActive, workspaceId
+       FROM providerConnections WHERE ${where.join(" AND ")}`,
+      params,
+    )
+    .sort((a, b) => (a.priority || 999) - (b.priority || 999));
+  const granted = grantedConnections(db, principal, filter, ownRows);
+  return [
+    ...ownRows.map((row) => projectConnectionMetadata(row, { workspaceId })),
+    ...granted.map((g) => projectConnectionMetadata(g.row, { grant: g })),
+  ];
 }
 
 // YAN-369 (ADR-0006): connections granted to the principal's workspace or user,

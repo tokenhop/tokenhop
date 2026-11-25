@@ -2,7 +2,13 @@ import { getActiveReliabilityPolicy } from "../config/reliabilityPolicy.js";
 import { PLAN_CAPACITY, QUOTA_SNAPSHOT } from "../config/quotaSnapshot.js";
 import { isDurationString } from "../utils/duration.js";
 
-const snapshots = new Map();
+// Pin the store on globalThis so Next.js route bundles share one in-process
+// snapshot map (matching forecastStore.js and quotaSnapshotPoller.js).
+const SNAPSHOTS_KEY = "__tokenhopQuotaSnapshots";
+if (!(globalThis[SNAPSHOTS_KEY] instanceof Map)) {
+  globalThis[SNAPSHOTS_KEY] = new Map();
+}
+const snapshots = globalThis[SNAPSHOTS_KEY];
 const GLOBAL_WINDOW_KINDS = new Set([
   "5h",
   "7d",
@@ -69,9 +75,13 @@ function normalizeWindows(windows, source, nowMs) {
     if (!kind || usedFraction === null) continue;
 
     const observedAt = finiteNumber(window.observedAt) ?? nowMs;
+    const rawUsed = finiteNumber(window.used);
+    const rawLimit = finiteNumber(window.limit ?? window.total);
+    const hasCounts = rawUsed !== null && rawUsed >= 0 && rawLimit !== null && rawLimit > 0;
     normalized.push({
       kind,
       usedFraction,
+      ...(hasCounts ? { used: rawUsed, limit: rawLimit } : {}),
       resetsAt: parseResetMs(window.resetsAt, nowMs) || 0,
       observedAt,
       source,
