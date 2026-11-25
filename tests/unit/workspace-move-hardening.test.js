@@ -260,19 +260,21 @@ describe("move-only target DEK provisioning", () => {
     );
     expect((await decodeRow("providerConnections", good.id, shared.id)).apiKey).toBe("sk-good");
 
-    // No cached DEK can resurrect the rolled-back key: runtime ensure stays closed.
+    // No cached DEK can resurrect the rolled-back key: runtime ensure and
+    // direct codec writes stay fail-closed outside authorized provisioners.
     const { loadMasterKey } = await import("@/lib/security/masterKey.js");
-    const { prepareCredentialContext, ensureWorkspaceDekSync } = await import(
-      "@/lib/db/helpers/credentialStorage.js"
-    );
+    const { encodeCredentialRowSync, prepareCredentialContext, ensureWorkspaceDekSync } =
+      await import("@/lib/db/helpers/credentialStorage.js");
     const rt = prepareCredentialContext(a2, await loadMasterKey({ create: true }));
     expect(() => ensureWorkspaceDekSync(a2, a.personal, rt)).toThrow(
       expect.objectContaining({ code: "KEY_MISSING" }),
     );
-    // Regular runtime writes into a keyless workspace remain fail-closed.
-    await expect(db.createConnection(a.ctx, a.personal, conn("nokey"))).rejects.toMatchObject({
-      code: "KEY_MISSING",
-    });
+    expect(() =>
+      encodeCredentialRowSync(a2, { id: "nokey", data: { apiKey: "sk-nokey" } }, rt, {
+        table: "providerConnections",
+        workspaceId: a.personal,
+      }),
+    ).toThrow(expect.objectContaining({ code: "KEY_MISSING" }));
     expect(dekRow(a.personal)).toBeUndefined();
   });
 

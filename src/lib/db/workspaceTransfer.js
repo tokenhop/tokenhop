@@ -21,7 +21,13 @@ import { latestVersion } from "./migrations/index.js";
 import { isMultiUserEnabled } from "../users/featureSwitch.js";
 import { auditSync } from "../users/audit.js";
 import { bumpBudgetsGeneration, resetAtIso } from "../users/budgets.js";
-import { decodeCredentialRowSync, encodeCredentialRowSync } from "./helpers/credentialStorage.js";
+import {
+  clearCredentialCache,
+  decodeCredentialRowSync,
+  encodeCredentialRowSync,
+  hasCoveredSecret,
+  provisionWorkspaceImportDekSync,
+} from "./helpers/credentialStorage.js";
 import { prepareCredentialCtx, assertCredentialCtxCurrent } from "./repos/connectionsRepo.js";
 import { pickKeys, WORKSPACE_KEYS } from "../settings/settingsScope.js";
 import { parseJson, stringifyJson } from "./helpers/jsonCol.js";
@@ -293,6 +299,16 @@ function applyImport(db, credCtx, ctx, workspaceId, sections, { ip = null } = {}
   assertCredentialCtxCurrent(db, credCtx);
   assertNoImportConflicts(db, workspaceId, sections);
 
+  // YAN-1055: live owner auth, encryption state and conflict checks all passed;
+  // provision the destination DEK only when the import seals at least one secret.
+  if (
+    credCtx.encrypted &&
+    (sections.nodes.some((n) => hasCoveredSecret(n.data, "providerNodes")) ||
+      sections.connections.some((c) => hasCoveredSecret(c.data, "providerConnections")))
+  ) {
+    provisionWorkspaceImportDekSync(db, workspaceId, credCtx);
+  }
+
   const now = new Date().toISOString();
   // Mint NEW ids and remap every cross reference (nodes first: connections
   // reference their gateway node by provider = node id).
@@ -449,9 +465,15 @@ export async function importWorkspace(ctx, workspaceId, payload, { passphrase, i
     openAllLeaves(sections, portableDek);
     const db = await getAdapter();
     const credCtx = await prepareCredentialCtx(db);
-    const counts = db.transaction(() =>
-      applyImport(db, credCtx, ctx, workspaceId, sections, { ip }),
-    );
+    let counts;
+    try {
+      counts = db.transaction(() => applyImport(db, credCtx, ctx, workspaceId, sections, { ip }));
+    } catch (err) {
+      // A DEK provisioned (and cached) inside a rolled-back import must not
+      // linger in memory.
+      if (credCtx.encrypted) clearCredentialCache(db, workspaceId);
+      throw err;
+    }
     if (counts.budgets) bumpBudgetsGeneration();
     return { success: true, imported: counts };
   } finally {
