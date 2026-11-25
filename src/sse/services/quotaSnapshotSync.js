@@ -259,7 +259,13 @@ export async function recordUsageSnapshot({
       if (usedFraction === null) continue;
       const prev = byKind.get(kind);
       if (!prev || usedFraction > prev.usedFraction) {
-        byKind.set(kind, { kind, usedFraction, resetsAt: quota.resetAt ?? null });
+        const rawUsed = toFinite(quota.used);
+        const rawTotal = toFinite(quota.total);
+        const counts =
+          rawUsed !== null && rawUsed >= 0 && rawTotal !== null && rawTotal > 0
+            ? { used: rawUsed, limit: rawTotal }
+            : {};
+        byKind.set(kind, { kind, usedFraction, ...counts, resetsAt: quota.resetAt ?? null });
       }
     }
 
@@ -367,6 +373,9 @@ export function buildQuotaSnapshotView(connectionId, { manualWeight, model } = {
       windows: snapshot.windows.map((window) => ({
         kind: window.kind,
         usedFraction: window.usedFraction,
+        ...(window.used !== undefined && window.limit !== undefined
+          ? { used: window.used, limit: window.limit }
+          : {}),
         resetsAt: toIso(window.resetsAt),
         source: window.source,
       })),

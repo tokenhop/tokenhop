@@ -139,6 +139,114 @@ export async function getGatewayConnections(principal, filter = {}) {
   return [...own, ...grantedOut];
 }
 
+// Secret-free connection metadata read for read-only gateway endpoints (e.g.
+// GET /v1/quota): never selects or decrypts the `data` blob and never loads
+// the root key. Same workspace + active-grant scoping as getGatewayConnections;
+// granted connections omit grantor email and any email-shaped default name to
+// avoid cross-workspace PII disclosure.
+function safeGrantedName(name, email) {
+  if (typeof name !== "string") return null;
+  const trimmed = name.trim();
+  if (!trimmed) return null;
+  if (email && trimmed.toLowerCase() === String(email).trim().toLowerCase()) return null;
+  if (trimmed.includes("@")) return null;
+  return trimmed;
+}
+
+function projectConnectionMetadata(row, { workspaceId = null, grant = null } = {}) {
+  return {
+    id: row.id,
+    provider: row.provider,
+    authType: row.authType,
+    name: grant ? safeGrantedName(row.name, row.email) : (row.name ?? null),
+    email: grant ? null : (row.email ?? null),
+    priority: row.priority ?? null,
+    isActive: row.isActive === 1 || row.isActive === true,
+    workspaceId: row.workspaceId ?? workspaceId,
+    ...(grant
+      ? {
+          grantId: grant.grantId,
+          grantAllowedModels: grant.allowedModels ?? null,
+        }
+      : {}),
+  };
+}
+
+const CONNECTION_METADATA_COLS =
+  "id, provider, authType, name, email, priority, isActive, workspaceId";
+
+function grantedConnectionsMetadata(db, principal, filter, own) {
+  const grantee = [];
+  const params = [];
+  if (principal.workspaceId != null) {
+    grantee.push("g.workspaceId = ?");
+    params.push(principal.workspaceId);
+  }
+  if (principal.userId != null) {
+    grantee.push("g.userId = ?");
+    params.push(principal.userId);
+  }
+  if (!params.length) return [];
+  const rows = db.all(
+    `SELECT pc.id, pc.provider, pc.authType, pc.name, pc.email, pc.priority, pc.isActive, pc.workspaceId,
+            g.id AS grantId, g.allowedModels AS gModels, g.tosAcknowledgedAt AS gAck
+     FROM connectionGrants g
+     JOIN providerConnections pc ON pc.id = g.connectionId
+     WHERE g.revokedAt IS NULL AND (${grantee.join(" OR ")})
+     ORDER BY g.createdAt, g.id`,
+    params,
+  );
+  const seen = new Set(own.map((c) => c.id));
+  const out = [];
+  for (const row of rows) {
+    if (!row || seen.has(row.id)) continue;
+    if (filter.provider && row.provider !== filter.provider) continue;
+    if (
+      filter.isActive !== undefined &&
+      (row.isActive === 1 || row.isActive === true) !== !!filter.isActive
+    )
+      continue;
+    if (resolveSharing(row.provider, row.authType) === "personal" && !row.gAck) continue;
+    seen.add(row.id);
+    out.push({
+      row,
+      grantId: row.grantId,
+      allowedModels: row.gModels == null ? null : JSON.parse(row.gModels),
+    });
+  }
+  return out.sort((a, b) => (a.row.priority || 999) - (b.row.priority || 999));
+}
+
+export async function getGatewayConnectionsMetadata(principal, filter = {}) {
+  const { db, workspaceId } = await requireGatewayWorkspace(principal);
+  const where = [];
+  const params = [];
+  if (workspaceId) {
+    where.push("workspaceId = ?");
+    params.push(workspaceId);
+  }
+  if (filter.provider) {
+    where.push("provider = ?");
+    params.push(filter.provider);
+  }
+  if (filter.isActive !== undefined) {
+    where.push("isActive = ?");
+    params.push(filter.isActive ? 1 : 0);
+  }
+  const sql = `SELECT ${CONNECTION_METADATA_COLS} FROM providerConnections${
+    where.length ? ` WHERE ${where.join(" AND ")}` : ""
+  }`;
+  const ownRows = db.all(sql, params).sort((a, b) => (a.priority || 999) - (b.priority || 999));
+  if (!workspaceId) {
+    return ownRows.map((row) => projectConnectionMetadata(row));
+  }
+  const granted = grantedConnectionsMetadata(db, principal, filter, ownRows);
+  return [
+    ...ownRows.map((row) => projectConnectionMetadata(row, { workspaceId })),
+    ...granted.map((g) => projectConnectionMetadata(g.row, { grant: g })),
+  ];
+}
+
 // YAN-369 (ADR-0006): connections granted to the principal's workspace or user,
 // appended AFTER the own rows (own wins on duplicate id; never re-sorted across
 // the union). Re-read on every call — no cache, so revocation is immediate.
