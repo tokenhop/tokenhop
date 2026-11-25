@@ -506,6 +506,28 @@ export const TABLES = {
     },
     indexes: ["CREATE INDEX IF NOT EXISTS idx_sessions_user_exp ON sessions(userId, expiresAt)"],
   },
+  // Quota snapshot history (migration 025, YAN-422): rate-limited samples of
+  // quota window utilization (no secrets) for startup snapshot restore, runway
+  // forecasts, and 7d sparklines. Deleted with the connection; never exported.
+  quotaHistory: {
+    columns: {
+      id: "INTEGER PRIMARY KEY AUTOINCREMENT",
+      connectionId: "TEXT NOT NULL REFERENCES providerConnections(id) ON DELETE CASCADE",
+      provider: "TEXT NOT NULL",
+      windowKind: "TEXT NOT NULL",
+      quotaKey: "TEXT NOT NULL DEFAULT ''",
+      usedFraction: "REAL NOT NULL CHECK (usedFraction >= 0 AND usedFraction <= 1)",
+      resetsAt: "INTEGER NOT NULL DEFAULT 0",
+      planTier: "TEXT",
+      source: "TEXT NOT NULL DEFAULT 'probe'",
+      ts: "INTEGER NOT NULL",
+    },
+    indexes: [
+      "CREATE INDEX IF NOT EXISTS idx_qh_conn_ts ON quotaHistory(connectionId, ts DESC)",
+      "CREATE INDEX IF NOT EXISTS idx_qh_conn_window_ts ON quotaHistory(connectionId, windowKind, ts DESC)",
+      "CREATE INDEX IF NOT EXISTS idx_qh_ts ON quotaHistory(ts)",
+    ],
+  },
 };
 
 // YAN-363: the final hashed apiKeys shape, INERT here. Nothing reads it at

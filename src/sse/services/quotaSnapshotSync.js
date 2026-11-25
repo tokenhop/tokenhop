@@ -16,6 +16,7 @@ import {
   getProviderConnectionByIdUnscoped,
   updateProviderConnectionUnscoped,
 } from "@/lib/db/index.js";
+import { recordQuotaHistorySamplesUnscoped } from "@/lib/db/repos/quotaHistoryRepo.js";
 import { releaseExactQuotaBlocks } from "./antigravityQuota.js";
 import { releaseQuotaLocksFromPoll } from "./quotaLockRelease.js";
 
@@ -257,10 +258,20 @@ export async function recordUsageSnapshot({
 
     // One window per kind; keep the tightest (highest used) when keys collapse.
     const byKind = new Map();
+    const historySamples = [];
     for (const [quotaKey, quota] of Object.entries(usage.quotas || {})) {
       const kind = kindForName(provider, quotaKey, quota);
       const usedFraction = kind ? usedFractionFor(quota) : null;
       if (usedFraction === null) continue;
+      if (source === "probe") {
+        historySamples.push({
+          windowKind: kind,
+          quotaKey,
+          usedFraction,
+          resetsAt: quota.resetAt ?? null,
+          source: "probe",
+        });
+      }
       const prev = byKind.get(kind);
       if (!prev || usedFraction > prev.usedFraction) {
         const rawUsed = toFinite(quota.used);
@@ -294,6 +305,18 @@ export async function recordUsageSnapshot({
       (provider === "codex" ? codexTier(fallbackTier) : sanitizePlanTier(fallbackTier));
 
     const snapshot = recordProbeWindows(connectionId, provider, windows, { planTier });
+    // Persist rate-limited history samples (YAN-422); fail-open, never breaks probe path.
+    if (historySamples.length > 0) {
+      try {
+        await recordQuotaHistorySamplesUnscoped(
+          connectionId,
+          provider,
+          historySamples.map((s) => ({ ...s, planTier })),
+        );
+      } catch (error) {
+        console.warn(`[QuotaSnapshot] history persist failed for ${provider}: ${error?.message}`);
+      }
+    }
     // Own try (inside), before the tier persist: a persist failure never skips it.
     await releaseQuotaLocks(connectionId, provider, usage, windows, probeStartedAt);
     if (detectedTier) await persistPlanTier(connectionId, detectedTier);

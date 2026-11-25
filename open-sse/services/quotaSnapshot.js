@@ -9,6 +9,7 @@ if (!(globalThis[SNAPSHOTS_KEY] instanceof Map)) {
   globalThis[SNAPSHOTS_KEY] = new Map();
 }
 const snapshots = globalThis[SNAPSHOTS_KEY];
+const HEADER_OBSERVER_KEY = "__tokenhopQuotaHeaderObserver";
 const GLOBAL_WINDOW_KINDS = new Set([
   "5h",
   "7d",
@@ -131,14 +132,121 @@ function recordWindows(connectionId, provider, windows, planTier, source, nowMs)
   }
 }
 
+/**
+ * Register a fail-open observer invoked when response headers record live quota
+ * windows (YAN-422). Pass null to unregister. Keeps open-sse free of DB imports.
+ */
+export function setHeaderSnapshotObserver(observer) {
+  globalThis[HEADER_OBSERVER_KEY] = typeof observer === "function" ? observer : null;
+}
+
 /** Record normalized quota windows observed in response headers. */
 export function recordHeaderWindows(connectionId, provider, windows, nowMs = Date.now()) {
-  return recordWindows(connectionId, provider, windows, null, "header", nowMs);
+  const now = validNow(nowMs);
+  const snapshot = recordWindows(connectionId, provider, windows, null, "header", now);
+  const observer = globalThis[HEADER_OBSERVER_KEY];
+  if (snapshot && typeof observer === "function") {
+    try {
+      const normalized = normalizeWindows(windows, "header", now);
+      if (normalized.length > 0) {
+        Promise.resolve(observer(connectionId, snapshot.provider, normalized)).catch(() => {});
+      }
+    } catch {
+      /* observer never breaks response header ingestion */
+    }
+  }
+  return snapshot;
 }
 
 /** Record normalized quota windows and optional plan tier observed by a usage probe. */
 export function recordProbeWindows(connectionId, provider, windows, opts = {}, nowMs = Date.now()) {
   return recordWindows(connectionId, provider, windows, opts?.planTier ?? null, "probe", nowMs);
+}
+
+/**
+ * Restore a previously persisted snapshot on startup (YAN-422).
+ * Filters expired windows against `nowMs`, preserves each window's original
+ * `observedAt`/`source` and true `updatedAt` (so staleness stays truthful), and
+ * never overwrites an already-present fresher in-memory snapshot. Never throws.
+ */
+export function restoreSnapshot(connectionId, provider, windows, opts = {}, nowMs = Date.now()) {
+  try {
+    if (typeof connectionId !== "string" || !connectionId.trim()) return null;
+    if (typeof provider !== "string" || !provider.trim()) return null;
+
+    const now = validNow(nowMs);
+    const liveIncoming = [];
+    let latestObservedAt = 0;
+
+    if (Array.isArray(windows)) {
+      for (const window of windows) {
+        if (!window || typeof window !== "object") continue;
+        const kind = sanitizedWindowKind(window.kind);
+        const usedFraction = normalizeUsedFraction(window.usedFraction, "used01");
+        const observedAt = finiteNumber(window.observedAt);
+        if (!kind || usedFraction === null || observedAt === null || observedAt > now) continue;
+        const resetsAt = parseResetMs(window.resetsAt, now) || 0;
+        const candidate = {
+          kind,
+          usedFraction,
+          resetsAt,
+          observedAt,
+          source: window.source === "header" ? "header" : "probe",
+        };
+        if (!isLiveWindow(candidate, now)) continue;
+        liveIncoming.push(candidate);
+        if (observedAt > latestObservedAt) latestObservedAt = observedAt;
+      }
+    }
+
+    const sanitizedTier = sanitizePlanTier(opts?.planTier);
+    const rawUpdatedAt = finiteNumber(opts?.updatedAt);
+    const restoredUpdatedAt = Math.min(
+      now,
+      rawUpdatedAt !== null && rawUpdatedAt > 0 ? rawUpdatedAt : latestObservedAt,
+    );
+
+    if (liveIncoming.length === 0) {
+      if (!sanitizedTier) return null;
+      if (restoredUpdatedAt <= 0 || restoredUpdatedAt + QUOTA_SNAPSHOT.snapshotTtlMs <= now) {
+        return null;
+      }
+    }
+
+    const current = snapshots.get(connectionId);
+    if (current && current.updatedAt >= restoredUpdatedAt) {
+      return copySnapshot(current);
+    }
+
+    const merged = current?.windows
+      ? current.windows.filter((window) => isLiveWindow(window, now))
+      : [];
+    for (const window of liveIncoming) {
+      const kindLower = window.kind.toLowerCase();
+      const existingIndex = merged.findIndex(
+        (candidate) => candidate.kind.toLowerCase() === kindLower,
+      );
+      if (existingIndex < 0) {
+        merged.push(window);
+      } else if (window.observedAt > merged[existingIndex].observedAt) {
+        merged.splice(existingIndex, 1, window);
+      }
+    }
+    merged.sort((a, b) => b.observedAt - a.observedAt);
+
+    const snapshot = {
+      provider: provider.trim().toLowerCase(),
+      windows: merged.slice(0, QUOTA_SNAPSHOT.maxWindowsPerConnection),
+      planTier: sanitizedTier ?? current?.planTier ?? null,
+      updatedAt: Math.max(current?.updatedAt ?? 0, restoredUpdatedAt),
+    };
+
+    evictOldestIfNeeded(connectionId, now);
+    snapshots.set(connectionId, snapshot);
+    return copySnapshot(snapshot);
+  } catch {
+    return null;
+  }
 }
 
 /**

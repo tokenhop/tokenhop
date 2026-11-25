@@ -37,6 +37,14 @@ export async function register() {
     const { ensureGatewayKeyStartup } = await import("@/lib/db/startupReadiness.js");
     await ensureGatewayKeyStartup();
 
+    // Warm quota caches after DB readiness, including on API-only servers.
+    await import("@/shared/services/quotaHistoryHydration.js")
+      .then((m) => m.ensureQuotaSnapshotsHydrated())
+      .catch(() => console.warn("[QuotaHistory] startup hydration unavailable"));
+    import("@/shared/services/quotaHistoryRetention.js")
+      .then((m) => m.startQuotaHistoryRetention())
+      .catch(() => console.warn("[QuotaHistory] retention unavailable"));
+
     // YAN-351: a bad users & teams switch env value fails startup, not the first request.
     await import("@/lib/users/featureSwitch.js");
 

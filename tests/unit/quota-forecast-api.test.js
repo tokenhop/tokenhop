@@ -105,6 +105,19 @@ describe("GET /api/usage/[connectionId] forecasts", () => {
     expect(typeof forecastStore.getQuotaForecasts("a", NOW)["session (5h)"].emptyAt).toBe("string");
   });
 
+  it("serves cached quota without fetching from the provider", async () => {
+    await sync.recordUsageSnapshot({ connectionId: "a", provider: "claude", usage: usageFor(60) });
+    const response = await usageGET(new Request("http://localhost/api/usage/a?cached=1"), {
+      params: Promise.resolve({ connectionId: "a" }),
+    });
+    expect(response.headers.get("Cache-Control")).toBe("no-store");
+    expect(await response.json()).toMatchObject({
+      cached: true,
+      quotaSnapshot: { windows: [{ kind: "5h", usedFraction: 0.4 }] },
+    });
+    expect(mocks.getUsageForProvider).not.toHaveBeenCalled();
+  });
+
   it("returns an empty forecasts map without samples", async () => {
     mocks.getUsageForProvider.mockResolvedValueOnce({ quotas: {} });
     const body = await (await usageRequest()).json();

@@ -14,7 +14,17 @@ import {
   parseQuotaData,
   setQuotaCache,
 } from "@/app/(dashboard)/dashboard/quota/lib/quotaUtils.js";
-import { attachForecasts } from "@/app/(dashboard)/dashboard/quota/lib/quotaForecastJoin.js";
+import { buildCachedQuotaEntry } from "@/app/(dashboard)/dashboard/quota/lib/quotaSnapshotRows.js";
+import {
+  attachForecasts,
+  attachQuotaHistory,
+} from "@/app/(dashboard)/dashboard/quota/lib/quotaForecastJoin.js";
+
+function filterOutId(state, id) {
+  if (!(id in state)) return state;
+  const { [id]: _removed, ...rest } = state;
+  return rest;
+}
 
 /**
  * useQuotaData — fetching + refresh state extracted from QuotaPageClient.
@@ -28,6 +38,8 @@ export function useQuotaData({ page, setPage, pageSize, accountFilter, providerF
   const [quotaData, setQuotaData] = useState({});
   const [loading, setLoading] = useState({});
   const [errors, setErrors] = useState({});
+  // Display-only restored snapshots (YAN-422); never feeds summaries or bulk actions.
+  const [cachedQuota, setCachedQuota] = useState({});
   const [connectionsError, setConnectionsError] = useState(null);
   const [autoRefresh, setAutoRefresh] = useState(true);
   const [hasHydratedAutoRefresh, setHasHydratedAutoRefresh] = useState(false);
@@ -52,6 +64,7 @@ export function useQuotaData({ page, setPage, pageSize, accountFilter, providerF
   const tickCountRef = useRef(0);
   const connectionsGenerationRef = useRef(0);
   const quotaGenerationsRef = useRef(new Map());
+  const liveLoadedRef = useRef(new Set());
   const viewRef = useRef({ page, pageSize, accountFilter, providerFilter });
   const previousView = viewRef.current;
   if (
@@ -78,6 +91,8 @@ export function useQuotaData({ page, setPage, pageSize, accountFilter, providerF
       setLoading((prev) => filterQuotaStateByConnections(prev, list));
       setErrors((prev) => filterQuotaStateByConnections(prev, list));
       setQuotaData((prev) => filterQuotaStateByConnections(prev, list));
+      setCachedQuota((prev) => filterQuotaStateByConnections(prev, list));
+      for (const id of liveLoadedRef.current) if (!keep.has(id)) liveLoadedRef.current.delete(id);
     },
     [invalidateQuota],
   );
@@ -148,7 +163,7 @@ export function useQuotaData({ page, setPage, pageSize, accountFilter, providerF
 
   // Fetch quota for a specific connection; 401/404 surface as row errors.
   const fetchQuota = useCallback(
-    async (connectionId, provider, { force = false } = {}) => {
+    async (connectionId, provider, { force = false, preview = false } = {}) => {
       // Latest request per account wins; older settles (data, errors, cache, loading) are dropped.
       // A changed page/filters/size invalidates in-flight settles captured under the previous view.
       const view = viewRef.current;
@@ -158,6 +173,23 @@ export function useQuotaData({ page, setPage, pageSize, accountFilter, providerF
         viewRef.current === view && quotaGenerationsRef.current.get(connectionId) === generation;
       setLoading((prev) => ({ ...prev, [connectionId]: true }));
       setErrors((prev) => ({ ...prev, [connectionId]: null }));
+
+      // First load only: show the restored snapshot while the live probe is in flight.
+      // Dropped if live data landed first or a newer request superseded this one;
+      // kept (and labelled) when the live refresh fails.
+      let liveSettled = false;
+      if (preview && !liveLoadedRef.current.has(connectionId)) {
+        fetch(`/api/usage/${connectionId}?cached=1`)
+          .then((response) => (response.ok ? response.json() : null))
+          .then((payload) => {
+            const entry = buildCachedQuotaEntry(payload);
+            if (!entry || liveSettled || !isCurrent()) return;
+            setCachedQuota((prev) => ({ ...prev, [connectionId]: entry }));
+          })
+          .catch(() => {
+            // Best-effort: the live response is authoritative.
+          });
+      }
 
       try {
         const url = `/api/usage/${connectionId}${force ? "?force=1" : ""}`;
@@ -175,7 +207,10 @@ export function useQuotaData({ page, setPage, pageSize, accountFilter, providerF
         }
 
         const data = await response.json();
-        const parsedQuotas = attachForecasts(parseQuotaData(provider, data), data.forecasts);
+        const parsedQuotas = attachQuotaHistory(
+          attachForecasts(parseQuotaData(provider, data), data.forecasts),
+          data.history,
+        );
 
         const quotaEntry = {
           quotas: parsedQuotas,
@@ -185,7 +220,10 @@ export function useQuotaData({ page, setPage, pageSize, accountFilter, providerF
         };
 
         if (!isCurrent()) return null;
+        liveSettled = true;
+        liveLoadedRef.current.add(connectionId);
         setQuotaData((prev) => ({ ...prev, [connectionId]: quotaEntry }));
+        setCachedQuota((prev) => filterOutId(prev, connectionId));
         setQuotaCache(connectionId, quotaEntry);
         return true;
       } catch (error) {
@@ -270,7 +308,7 @@ export function useQuotaData({ page, setPage, pageSize, accountFilter, providerF
       if (!list) return;
       setLoading(buildLoadingState(list));
       pruneQuotaState(list);
-      await Promise.all(list.map((conn) => fetchQuota(conn.id, conn.provider)));
+      await Promise.all(list.map((conn) => fetchQuota(conn.id, conn.provider, { preview: true })));
     } catch {
       // fetchConnections records the error for the retry UI.
     }
@@ -295,7 +333,7 @@ export function useQuotaData({ page, setPage, pageSize, accountFilter, providerF
       setLoading(buildLoadingState(list));
       pruneQuotaState(list);
 
-      await Promise.all(list.map((c) => fetchQuota(c.id, c.provider)));
+      await Promise.all(list.map((c) => fetchQuota(c.id, c.provider, { preview: true })));
       if (!cancelled) setInitialQuotaLoaded(true);
     }
     init();
@@ -343,6 +381,7 @@ export function useQuotaData({ page, setPage, pageSize, accountFilter, providerF
   return {
     connections,
     quotaData,
+    cachedQuota,
     loading,
     errors,
     connectionsError,
