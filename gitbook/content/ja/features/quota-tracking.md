@@ -570,90 +570,138 @@ Dashboard → Analytics → Monthly Report:
 
 ## APIアクセス
 
-### クォータステータスを取得
+### クォータステータスを取得（リモート / ゲートウェイAPIキー）
+
+`GET /v1/quota` は、ゲートウェイAPIキーで認可された、アカウントごとの読み取り専用クォータスナップショットを返します。ローカルでも、リモートトンネルやリバースプロキシ経由でも動作します。読み取るのはサーバー側にキャッシュされたスナップショットだけで（このリクエスト経路ではOAuthトークンの更新やローテーションを一切行わず、上流プロバイダーへの呼び出しもしません）、シークレット、トークン、認証情報を復号したり返したりすることはありません。
+
+認証には `Authorization: Bearer <your-api-key>` または `x-api-key: <your-api-key>` を使います（`?key=` をクエリ文字列で渡すのは避けてください。プロキシやアクセスログに記録される可能性があります）。任意の `?provider=<provider-id-or-alias>` クエリパラメーター（例: `?provider=claude` や `?provider=cc`）を渡すと、一覧を1つのプロバイダーに絞り込めます。
+
+ハッシュ化されたAPIキー保存が有効な場合（マルチユーザーモード）、結果はAPIキーのワークスペース、有効な接続グラント（付与者のメールアドレスは開示しません）、モデル許可リストの範囲に限定されます（`allowedModels` はプロバイダー単位で絞り込みます。`allowedModels` が空のリストの場合は、`allowedCombos` が設定されていても制限なしになります）。従来のシングルユーザー保存では、有効なすべての接続が返されます。自ワークスペースの接続でカスタム表示名がない場合、`name` には接続のメールアドレスまたはIDが使われます。
 
 ```bash
-GET http://localhost:20128/api/quota
-Authorization: Bearer your-api-key
+curl -H "Authorization: Bearer your-api-key" \
+  https://your-gateway.example.com/v1/quota
 
-Response:
+# Filter to a single provider (canonical id or alias)
+curl -H "Authorization: Bearer your-api-key" \
+  "http://localhost:20128/v1/quota?provider=claude"
+```
+
+レスポンス:
+
+```json
 {
-  "providers": [
+  "object": "list",
+  "accounts": [
     {
-      "id": "cc",
-      "name": "Claude Code",
-      "quota": {
-        "used": 2.5,
-        "limit": 5,
-        "unit": "hours",
-        "percentage": 50
+      "id": "conn_01",
+      "name": "claude-work",
+      "provider": "claude",
+      "planTier": "default_claude_max_20x",
+      "fiveHour": {
+        "used": 42,
+        "limit": 100,
+        "unit": "provider",
+        "percentage": 42,
+        "remainingPercentage": 58,
+        "nextReset": "2026-11-25T15:00:00.000Z",
+        "observedAt": "2026-11-25T12:34:56.000Z"
       },
-      "reset": {
-        "type": "rolling",
-        "window": "5h",
-        "nextReset": "2026-02-04T06:45:00Z"
+      "weekly": {
+        "used": 18,
+        "limit": 100,
+        "unit": "provider",
+        "percentage": 18,
+        "remainingPercentage": 82,
+        "nextReset": "2026-12-01T00:00:00.000Z",
+        "observedAt": "2026-11-25T12:34:56.000Z"
       },
-      "cost": {
-        "today": 0,
-        "month": 0,
-        "currency": "USD"
-      }
+      "windows": [
+        {
+          "kind": "5h",
+          "used": 42,
+          "limit": 100,
+          "unit": "provider",
+          "percentage": 42,
+          "remainingPercentage": 58,
+          "nextReset": "2026-11-25T15:00:00.000Z",
+          "observedAt": "2026-11-25T12:34:56.000Z",
+          "source": "probe"
+        },
+        {
+          "kind": "7d",
+          "used": 18,
+          "limit": 100,
+          "unit": "provider",
+          "percentage": 18,
+          "remainingPercentage": 82,
+          "nextReset": "2026-12-01T00:00:00.000Z",
+          "observedAt": "2026-11-25T12:34:56.000Z",
+          "source": "probe"
+        }
+      ],
+      "updatedAt": "2026-11-25T12:34:56.000Z",
+      "stale": false
     },
     {
-      "id": "glm",
-      "name": "GLM-4.7",
-      "quota": {
-        "used": 7000000,
-        "limit": 10000000,
-        "unit": "tokens",
-        "percentage": 70
+      "id": "conn_02",
+      "name": "kimi-main",
+      "provider": "kimi",
+      "planTier": null,
+      "fiveHour": {
+        "used": 120000,
+        "limit": 500000,
+        "unit": "provider",
+        "percentage": 24,
+        "remainingPercentage": 76,
+        "nextReset": "2026-11-25T16:00:00.000Z",
+        "observedAt": "2026-11-25T12:34:56.000Z"
       },
-      "reset": {
-        "type": "daily",
-        "time": "10:00 AM UTC+8",
-        "nextReset": "2026-02-04T10:00:00+08:00"
-      },
-      "cost": {
-        "today": 4.20,
-        "month": 52.00,
-        "currency": "USD"
-      }
+      "weekly": null,
+      "windows": [
+        {
+          "kind": "5h",
+          "used": 120000,
+          "limit": 500000,
+          "unit": "provider",
+          "percentage": 24,
+          "remainingPercentage": 76,
+          "nextReset": "2026-11-25T16:00:00.000Z",
+          "observedAt": "2026-11-25T12:34:56.000Z",
+          "source": "probe"
+        }
+      ],
+      "updatedAt": "2026-11-25T12:34:56.000Z",
+      "stale": false
     }
   ]
 }
 ```
 
-### 使用統計を取得
+- `fiveHour` と `weekly` は `5h` と `7d` のウィンドウをそのまま示します（そのプロバイダーがウィンドウを報告しない場合や、有効なウィンドウがキャッシュされていない場合は `null`）。`windows` には、`month`（Cursor、GitHub）やモデル単位のウィンドウ（`model:*`）など、そのアカウントの有効なキャッシュ済みウィンドウがすべて含まれます。
+- `used` と `limit` は、利用可能な場合はプロバイダーが報告する値（`unit: "provider"`。Kimiのトークン数やClaude/Codexの0〜100の使用率など）を反映し、使用率の割合しか観測されていない場合（レスポンスヘッダーからなど）は `0–100` のパーセンテージ尺度（`unit: "percentage"`）にフォールバックします。`percentage`（使用済み%、`0–100` に制限）と `remainingPercentage`（残り%）は常に正規化されたパーセンテージです。`nextReset` は未来のISO-8601 UTCタイムスタンプまたは `null` です（リセット時刻を過ぎたウィンドウは除外されます）。
+- スナップショットは、上流レスポンスヘッダーの受動的な取得、ダッシュボードのクォータチェック、バックグラウンドのスナップショットポーラー（重み付け戦略とコンボのメンバーに対して実行）によってメモリ上に蓄積されます。`stale` は、有効なウィンドウがない場合（スナップショットがない、期限切れ、プラン情報のみの場合を含む）、または最新ウィンドウの `observedAt` が15分以上前の場合に `true` になります。
+
+### ダッシュボードの使用状況エンドポイント（セッション / ローカルCLI認証）
+
+`/api/usage/*` 配下のダッシュボード使用状況ルート（`/api/usage/stats`、`/api/usage/logs`、`/api/usage/export` など）と `/api/home/quota` は、ダッシュボードにサインインしたセッションのCookieまたはローカルCLIトークンで認証するダッシュボードAPIです。ゲートウェイのBearer APIキーは受け付けません。`/api/quota` や `/api/usage` というルートは存在せず、マッピングされていない `/api/*` パスは `403 LOCAL_ONLY` で拒否されます（フェイルクローズ）。
+
+### 使用履歴のエクスポート
+
+使用状況ページ（概要タブ）のエクスポートボタンは、現在の期間（カスタム範囲を含む）を、有効なワークスペース/メンバー/APIキーのフィルターを適用した状態でダウンロードします。同じダウンロードは直接取得することもできます:
 
 ```bash
-GET http://localhost:20128/api/usage?period=today
-Authorization: Bearer your-api-key
-
-Response:
-{
-  "period": "today",
-  "date": "2026-02-04",
-  "summary": {
-    "requests": 1234,
-    "tokens": 26000000,
-    "cost": 4.80
-  },
-  "byModel": [
-    {
-      "model": "cc/claude-opus-4-5",
-      "requests": 456,
-      "tokens": 15000000,
-      "cost": 0
-    },
-    {
-      "model": "glm/glm-4.7",
-      "requests": 234,
-      "tokens": 8000000,
-      "cost": 4.80
-    }
-  ]
-}
+GET http://localhost:20128/api/usage/export?period=7d&format=csv&granularity=day
 ```
+
+- `period`: 名前付きの期間（`today`、`24h`、`7d`、`30d`、`60d`、`90d`、`all`）、または `custom` と、両端を含むローカル日付 `YYYY-MM-DD` で指定する `from`/`to`（最大366日）。
+- `format`: `csv`（デフォルト。`json` の場合はJSON配列）。レスポンスはストリーミングされ、ファイルダウンロード（`tokenhop-usage-<range>-<granularity>.csv|json`）として送信されます。
+- `granularity`: `day`（デフォルト）は日次ロールアップから、日 × プロバイダー/モデル/アカウント/APIキー/エンドポイントごとに1行を出力します（`today`/`24h` ではカードと一致するようリクエストごとの履歴から集計します）。`request` は保存されたリクエスト履歴から、任意の期間またはカスタム範囲でリクエストごとに1行を出力します。履歴の保持はオプトインのため、有効にしている場合は、削除済みの日のリクエスト行が欠けることがあります。日次の行はロールアップから作られるため影響を受けません。
+- `bom`: `1` を指定するとCSV出力の先頭にUTF-8のバイトオーダーマークを付け、Windows版Excelが非ASCIIのモデル名、アカウント名、キー名を正しく読み込めるようにします（エクスポートメニューの **CSV for Excel** 項目はこれを設定します）。デフォルトの `0`/未指定ではBOMなしのプレーンなRFC 4180です。`format=csv` でのみ有効で、それ以外の値は400を返します。
+
+列: タイムスタンプ（または日付）、プロバイダー、モデル、アカウント、アカウントID、APIキー名、マスク済みAPIキー、エンドポイント、プロンプト/補完/キャッシュのトークン数、コスト、ステータス（リクエスト行）、トークンセーバーの推定値（`saved_tokens_est`: リクエスト行ではリクエストごと、日次の行ではそのグループのその日の節約量の合計なので、リクエスト履歴の削除後も残ります）。生のAPIキーがエクスポートされることはなく、キー名とマスクされたプレフィックスのみが出力されます。`format`、`granularity`、`period`、`bom` や日付範囲が無効な場合は400を返します。他の使用状況エンドポイントと同じサインインとワークスペースの範囲制限が適用されます。
+
+ヘッダー名は安定した機械可読の契約です。ダッシュボードの言語に関係なく英語の `snake_case`（`date`、`timestamp`、`prompt_tokens`、`api_key_masked` など）なので、エクスポートを読み込むスクリプトやスプレッドシートはUIの言語を変えても動作し続けます。CSVの区切り文字は常にカンマです。`;` を想定するロケールでは、Excelの **データ → テキストまたはCSVから** でファイルをインポートし、区切り文字にカンマを選んでください。
 
 ---
 

@@ -570,90 +570,138 @@ Optimización:
 
 ## Acceso por API
 
-### Obtener estado de cuota
+### Obtener estado de cuota (remoto / clave API del gateway)
+
+`GET /v1/quota` devuelve instantáneas de cuota por cuenta, de solo lectura, autorizadas con una clave API del gateway. Funciona tanto en local como a través de un túnel remoto o un proxy inverso, solo lee instantáneas en caché del servidor (esta ruta nunca actualiza ni rota tokens OAuth y no hace llamadas a proveedores upstream) y nunca descifra ni devuelve secretos, tokens ni credenciales.
+
+Autentícate con `Authorization: Bearer <your-api-key>` o `x-api-key: <your-api-key>` (evita pasar `?key=` en la query string, ya que puede quedar registrada en los logs de proxies y de acceso). Pasa el parámetro opcional `?provider=<provider-id-or-alias>` (por ejemplo `?provider=claude` o `?provider=cc`) para limitar la lista a un proveedor.
+
+Cuando el almacenamiento de claves API con hash está activo (modo multiusuario), los resultados se limitan al workspace de la clave API, a sus concesiones de conexión activas (sin revelar el email de quien las concede) y a su lista de modelos permitidos (`allowedModels` filtra a nivel de proveedor; una lista `allowedModels` vacía no restringe nada aunque `allowedCombos` esté definido). Con el almacenamiento heredado de un solo usuario se devuelven todas las conexiones activas. En las conexiones del propio workspace sin nombre personalizado, `name` usa el email o el id de la conexión.
 
 ```bash
-GET http://localhost:20128/api/quota
-Authorization: Bearer your-api-key
+curl -H "Authorization: Bearer your-api-key" \
+  https://your-gateway.example.com/v1/quota
 
-Response:
+# Filter to a single provider (canonical id or alias)
+curl -H "Authorization: Bearer your-api-key" \
+  "http://localhost:20128/v1/quota?provider=claude"
+```
+
+Respuesta:
+
+```json
 {
-  "providers": [
+  "object": "list",
+  "accounts": [
     {
-      "id": "cc",
-      "name": "Claude Code",
-      "quota": {
-        "used": 2.5,
-        "limit": 5,
-        "unit": "hours",
-        "percentage": 50
+      "id": "conn_01",
+      "name": "claude-work",
+      "provider": "claude",
+      "planTier": "default_claude_max_20x",
+      "fiveHour": {
+        "used": 42,
+        "limit": 100,
+        "unit": "provider",
+        "percentage": 42,
+        "remainingPercentage": 58,
+        "nextReset": "2026-11-25T15:00:00.000Z",
+        "observedAt": "2026-11-25T12:34:56.000Z"
       },
-      "reset": {
-        "type": "rolling",
-        "window": "5h",
-        "nextReset": "2026-02-04T06:45:00Z"
+      "weekly": {
+        "used": 18,
+        "limit": 100,
+        "unit": "provider",
+        "percentage": 18,
+        "remainingPercentage": 82,
+        "nextReset": "2026-12-01T00:00:00.000Z",
+        "observedAt": "2026-11-25T12:34:56.000Z"
       },
-      "cost": {
-        "today": 0,
-        "month": 0,
-        "currency": "USD"
-      }
+      "windows": [
+        {
+          "kind": "5h",
+          "used": 42,
+          "limit": 100,
+          "unit": "provider",
+          "percentage": 42,
+          "remainingPercentage": 58,
+          "nextReset": "2026-11-25T15:00:00.000Z",
+          "observedAt": "2026-11-25T12:34:56.000Z",
+          "source": "probe"
+        },
+        {
+          "kind": "7d",
+          "used": 18,
+          "limit": 100,
+          "unit": "provider",
+          "percentage": 18,
+          "remainingPercentage": 82,
+          "nextReset": "2026-12-01T00:00:00.000Z",
+          "observedAt": "2026-11-25T12:34:56.000Z",
+          "source": "probe"
+        }
+      ],
+      "updatedAt": "2026-11-25T12:34:56.000Z",
+      "stale": false
     },
     {
-      "id": "glm",
-      "name": "GLM-4.7",
-      "quota": {
-        "used": 7000000,
-        "limit": 10000000,
-        "unit": "tokens",
-        "percentage": 70
+      "id": "conn_02",
+      "name": "kimi-main",
+      "provider": "kimi",
+      "planTier": null,
+      "fiveHour": {
+        "used": 120000,
+        "limit": 500000,
+        "unit": "provider",
+        "percentage": 24,
+        "remainingPercentage": 76,
+        "nextReset": "2026-11-25T16:00:00.000Z",
+        "observedAt": "2026-11-25T12:34:56.000Z"
       },
-      "reset": {
-        "type": "daily",
-        "time": "10:00 AM UTC+8",
-        "nextReset": "2026-02-04T10:00:00+08:00"
-      },
-      "cost": {
-        "today": 4.20,
-        "month": 52.00,
-        "currency": "USD"
-      }
+      "weekly": null,
+      "windows": [
+        {
+          "kind": "5h",
+          "used": 120000,
+          "limit": 500000,
+          "unit": "provider",
+          "percentage": 24,
+          "remainingPercentage": 76,
+          "nextReset": "2026-11-25T16:00:00.000Z",
+          "observedAt": "2026-11-25T12:34:56.000Z",
+          "source": "probe"
+        }
+      ],
+      "updatedAt": "2026-11-25T12:34:56.000Z",
+      "stale": false
     }
   ]
 }
 ```
 
-### Obtener estadísticas de uso
+- `fiveHour` y `weekly` exponen directamente las ventanas `5h` y `7d` (o `null` cuando el proveedor no informa esa ventana o no hay ninguna ventana vigente en caché). `windows` incluye todas las ventanas vigentes en caché de la cuenta, como `month` (Cursor, GitHub) o ventanas por modelo (`model:*`).
+- `used` y `limit` reflejan los valores que informa el proveedor cuando están disponibles (`unit: "provider"`, como los recuentos de tokens de Kimi o la utilización 0–100 de Claude/Codex), y pasan a una escala porcentual `0–100` (`unit: "percentage"`) cuando solo se observó una fracción de utilización (por ejemplo, en las cabeceras de respuesta). `percentage` (% usado, limitado a `0–100`) y `remainingPercentage` (% restante) son siempre porcentajes normalizados; `nextReset` es una marca de tiempo ISO-8601 UTC futura o `null` (las ventanas cuyo reinicio ya pasó se descartan).
+- Las instantáneas se llenan en memoria a partir de las cabeceras pasivas de las respuestas upstream, las comprobaciones de cuota del dashboard y el sondeo de instantáneas en segundo plano (que se ejecuta para las estrategias ponderadas y los miembros de combos). `stale` es `true` cuando no hay ventanas vigentes (incluidas instantáneas ausentes, caducadas o que solo tienen el plan) o cuando el `observedAt` de la ventana más reciente tiene 15 minutos o más.
+
+### Endpoints de uso del dashboard (sesión / autenticación CLI local)
+
+Las rutas de uso del dashboard bajo `/api/usage/*` (como `/api/usage/stats`, `/api/usage/logs` y `/api/usage/export`) y `/api/home/quota` son APIs del dashboard que se autentican con la cookie de una sesión iniciada en el dashboard o con el token de la CLI local; no aceptan claves API Bearer del gateway. No existe ninguna ruta `/api/quota` ni `/api/usage`; las rutas `/api/*` no mapeadas fallan de forma cerrada con `403 LOCAL_ONLY`.
+
+### Exportar el historial de uso
+
+El botón Exportar de la página Uso (pestaña Resumen) descarga el periodo actual, incluido un rango personalizado, con los filtros activos de workspace/miembro/clave API aplicados. La misma descarga está disponible directamente:
 
 ```bash
-GET http://localhost:20128/api/usage?period=today
-Authorization: Bearer your-api-key
-
-Response:
-{
-  "period": "today",
-  "date": "2026-02-04",
-  "summary": {
-    "requests": 1234,
-    "tokens": 26000000,
-    "cost": 4.80
-  },
-  "byModel": [
-    {
-      "model": "cc/claude-opus-4-5",
-      "requests": 456,
-      "tokens": 15000000,
-      "cost": 0
-    },
-    {
-      "model": "glm/glm-4.7",
-      "requests": 234,
-      "tokens": 8000000,
-      "cost": 4.80
-    }
-  ]
-}
+GET http://localhost:20128/api/usage/export?period=7d&format=csv&granularity=day
 ```
+
+- `period`: un periodo con nombre (`today`, `24h`, `7d`, `30d`, `60d`, `90d`, `all`) o `custom` con `from`/`to` como días locales `YYYY-MM-DD` inclusivos (máximo 366 días).
+- `format`: `csv` (por defecto; un array JSON con `json`). La respuesta se transmite en streaming y se envía como descarga de archivo (`tokenhop-usage-<range>-<granularity>.csv|json`).
+- `granularity`: `day` (por defecto) da una fila por día × proveedor/modelo/cuenta/clave API/endpoint a partir del resumen diario (para `today`/`24h` se agrega desde el historial por solicitud para que coincida con las tarjetas); `request` da una fila por solicitud a partir del historial de solicitudes guardado, para cualquier periodo o rango personalizado. La retención del historial es opcional, así que, si la activaste, pueden faltar filas de solicitudes de días ya depurados; las filas diarias no se ven afectadas porque salen del resumen diario.
+- `bom`: `1` antepone una marca de orden de bytes UTF-8 a la salida CSV para que Excel en Windows lea correctamente los nombres de modelos, cuentas y claves con caracteres no ASCII (las opciones **CSV for Excel** del menú Exportar lo activan). Por defecto `0`/ausente: sin BOM, RFC 4180 simple. Solo es válido con `format=csv`; cualquier otro valor devuelve 400.
+
+Columnas: marca de tiempo (o fecha), proveedor, modelo, cuenta, id de cuenta, nombre de la clave API, clave API enmascarada, endpoint, tokens de prompt/completion/en caché, costo, estado (filas de solicitud) y la estimación del ahorrador de tokens (`saved_tokens_est`: por solicitud en las filas de solicitud; en las filas diarias es el ahorro acumulado del día para ese grupo, por lo que sobrevive a la depuración del historial de solicitudes). Las claves API en bruto nunca se exportan, solo el nombre de la clave y su prefijo enmascarado. Valores no válidos de `format`, `granularity`, `period`, `bom` o de los rangos de fechas devuelven 400; se aplican el mismo inicio de sesión y el mismo alcance de workspace que en los demás endpoints de uso.
+
+Los nombres de las cabeceras son un contrato estable y legible por máquinas: `snake_case` en inglés (`date`, `timestamp`, `prompt_tokens`, `api_key_masked`, …) en todos los idiomas del dashboard, para que los scripts y las hojas de cálculo que leen la exportación sigan funcionando cuando cambia el idioma de la interfaz. El separador CSV es siempre una coma; en los idiomas que esperan `;`, importa el archivo con **Datos → Desde texto/CSV** de Excel y elige la coma como delimitador.
 
 ---
 
