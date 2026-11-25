@@ -1,5 +1,9 @@
 ## Unreleased
 
+## Features
+
+- **Token saver**: Headroom compression skips payloads above a size cap (`headroomMaxBodyBytes`, default 256 KB, 0 = no cap) instead of waiting out the timeout, and logs `[HEADROOM] skipped: payload 812KB > cap 256KB`. Set `HEADROOM_PROXY_TOKEN` to match a Headroom 0.37+ sidecar's token: tokenhop sends it as `x-headroom-proxy-token` on every server-side Headroom call, including the dashboard proxy, and never stores or returns it.
+
 ## Fixes
 
 - **Meta Code**: a 403 `client_attestation_denied` (Muse Code subscription keys serve only the official client) is returned as a `permission_error` with its own code and a pay-as-you-go hint. It no longer triggers a token refresh or re-mint, a cooldown or a retry of the same key. A pay-as-you-go API-key connection is still tried next. Docs describe the limitation and the API-key setup.

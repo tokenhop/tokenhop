@@ -99,6 +99,37 @@ describe("handleChatCore Headroom diagnostics", () => {
     );
   });
 
+  it("skips oversized payloads at the size cap instead of waiting for the timeout", async () => {
+    const log = { debug: vi.fn(), info: vi.fn(), warn: vi.fn() };
+
+    await handleChatCore({
+      body: {
+        model: "gpt-4o",
+        stream: false,
+        messages: [{ role: "user", content: "x".repeat(300 * 1024) }],
+      },
+      modelInfo: { provider: "openai", model: "gpt-4o" },
+      credentials: { apiKey: "test-key", providerSpecificData: {} },
+      log,
+      connectionId: "test-conn",
+      headroomEnabled: true,
+      headroomUrl: "http://localhost:8787",
+      headroomCompressUserMessages: false,
+      headroomMaxBodyBytes: 262144,
+      rtkEnabled: false,
+      cavemanEnabled: false,
+      ponytailEnabled: false,
+      clientRawRequest: {
+        endpoint: "/v1/chat/completions",
+        body: {},
+        headers: { accept: "application/json" },
+      },
+    });
+
+    expect(global.fetch).not.toHaveBeenCalled();
+    expect(log.warn).toHaveBeenCalledWith("HEADROOM", "skipped: payload 301KB > cap 256KB");
+  });
+
   it("scrubs credentials and query strings from Headroom fetch errors", async () => {
     const log = { debug: vi.fn(), info: vi.fn(), warn: vi.fn() };
 

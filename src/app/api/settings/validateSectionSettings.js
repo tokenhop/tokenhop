@@ -24,6 +24,8 @@
  */
 
 const UNSAFE_KEYS = new Set(["__proto__", "constructor", "prototype"]);
+// headroomMaxBodyBytes ceiling (1 GiB); 0 disables the cap.
+const HEADROOM_MAX_BODY_BYTES_LIMIT = 1024 * 1024 * 1024;
 
 // Read-only env / client-pin keys: surfaced in UI, never writable via the API.
 const READ_ONLY_KEYS = new Set([
@@ -353,6 +355,12 @@ export function validateSectionSettings(body) {
   }
   if (Object.hasOwn(body, "headroomTimeoutMs") && !intInRange(body.headroomTimeoutMs, 1, 300000)) {
     return "Invalid headroomTimeoutMs: must be an integer between 1 and 300000";
+  }
+  if (
+    Object.hasOwn(body, "headroomMaxBodyBytes") &&
+    !intInRange(body.headroomMaxBodyBytes, 0, HEADROOM_MAX_BODY_BYTES_LIMIT)
+  ) {
+    return `Invalid headroomMaxBodyBytes: must be an integer between 0 and ${HEADROOM_MAX_BODY_BYTES_LIMIT}`;
   }
   if (Object.hasOwn(body, "cavemanLevel") && !CAVEMAN_LEVELS.has(body.cavemanLevel)) {
     return "Invalid cavemanLevel";

@@ -11,6 +11,7 @@ export const TOKEN_SAVER_DEFAULTS = Object.freeze({
   headroomEnabled: false,
   headroomUrl: "http://localhost:8787",
   headroomTimeoutMs: 3000,
+  headroomMaxBodyBytes: 262144,
   headroomCompressUserMessages: false,
   cavemanEnabled: false,
   cavemanLevel: "full",

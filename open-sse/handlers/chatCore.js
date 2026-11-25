@@ -149,6 +149,7 @@ export async function handleChatCore({
   headroomUrl,
   headroomCompressUserMessages,
   headroomTimeoutMs,
+  headroomMaxBodyBytes,
   cavemanEnabled,
   cavemanLevel,
   ponytailEnabled,
@@ -551,6 +552,7 @@ export async function handleChatCore({
     format: finalFormat,
     compressUserMessages: headroomCompressUserMessages,
     timeoutMs: headroomTimeoutMs,
+    maxBodyBytes: headroomMaxBodyBytes,
     diagnostics: headroomDiagnostics,
   });
   const headroomLine = formatHeadroomLog(headroomStats);

@@ -62,6 +62,11 @@ export default function TokenSaverSection({
     settings.headroomTimeoutMs ?? TOKEN_SAVER_DEFAULTS.headroomTimeoutMs,
     { onSaved: onSaved("headroomTimeoutMs") },
   );
+  const headroomMaxBody = useSettingsField(
+    "headroomMaxBodyBytes",
+    settings.headroomMaxBodyBytes ?? TOKEN_SAVER_DEFAULTS.headroomMaxBodyBytes,
+    { onSaved: onSaved("headroomMaxBodyBytes") },
+  );
   const headroomCompress = useSettingsField(
     "headroomCompressUserMessages",
     settings.headroomCompressUserMessages ?? false,
@@ -207,6 +212,24 @@ export default function TokenSaverSection({
               }
             />
             <FieldError error={headroomTimeout.error} />
+            <SettingRow
+              label="Headroom size cap"
+              description="Skip compression above this many bytes of messages. 0 = no cap."
+              settingKey="headroomMaxBodyBytes"
+              control={
+                <div className="w-48">
+                  <NumberStepper
+                    label="Headroom size cap"
+                    value={headroomMaxBody.value}
+                    onChange={(next) => headroomMaxBody.set(next)}
+                    min={0}
+                    step={65536}
+                    disabled={headroomOff || headroomMaxBody.saving}
+                  />
+                </div>
+              }
+            />
+            <FieldError error={headroomMaxBody.error} />
             <SettingRow
               label="Compress user messages"
               description="Also compress user turns, not just tool output."

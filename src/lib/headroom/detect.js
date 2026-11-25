@@ -1,5 +1,6 @@
 import { execFileSync, execSync } from "child_process";
 import path from "path";
+import { headroomRequestHeaders } from "open-sse/rtk/headroomAuth.js";
 
 // Extras that improve headroom compression quality. `proxy` is the base;
 // `code` adds tree-sitter AST compression; `ml` adds Kompress-v2 HF model.
@@ -138,6 +139,7 @@ export async function probeProxyRunning(url) {
   const base = String(url).replace(/\/$/, "");
   try {
     const res = await fetch(`${base}/health`, {
+      headers: headroomRequestHeaders(),
       signal: AbortSignal.timeout(HEADROOM_HEALTH_TIMEOUT_MS),
     });
     return res.ok;

@@ -65,6 +65,31 @@ describe("database export/import re-auth (YAN-605)", () => {
 });
 
 describe("settings API omits credentials (YAN-607)", () => {
+  it("never returns HEADROOM_PROXY_TOKEN, and defaults the Headroom size cap", async () => {
+    const token = "headroom-proxy-token-value";
+    const prior = process.env.HEADROOM_PROXY_TOKEN;
+    process.env.HEADROOM_PROXY_TOKEN = token;
+    try {
+      const { GET, PATCH } = await import("@/app/api/settings/route.js");
+      const got = await (await GET()).json();
+      const patched = await (
+        await PATCH(
+          req("/api/settings", {
+            method: "PATCH",
+            body: JSON.stringify({ headroomMaxBodyBytes: 0 }),
+          }),
+        )
+      ).json();
+      expect(got.headroomMaxBodyBytes).toBe(262144);
+      expect(patched.headroomMaxBodyBytes).toBe(0);
+      for (const body of [got, patched]) expect(JSON.stringify(body)).not.toContain(token);
+      expect(JSON.stringify(await db.exportDb())).not.toContain(token);
+    } finally {
+      if (prior === undefined) delete process.env.HEADROOM_PROXY_TOKEN;
+      else process.env.HEADROOM_PROXY_TOKEN = prior;
+    }
+  });
+
   it("GET and PATCH responses contain no secret keys", async () => {
     await db.updateSettings({
       mitmSudoEncrypted: "enc:sudo",
