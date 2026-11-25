@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useId, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import PropTypes from "prop-types";
 import {
@@ -16,6 +16,9 @@ export const FOCUSABLE =
 const PORTAL_ATTR = "data-signal-portal";
 // Node.DOCUMENT_POSITION_FOLLOWING, inlined so this module also loads outside a browser.
 const DOCUMENT_POSITION_FOLLOWING = 4;
+// Layout effects run in the commit that mutates the DOM, before the browser can
+// dispatch another event; fall back to a passive effect on the server.
+const useIsomorphicLayoutEffect = typeof window === "undefined" ? useEffect : useLayoutEffect;
 
 /** Append a portal host to `doc.body`. Returns it; the caller removes it. */
 export function mountPortalNode(doc) {
@@ -203,7 +206,12 @@ export function isLaterPortalPress(container, target) {
 
 /**
  * Esc/outside-press controller (DOM only). Only the topmost layer in `stack`
- * reacts, so nested overlays close inside-out.
+ * reacts, so nested overlays close inside-out. `closeOnEscape` and
+ * `closeOnOutside` are booleans or getters read on each event, so a caller can
+ * flip them (busy → idle) without re-registering the layer (YAN-2452).
+ * @param {object} options
+ * @param {boolean|(() => boolean)} [options.closeOnEscape=true]
+ * @param {boolean|(() => boolean)} [options.closeOnOutside=true]
  * @returns {() => void} cleanup
  */
 export function createDismissLayer({
@@ -215,14 +223,15 @@ export function createDismissLayer({
   stack = dismissStack,
 }) {
   const handler = () => onClose?.();
+  const allows = (flag) => (typeof flag === "function" ? flag() : flag);
   const onKeyDown = (event) => {
     // Bubble phase runs after the target/React listeners, so an inline editor
     // inside the dialog can cancel its own Esc first (preventDefault or
     // stopPropagation). Honor that: only an unterminated Esc is a dismiss.
     if (
       event.key === "Escape" &&
-      closeOnEscape &&
       stack.top() === handler &&
+      allows(closeOnEscape) &&
       !event.defaultPrevented
     ) {
       // preventDefault marks it handled for the other layers' listeners on
@@ -235,8 +244,8 @@ export function createDismissLayer({
   const onPointerDown = (event) => {
     const container = getContainer?.();
     if (
-      closeOnOutside &&
       stack.top() === handler &&
+      allows(closeOnOutside) &&
       container &&
       !container.contains(event.target) &&
       !isLaterPortalPress(container, event.target)
@@ -337,9 +346,13 @@ export function useScrollLock(active = true) {
 }
 
 /**
- * Close on Escape and outside pointer press while `active`. Registers in the
+ * Close on Escape and outside pointer press while `enabled`. Registers in the
  * shared dismiss stack so nested overlays close inside-out. Disabled items
- * never fire `onClose`.
+ * never fire `onClose`. `onClose`, `closeOnEscape` and `closeOnOutside` are
+ * read from refs at event time, so the layer registers once per open: a
+ * passive effect re-registering on `closeOnEscape` would leave a gap after the
+ * DOM already shows the idle phase in which Esc is dropped (YAN-2452), and
+ * would re-push the layer above any nested one.
  * @param {object} options
  * @param {() => void} options.onClose
  * @param {React.RefObject<HTMLElement>} [options.containerRef]
@@ -356,16 +369,24 @@ export function useDismiss({
 } = {}) {
   const closeRef = useRef(onClose);
   closeRef.current = onClose;
+  const escapeRef = useRef(closeOnEscape);
+  const outsideRef = useRef(closeOnOutside);
+  // Synced in the commit, not during render: a render React discards or
+  // defers must not let Esc close a dialog whose DOM still shows "busy".
+  useIsomorphicLayoutEffect(() => {
+    escapeRef.current = closeOnEscape;
+    outsideRef.current = closeOnOutside;
+  }, [closeOnEscape, closeOnOutside]);
   useEffect(() => {
     if (!enabled || typeof document === "undefined") return undefined;
     return createDismissLayer({
       doc: document,
       onClose: () => closeRef.current?.(),
       getContainer: () => containerRef?.current,
-      closeOnEscape,
-      closeOnOutside,
+      closeOnEscape: () => escapeRef.current,
+      closeOnOutside: () => outsideRef.current,
     });
-  }, [enabled, closeOnEscape, closeOnOutside, containerRef]);
+  }, [enabled, containerRef]);
 }
 
 /** True when the OS asks for reduced motion. Reactive to live OS changes. */
