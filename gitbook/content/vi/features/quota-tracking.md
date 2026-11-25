@@ -570,90 +570,138 @@ Optimization:
 
 ## Truy cập API
 
-### Lấy trạng thái Quota
+### Lấy trạng thái quota (từ xa / API key của gateway)
+
+`GET /v1/quota` trả về snapshot quota chỉ đọc theo từng tài khoản, được ủy quyền bằng API key của gateway. Endpoint này hoạt động cả khi chạy cục bộ lẫn qua tunnel từ xa hoặc reverse proxy, chỉ đọc các snapshot đã lưu cache phía server (đường request này không bao giờ làm mới hay xoay vòng token OAuth và không gọi provider upstream nào), và không bao giờ giải mã hay trả về secret, token hoặc thông tin xác thực.
+
+Xác thực bằng `Authorization: Bearer <your-api-key>` hoặc `x-api-key: <your-api-key>` (tránh truyền `?key=` trong query string, vì nó có thể bị ghi lại trong log của proxy và log truy cập). Truyền tham số query tùy chọn `?provider=<provider-id-or-alias>` (ví dụ `?provider=claude` hoặc `?provider=cc`) để thu hẹp danh sách về một provider.
+
+Khi bật lưu trữ API key dạng hash (chế độ nhiều người dùng), kết quả được giới hạn trong workspace của API key, các grant kết nối đang hoạt động (không tiết lộ email của người cấp) và danh sách model được phép (`allowedModels` lọc ở cấp provider; danh sách `allowedModels` rỗng nghĩa là không giới hạn, kể cả khi đã đặt `allowedCombos`). Với kiểu lưu trữ một người dùng cũ, mọi kết nối đang hoạt động đều được trả về. Với các kết nối của chính workspace không có tên hiển thị tùy chỉnh, `name` dùng email hoặc id của kết nối.
 
 ```bash
-GET http://localhost:20128/api/quota
-Authorization: Bearer your-api-key
+curl -H "Authorization: Bearer your-api-key" \
+  https://your-gateway.example.com/v1/quota
+
+# Filter to a single provider (canonical id or alias)
+curl -H "Authorization: Bearer your-api-key" \
+  "http://localhost:20128/v1/quota?provider=claude"
+```
 
 Response:
+
+```json
 {
-  "providers": [
+  "object": "list",
+  "accounts": [
     {
-      "id": "cc",
-      "name": "Claude Code",
-      "quota": {
-        "used": 2.5,
-        "limit": 5,
-        "unit": "hours",
-        "percentage": 50
+      "id": "conn_01",
+      "name": "claude-work",
+      "provider": "claude",
+      "planTier": "default_claude_max_20x",
+      "fiveHour": {
+        "used": 42,
+        "limit": 100,
+        "unit": "provider",
+        "percentage": 42,
+        "remainingPercentage": 58,
+        "nextReset": "2026-11-25T15:00:00.000Z",
+        "observedAt": "2026-11-25T12:34:56.000Z"
       },
-      "reset": {
-        "type": "rolling",
-        "window": "5h",
-        "nextReset": "2026-02-04T06:45:00Z"
+      "weekly": {
+        "used": 18,
+        "limit": 100,
+        "unit": "provider",
+        "percentage": 18,
+        "remainingPercentage": 82,
+        "nextReset": "2026-12-01T00:00:00.000Z",
+        "observedAt": "2026-11-25T12:34:56.000Z"
       },
-      "cost": {
-        "today": 0,
-        "month": 0,
-        "currency": "USD"
-      }
+      "windows": [
+        {
+          "kind": "5h",
+          "used": 42,
+          "limit": 100,
+          "unit": "provider",
+          "percentage": 42,
+          "remainingPercentage": 58,
+          "nextReset": "2026-11-25T15:00:00.000Z",
+          "observedAt": "2026-11-25T12:34:56.000Z",
+          "source": "probe"
+        },
+        {
+          "kind": "7d",
+          "used": 18,
+          "limit": 100,
+          "unit": "provider",
+          "percentage": 18,
+          "remainingPercentage": 82,
+          "nextReset": "2026-12-01T00:00:00.000Z",
+          "observedAt": "2026-11-25T12:34:56.000Z",
+          "source": "probe"
+        }
+      ],
+      "updatedAt": "2026-11-25T12:34:56.000Z",
+      "stale": false
     },
     {
-      "id": "glm",
-      "name": "GLM-4.7",
-      "quota": {
-        "used": 7000000,
-        "limit": 10000000,
-        "unit": "tokens",
-        "percentage": 70
+      "id": "conn_02",
+      "name": "kimi-main",
+      "provider": "kimi",
+      "planTier": null,
+      "fiveHour": {
+        "used": 120000,
+        "limit": 500000,
+        "unit": "provider",
+        "percentage": 24,
+        "remainingPercentage": 76,
+        "nextReset": "2026-11-25T16:00:00.000Z",
+        "observedAt": "2026-11-25T12:34:56.000Z"
       },
-      "reset": {
-        "type": "daily",
-        "time": "10:00 AM UTC+8",
-        "nextReset": "2026-02-04T10:00:00+08:00"
-      },
-      "cost": {
-        "today": 4.20,
-        "month": 52.00,
-        "currency": "USD"
-      }
+      "weekly": null,
+      "windows": [
+        {
+          "kind": "5h",
+          "used": 120000,
+          "limit": 500000,
+          "unit": "provider",
+          "percentage": 24,
+          "remainingPercentage": 76,
+          "nextReset": "2026-11-25T16:00:00.000Z",
+          "observedAt": "2026-11-25T12:34:56.000Z",
+          "source": "probe"
+        }
+      ],
+      "updatedAt": "2026-11-25T12:34:56.000Z",
+      "stale": false
     }
   ]
 }
 ```
 
-### Lấy Usage Stats
+- `fiveHour` và `weekly` hiển thị trực tiếp các cửa sổ `5h` và `7d` (hoặc `null` khi provider đó không báo cáo cửa sổ này hoặc không có cửa sổ còn hiệu lực nào trong cache). `windows` gồm mọi cửa sổ còn hiệu lực đã cache của tài khoản, chẳng hạn `month` (Cursor, GitHub) hoặc cửa sổ theo model (`model:*`).
+- `used` và `limit` phản ánh giá trị do provider báo cáo khi có (`unit: "provider"`, như số token của Kimi hoặc mức sử dụng 0–100 của Claude/Codex), và chuyển sang thang phần trăm `0–100` (`unit: "percentage"`) khi chỉ quan sát được tỷ lệ sử dụng (ví dụ từ response header). `percentage` (% đã dùng, giới hạn trong `0–100`) và `remainingPercentage` (% còn lại) luôn là phần trăm đã chuẩn hóa; `nextReset` là timestamp ISO-8601 UTC trong tương lai hoặc `null` (các cửa sổ đã qua thời điểm reset sẽ bị loại bỏ).
+- Snapshot được nạp vào bộ nhớ từ response header upstream (thu thập thụ động), các lần kiểm tra quota trên dashboard và trình poll snapshot chạy nền (chạy cho các chiến lược có trọng số và thành viên của combo). `stale` là `true` khi không có cửa sổ nào còn hiệu lực (bao gồm snapshot bị thiếu, đã hết hạn hoặc chỉ có thông tin tier) hoặc khi `observedAt` của cửa sổ mới nhất đã cũ từ 15 phút trở lên.
+
+### Endpoint usage của dashboard (session / xác thực CLI cục bộ)
+
+Các route usage của dashboard dưới `/api/usage/*` (như `/api/usage/stats`, `/api/usage/logs` và `/api/usage/export`) và `/api/home/quota` là API của dashboard, được xác thực bằng cookie của session dashboard đã đăng nhập hoặc token CLI cục bộ; chúng không chấp nhận Bearer API key của gateway. Không có route `/api/quota` hay `/api/usage`; các đường dẫn `/api/*` chưa được map sẽ bị từ chối mặc định (fail closed) với `403 LOCAL_ONLY`.
+
+### Xuất lịch sử usage
+
+Nút Xuất trên trang Thống kê (tab Tổng quan) tải xuống khoảng thời gian hiện tại, kể cả khoảng tùy chỉnh, với các bộ lọc workspace/thành viên/API key đang áp dụng. Bạn cũng có thể tải trực tiếp:
 
 ```bash
-GET http://localhost:20128/api/usage?period=today
-Authorization: Bearer your-api-key
-
-Response:
-{
-  "period": "today",
-  "date": "2026-02-04",
-  "summary": {
-    "requests": 1234,
-    "tokens": 26000000,
-    "cost": 4.80
-  },
-  "byModel": [
-    {
-      "model": "cc/claude-opus-4-5",
-      "requests": 456,
-      "tokens": 15000000,
-      "cost": 0
-    },
-    {
-      "model": "glm/glm-4.7",
-      "requests": 234,
-      "tokens": 8000000,
-      "cost": 4.80
-    }
-  ]
-}
+GET http://localhost:20128/api/usage/export?period=7d&format=csv&granularity=day
 ```
+
+- `period`: một khoảng thời gian có tên (`today`, `24h`, `7d`, `30d`, `60d`, `90d`, `all`) hoặc `custom` với `from`/`to` là các ngày cục bộ `YYYY-MM-DD`, tính cả hai đầu (tối đa 366 ngày).
+- `format`: `csv` (mặc định; một mảng JSON khi là `json`). Response được stream và gửi dưới dạng file tải xuống (`tokenhop-usage-<range>-<granularity>.csv|json`).
+- `granularity`: `day` (mặc định) cho một dòng mỗi ngày × provider/model/tài khoản/API key/endpoint từ bản tổng hợp hàng ngày (với `today`/`24h`, được gộp từ lịch sử từng request để khớp với các thẻ); `request` cho một dòng mỗi request từ lịch sử request đã lưu, với bất kỳ khoảng thời gian hay khoảng tùy chỉnh nào. Việc lưu giữ lịch sử là tùy chọn bật, nên nếu bạn đã bật, các dòng request có thể thiếu ở những ngày đã bị dọn; các dòng hàng ngày không bị ảnh hưởng vì chúng lấy từ bản tổng hợp.
+- `bom`: `1` thêm byte order mark UTF-8 vào đầu output CSV để Excel trên Windows đọc đúng tên model, tài khoản và key có ký tự không phải ASCII (các mục **CSV for Excel** trong menu Xuất đặt giá trị này). Mặc định `0`/không truyền: không có BOM, RFC 4180 thuần. Chỉ hợp lệ với `format=csv`; mọi giá trị khác trả về 400.
+
+Các cột: timestamp (hoặc ngày), provider, model, tài khoản, id tài khoản, tên API key, API key đã che, endpoint, token prompt/completion/cache, chi phí, trạng thái (dòng request), và ước tính của token saver (`saved_tokens_est`: theo từng request trên dòng request; trên dòng hàng ngày là tổng mức tiết kiệm trong ngày của nhóm đó, nên vẫn còn sau khi lịch sử request bị dọn). API key gốc không bao giờ được xuất, chỉ có tên key và tiền tố đã che. `format`, `granularity`, `period`, `bom` hoặc khoảng ngày không hợp lệ trả về 400; áp dụng cùng yêu cầu đăng nhập và phạm vi workspace như các endpoint usage khác.
+
+Tên header là một hợp đồng ổn định, máy đọc được: `snake_case` tiếng Anh (`date`, `timestamp`, `prompt_tokens`, `api_key_masked`, …) ở mọi ngôn ngữ của dashboard, để script và bảng tính đọc file xuất vẫn hoạt động khi đổi ngôn ngữ giao diện. Dấu phân cách CSV luôn là dấu phẩy; ở các locale dùng `;`, hãy nhập file bằng **Data → From Text/CSV** của Excel và chọn dấu phẩy làm dấu phân cách.
 
 ---
 
