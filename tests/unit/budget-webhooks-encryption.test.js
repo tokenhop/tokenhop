@@ -1,8 +1,8 @@
 // YAN-1831 budget webhook secrets under credential encryption (D10): legacy
 // plaintext encrypted by activation; on an encrypted instance a webhook
 // create in a keyless workspace mints its DEK through the purpose-named
-// guarded provisioner (and only there: createConnection still fails
-// KEY_MISSING); a failed audit rolls the DEK back; DEK rotation re-encrypts
+// guarded provisioner (without opening ensureWorkspaceDekSync / direct
+// runtime encodes); a failed audit rolls the DEK back; DEK rotation re-encrypts
 // the secret; a lost DEK fails delivery closed until a rotate re-provisions;
 // workspace delete and snapshot restore remove the row; the secret never
 // lands in the database files.
@@ -146,7 +146,7 @@ describe("encrypted instance", () => {
     await activate();
   });
 
-  it("create in a keyless workspace provisions its DEK; createConnection elsewhere still fails", async () => {
+  it("create in a keyless workspace provisions only its DEK; ensureWorkspaceDekSync stays closed", async () => {
     const ws = (await db.createSharedWorkspace(t.a.ctx, { name: "Fresh" })).id;
     const other = (await db.createSharedWorkspace(t.a.ctx, { name: "Other" })).id;
     expect(dekRow(ws)).toBeUndefined();
@@ -161,14 +161,15 @@ describe("encrypted instance", () => {
     expect(hookRow(ws).data).not.toContain(secret);
     expect((await repo.getBudgetWebhookForDeliveryUnscoped(ws)).secret).toBe(secret);
 
-    await expect(
-      db.createConnection(owner.ctx, other, {
-        provider: "openai",
-        authType: "apikey",
-        name: "x",
-        apiKey: "sk-x",
+    const { loadMasterKey } = await import("@/lib/security/masterKey.js");
+    const rt = cs.prepareCredentialContext(a2, await loadMasterKey());
+    expect(() => cs.ensureWorkspaceDekSync(a2, other, rt)).toThrow(code("KEY_MISSING"));
+    expect(() =>
+      cs.encodeCredentialRowSync(a2, { id: "row-x", data: { apiKey: "sk-x" } }, rt, {
+        table: "providerConnections",
+        workspaceId: other,
       }),
-    ).rejects.toMatchObject({ code: "KEY_MISSING" });
+    ).toThrow(code("KEY_MISSING"));
     expect(dekRow(other)).toBeUndefined();
   });
 

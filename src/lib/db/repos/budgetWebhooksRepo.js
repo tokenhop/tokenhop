@@ -126,7 +126,9 @@ export async function saveBudgetWebhook(
     let data = null;
     if (mint) {
       secret = newSecret();
-      if (credCtx.encrypted) provisionBudgetWebhookDekSync(db, ws, credCtx);
+      if (credCtx.encrypted) {
+        provisionBudgetWebhookDekSync(db, ws, credCtx, { replacingWebhook: !create });
+      }
       data = encodeCredentialRowSync(db, { id, data: { secret } }, credCtx, {
         table: TABLE,
         workspaceId: ws,

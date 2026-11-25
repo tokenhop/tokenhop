@@ -195,19 +195,71 @@ function insertWrappedDek(db, workspaceId, ctx) {
 }
 
 /**
+ * True when `data` holds at least one non-empty plaintext secret string on the
+ * D10 allow-list for `table` (the exact leaves `encodeCredentialRowSync` seals).
+ */
+export function hasCoveredSecret(data, table) {
+  checkTable(table);
+  if (!data || typeof data !== "object" || Array.isArray(data)) return false;
+  return CREDENTIAL_FIELD_ALLOWLIST[table].some((field) => isSecretString(getLeaf(data, field)));
+}
+
+function blobHasEnvelope(raw, table) {
+  if (typeof raw !== "string") return false;
+  let blob;
+  try {
+    blob = JSON.parse(raw);
+  } catch {
+    return true; // corrupt blob on an encrypted workspace → fail closed
+  }
+  if (!blob || typeof blob !== "object" || Array.isArray(blob)) return true;
+  return CREDENTIAL_FIELD_ALLOWLIST[table].some((field) => {
+    const leaf = getLeaf(blob, field);
+    return isEnvelopeShape(leaf) || isLookalike(leaf);
+  });
+}
+
+// Distinguish a genuinely keyless workspace from one whose DEK was lost/deleted
+// while encrypted rows remain. Runs only when workspaceKeys has no row.
+// `skipTables` is used only when a write replaces the sole encrypted row of a
+// single-row table (budgetWebhooks rotateSecret), so orphaned ciphertext in
+// every other store still fails closed.
+function workspaceHasEncryptedRows(db, workspaceId, { skipTables = [] } = {}) {
+  for (const table of ["providerConnections", "providerNodes", "budgetWebhooks"]) {
+    if (skipTables.includes(table)) continue;
+    const rows = db.all(`SELECT data FROM ${table} WHERE workspaceId = ?`, [workspaceId]);
+    if (rows.some((r) => blobHasEnvelope(r.data, table))) return true;
+  }
+  const defaultId = db.get(`SELECT value FROM _meta WHERE key = 'defaultWorkspaceId'`)?.value;
+  if (defaultId && defaultId === workspaceId) {
+    const settingsRow = db.get(`SELECT data FROM settings WHERE id = 1`);
+    if (settingsRow && blobHasEnvelope(settingsRow.data, "settings")) return true;
+  }
+  return false;
+}
+
+/**
  * Guarded runtime DEK provisioner (deliberately NOT a general runtime create
- * path). Runtime DEK provisioning has exactly two entry points, each named for
- * its only caller: move target (YAN-701) and budget webhook secret write
- * (YAN-1831). `ensureWorkspaceDekSync` stays fail-closed for every other
- * runtime write (YAN-1055). Admits only a genuine runtime context from
+ * path). Runtime DEK provisioning has exactly four entry points, each named for
+ * its only caller: move target (YAN-701), budget webhook secret write
+ * (YAN-1831), workspace snapshot import (YAN-1055), and connection creation
+ * (YAN-1055). `ensureWorkspaceDekSync` stays fail-closed for every other
+ * runtime write. Admits only a genuine runtime context from
  * prepareCredentialContext holding a root for an encrypted instance; rereads
  * the live marker (kid must still match) and the workspace row inside the
  * caller's transaction. An existing DEK is validated through liveDek (unwrap +
  * generation check); a missing one gets a FRESH random DEK — a source DEK is
- * never copied. Not re-exported from any barrel.
+ * never copied. When `rejectExistingCiphertext` is set, a missing DEK on a
+ * workspace that already holds encrypted credential rows fails closed with
+ * KEY_MISSING instead of masking a lost key. Not re-exported from any barrel.
  * @returns {{kid:string,dek:Buffer}}
  */
-function provisionRuntimeDekSync(db, workspaceId, ctx) {
+function provisionRuntimeDekSync(
+  db,
+  workspaceId,
+  ctx,
+  { rejectExistingCiphertext = false, skipTables = [] } = {},
+) {
   if (typeof workspaceId !== "string" || workspaceId.length === 0) {
     fail("KEY_MISSING", "workspace id required");
   }
@@ -224,18 +276,39 @@ function provisionRuntimeDekSync(db, workspaceId, ctx) {
   }
   const existing = liveDek(db, workspaceId, ctx);
   if (existing) return existing;
+  if (rejectExistingCiphertext && workspaceHasEncryptedRows(db, workspaceId, { skipTables })) {
+    fail("KEY_MISSING", "workspace key missing for existing encrypted credentials");
+  }
   insertWrappedDek(db, workspaceId, ctx);
   return liveDek(db, workspaceId, ctx);
 }
 
 /** YAN-701 move-target entry point; see provisionRuntimeDekSync. */
 export function provisionMoveTargetDekSync(db, workspaceId, ctx) {
-  return provisionRuntimeDekSync(db, workspaceId, ctx);
+  return provisionRuntimeDekSync(db, workspaceId, ctx, { rejectExistingCiphertext: true });
 }
 
 /** YAN-1831 budget webhook secret entry point; see provisionRuntimeDekSync. */
-export function provisionBudgetWebhookDekSync(db, workspaceId, ctx) {
-  return provisionRuntimeDekSync(db, workspaceId, ctx);
+export function provisionBudgetWebhookDekSync(
+  db,
+  workspaceId,
+  ctx,
+  { replacingWebhook = false } = {},
+) {
+  return provisionRuntimeDekSync(db, workspaceId, ctx, {
+    rejectExistingCiphertext: true,
+    skipTables: replacingWebhook ? ["budgetWebhooks"] : [],
+  });
+}
+
+/** YAN-1055 workspace-import entry point; see provisionRuntimeDekSync. */
+export function provisionWorkspaceImportDekSync(db, workspaceId, ctx) {
+  return provisionRuntimeDekSync(db, workspaceId, ctx, { rejectExistingCiphertext: true });
+}
+
+/** YAN-1055 connection-create entry point; see provisionRuntimeDekSync. */
+export function provisionConnectionCreateDekSync(db, workspaceId, ctx) {
+  return provisionRuntimeDekSync(db, workspaceId, ctx, { rejectExistingCiphertext: true });
 }
 
 // ─── strict credential blob parse ────────────────────────────────────────

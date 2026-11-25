@@ -4,9 +4,12 @@ import { assertCtx } from "@/lib/users/errors.js";
 import { audit } from "@/lib/users/audit.js";
 import { defaultWorkspaceIdUnscoped, memberWorkspaceId } from "./ownership.js";
 import {
+  clearCredentialCache,
   decodeCredentialRowSync,
   encodeCredentialRowSync,
+  hasCoveredSecret,
   prepareCredentialContext,
+  provisionConnectionCreateDekSync,
 } from "../helpers/credentialStorage.js";
 import {
   readCredentialEncryptionState,
@@ -390,9 +393,17 @@ export async function createProviderConnectionUnscoped(data, opts = {}) {
   const db = await getAdapter();
   const ctx = await prepareCredentialCtx(db);
   const removed = [];
-  const conn = await db.transaction(() =>
-    createInTx(db, data, opts, { workspaceId: defaultWorkspaceIdUnscoped(db) }, ctx, removed),
-  );
+  let workspaceId = null;
+  let conn;
+  try {
+    conn = await db.transaction(() => {
+      workspaceId = defaultWorkspaceIdUnscoped(db);
+      return createInTx(db, data, opts, { workspaceId }, ctx, removed);
+    });
+  } catch (err) {
+    if (ctx.encrypted && workspaceId) clearCredentialCache(db, workspaceId);
+    throw err;
+  }
   recordAbsorbed(removed, conn);
   return conn;
 }
@@ -465,6 +476,15 @@ function absorbDuplicateInTx(db, loserId, keeperId, nowMs, keeperGrantIds) {
       revokedAt: g.revokedAt ?? null,
     })),
   };
+}
+
+// YAN-1055: provision a fresh DEK for a genuinely keyless workspace right
+// before sealing a secret-bearing connection inside createInTx (never on
+// updateConnection or other runtime writes).
+function provisionForCreateIfNeeded(db, target, workspaceId, ctx) {
+  if (ctx.encrypted && workspaceId && hasCoveredSecret(connToRow(target).data, TABLE)) {
+    provisionConnectionCreateDekSync(db, workspaceId, ctx);
+  }
 }
 
 // Dedup and priority partition by workspace: the same account in two
@@ -550,6 +570,7 @@ function createInTx(db, data, { rejectDuplicateName = false } = {}, owner = {}, 
     } else {
       applyPsdDelta(merged, existing, normalized);
     }
+    provisionForCreateIfNeeded(db, merged, workspaceId, ctx);
     upsert(db, merged, ctx);
     if (data.provider === "codex") {
       // Only dead rows with a proven matching account id qualify
@@ -614,6 +635,7 @@ function createInTx(db, data, { rejectDuplicateName = false } = {}, owner = {}, 
   }
   if (data.email !== undefined) conn.email = data.email;
 
+  provisionForCreateIfNeeded(db, conn, workspaceId, ctx);
   upsert(db, conn, ctx);
   reorderInTx(db, data.provider, workspaceId);
   return conn;
@@ -854,17 +876,26 @@ export async function createConnection(ctx, workspaceId, data, opts = {}) {
   const db = await getAdapter();
   const credCtx = await prepareCredentialCtx(db);
   const removed = [];
-  const conn = await db.transaction(() => {
-    memberWorkspaceId(ctx, db, workspaceId);
-    return createInTx(
-      db,
-      data,
-      opts,
-      { workspaceId, createdByUserId: ctx.userId },
-      credCtx,
-      removed,
-    );
-  });
+  let authorizedWs = null;
+  let conn;
+  try {
+    conn = await db.transaction(() => {
+      authorizedWs = memberWorkspaceId(ctx, db, workspaceId);
+      return createInTx(
+        db,
+        data,
+        opts,
+        { workspaceId: authorizedWs, createdByUserId: ctx.userId },
+        credCtx,
+        removed,
+      );
+    });
+  } catch (err) {
+    // Scope cleanup to a workspace that passed authorization so a rejected
+    // or undefined workspaceId never evicts unrelated workspaces' cached DEKs.
+    if (credCtx.encrypted && authorizedWs) clearCredentialCache(db, authorizedWs);
+    throw err;
+  }
   recordAbsorbed(removed, conn);
   // YAN-367: never audit credential fields — only the allow-listed identity fields.
   await audit(
