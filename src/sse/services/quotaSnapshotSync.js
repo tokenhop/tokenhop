@@ -71,6 +71,7 @@ function usedFractionFor(quota) {
  * - meta-code: `Session (5h)`→5h; `Weekly`→7d
  * - ollama: `Session (5h)`→5h; `Weekly (7d)`→7d
  * - xiaomi-mimo: `Weekly`→7d
+ * - grok-cli: `Weekly SuperGrok`→7d; `Monthly included`→month (skips `Credits`, `On-demand`, `Prepaid`)
  * - minimax/minimax-cn: skipped (model-scoped display names, not model ids)
  */
 export function kindForName(provider, quotaKey, quota) {
@@ -138,6 +139,9 @@ export function kindForName(provider, quotaKey, quota) {
       return lower === "weekly (7d)" ? "7d" : null;
     case "xiaomi-mimo":
       return lower === "weekly" ? "7d" : null;
+    case "grok-cli":
+      if (lower === "weekly supergrok") return "7d";
+      return lower === "monthly included" ? "month" : null;
     default:
       return null;
   }
