@@ -177,7 +177,7 @@ export async function GET(request, { params }) {
     }
 
     if (cached) {
-      const quotaSnapshot = buildQuotaSnapshotView(connection.id);
+      const quotaSnapshot = buildQuotaSnapshotView(connection.id, { includeQuotaKeys: true });
       return Response.json(
         { cached: true, quotaSnapshot, ...(await readQuotaTrends(loaded, connection.id)) },
         { headers: { "Cache-Control": "no-store" } },

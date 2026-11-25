@@ -30,7 +30,7 @@ export function buildCachedQuotaEntry(payload) {
     const usedPct = Math.min(100, Math.max(0, fraction * 100));
     rows.push({
       name: windowLabel(window.kind),
-      quotaType: window.kind,
+      quotaType: window.quotaKey || window.kind,
       used: usedPct,
       total: 100,
       resetAt: typeof window.resetsAt === "string" && window.resetsAt ? window.resetsAt : null,

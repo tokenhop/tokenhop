@@ -280,7 +280,13 @@ export async function recordUsageSnapshot({
           rawUsed !== null && rawUsed >= 0 && rawTotal !== null && rawTotal > 0
             ? { used: rawUsed, limit: rawTotal }
             : {};
-        byKind.set(kind, { kind, usedFraction, ...counts, resetsAt: quota.resetAt ?? null });
+        byKind.set(kind, {
+          kind,
+          quotaKey,
+          usedFraction,
+          ...counts,
+          resetsAt: quota.resetAt ?? null,
+        });
       }
     }
 
@@ -391,7 +397,10 @@ function toIso(ms) {
 }
 
 /** API view of a connection's snapshot (owned here), or null when none exists. */
-export function buildQuotaSnapshotView(connectionId, { manualWeight, model } = {}) {
+export function buildQuotaSnapshotView(
+  connectionId,
+  { manualWeight, model, includeQuotaKeys = false } = {},
+) {
   try {
     const snapshot = getSnapshot(connectionId);
     if (!snapshot) return null;
@@ -399,6 +408,7 @@ export function buildQuotaSnapshotView(connectionId, { manualWeight, model } = {
       planTier: snapshot.planTier ?? null,
       windows: snapshot.windows.map((window) => ({
         kind: window.kind,
+        ...(includeQuotaKeys && window.quotaKey ? { quotaKey: window.quotaKey } : {}),
         usedFraction: window.usedFraction,
         ...(window.used !== undefined && window.limit !== undefined
           ? { used: window.used, limit: window.limit }

@@ -100,6 +100,7 @@ describe("restart survival: snapshots, forecasts, and rate-limit cache", () => {
     expect(restored.windows).toHaveLength(1);
     expect(restored.windows[0]).toMatchObject({
       kind: "5h",
+      quotaKey: "session (5h)",
       source: "probe",
       observedAt: NOW,
     });

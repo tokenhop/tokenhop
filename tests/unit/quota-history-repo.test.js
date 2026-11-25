@@ -308,6 +308,43 @@ describe("write gate atomicity and hydration", () => {
   });
 });
 
+describe("hydration tie selection and quotaKey", () => {
+  it("picks tightest utilization on tied latest ts and exposes the raw quotaKey", async () => {
+    const db = await getAdapter();
+    const conn = await createConn("claude", "tie");
+    const NOW = BASE + 10 * HOUR;
+    const ins = (key, used, resetsAt, ts) =>
+      db.run(
+        `INSERT INTO quotaHistory (connectionId, provider, windowKind, quotaKey, usedFraction, resetsAt, source, ts)
+         VALUES (?, 'claude', '5h', ?, ?, ?, 'probe', ?)`,
+        [conn.id, key, used, resetsAt, ts],
+      );
+    // Same probe timestamp, two quota keys: highest id carries the LOWER utilization.
+    ins("session (5h)", 0.8, NOW + HOUR, NOW - MIN);
+    ins("other (5h)", 0.2, NOW + HOUR, NOW - MIN);
+    // Older, even tighter reading must not win over the latest ts.
+    ins("old (5h)", 0.99, NOW + HOUR, NOW - 2 * MIN);
+
+    const { snapshots } = await loadLatestSnapshotsUnscoped({ now: NOW });
+    expect(snapshots[0].windows).toEqual([
+      {
+        kind: "5h",
+        usedFraction: 0.8,
+        resetsAt: NOW + HOUR,
+        observedAt: NOW - MIN,
+        source: "probe",
+        quotaKey: "session (5h)",
+      },
+    ]);
+
+    // Blank quotaKey is omitted entirely.
+    db.run(`DELETE FROM quotaHistory WHERE connectionId = ?`, [conn.id]);
+    ins("", 0.5, NOW + HOUR, NOW - MIN);
+    const blank = await loadLatestSnapshotsUnscoped({ now: NOW });
+    expect(blank.snapshots[0].windows[0]).not.toHaveProperty("quotaKey");
+  });
+});
+
 describe("scoped history reads and downsampling", () => {
   it("enforces workspace/user scoping in SQL and fails closed on malformed ctx", async () => {
     const db = await getAdapter();

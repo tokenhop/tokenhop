@@ -95,16 +95,21 @@ describe("buildCachedQuotaEntry", () => {
     cached: true,
     quotaSnapshot: {
       windows: [
-        { kind: "5h", usedFraction: 0.4, resetsAt: "2026-11-24T10:00:00.000Z" },
+        {
+          kind: "5h",
+          quotaKey: "session",
+          usedFraction: 0.4,
+          resetsAt: "2026-11-24T10:00:00.000Z",
+        },
         { kind: "model:gemini-2.5-pro", usedFraction: 1.4, resetsAt: null },
         { kind: "bad", usedFraction: "x" },
       ],
       updatedAt: "2026-11-24T08:00:00.000Z",
       stale: false,
     },
-    forecasts: {},
+    forecasts: { session: { state: "on-track" } },
     history: {
-      "5h": [
+      session: [
         { ts: T0, usedPct: 10 },
         { ts: T0 + DAY, usedPct: 40 },
       ],
@@ -118,6 +123,7 @@ describe("buildCachedQuotaEntry", () => {
     expect(entry.quotas).toHaveLength(2);
     expect(entry.quotas[0]).toMatchObject({ name: "5h", used: 40, total: 100 });
     expect(entry.quotas[0].history).toHaveLength(2);
+    expect(entry.quotas[0].forecast).toEqual({ state: "on-track" });
     expect(entry.quotas[1]).toMatchObject({ name: "gemini-2.5-pro", used: 100, resetAt: null });
   });
 

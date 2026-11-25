@@ -381,7 +381,7 @@ export async function loadLatestSnapshotsUnscoped({ now = Date.now() } = {}) {
      JOIN quotaHistory q ON q.id = (
        SELECT id FROM quotaHistory
        WHERE connectionId = k.connectionId AND windowKind = k.windowKind AND ts <= ?
-       ORDER BY ts DESC, id DESC LIMIT 1
+       ORDER BY ts DESC, usedFraction DESC, id DESC LIMIT 1
      )
      WHERE q.resetsAt > ? OR (q.resetsAt = 0 AND q.ts > ?)`,
     [t, t, ttlCutoff],
@@ -408,6 +408,7 @@ export async function loadLatestSnapshotsUnscoped({ now = Date.now() } = {}) {
       resetsAt: row.resetsAt,
       observedAt: row.ts,
       source: row.source === "header" ? "header" : "probe",
+      ...(row.quotaKey ? { quotaKey: row.quotaKey } : {}),
     });
   }
 

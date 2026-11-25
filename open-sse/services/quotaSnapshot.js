@@ -81,6 +81,9 @@ function normalizeWindows(windows, source, nowMs) {
     const hasCounts = rawUsed !== null && rawUsed >= 0 && rawLimit !== null && rawLimit > 0;
     normalized.push({
       kind,
+      ...(typeof window.quotaKey === "string" && window.quotaKey
+        ? { quotaKey: window.quotaKey }
+        : {}),
       usedFraction,
       ...(hasCounts ? { used: rawUsed, limit: rawLimit } : {}),
       resetsAt: parseResetMs(window.resetsAt, nowMs) || 0,
@@ -188,6 +191,9 @@ export function restoreSnapshot(connectionId, provider, windows, opts = {}, nowM
         const resetsAt = parseResetMs(window.resetsAt, now) || 0;
         const candidate = {
           kind,
+          ...(typeof window.quotaKey === "string" && window.quotaKey
+            ? { quotaKey: window.quotaKey }
+            : {}),
           usedFraction,
           resetsAt,
           observedAt,
