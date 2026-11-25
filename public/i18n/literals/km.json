@@ -851,6 +851,7 @@
   "Drop filler, keep grammar": "លុបពាក្យបំពេញ រក្សាវេយ្យាករណ៍",
   "Duration": "រយៈពេល",
   "Each conversation stays on the account that answered it, so the provider's prompt cache stays warm. It moves only if that account is unavailable. New conversations are still spread by the strategy.": "ការសន្ទនានីមួយៗស្ថិតនៅលើគណនីដែលបានឆ្លើយវា ដូច្នេះឃ្លាំងសម្ងាត់សំណើរបស់អ្នកផ្តល់សេវានៅតែอุ่น។ វានឹងផ្លាស់ទីលុះត្រាតែគណនីនោះមិនអាចប្រើបាន។ ការសន្ទនាថ្មីៗនៅតែត្រូវបានចែកចាយតាមយុទ្ធសាស្ត្រ។",
+  "Each conversation stays on the model that answered it, so the provider's prompt cache stays warm. If that model fails, the request returns its error instead of moving the conversation to another model. New conversations are still spread by the strategy.": "ការសន្ទនានីមួយៗនៅតែប្រើម៉ូដែលដែលបានឆ្លើយតប ដើម្បីឲ្យឃ្លាំងសម្ងាត់ prompt របស់អ្នកផ្តល់សេវានៅតែដំណើរការលឿន។ ប្រសិនបើម៉ូដែលបរាជ័យ សំណើនឹងត្រឡប់កំហុសវិញ ជំនួសឲ្យការផ្លាស់ប្តូរការសន្ទនាទៅម៉ូដែលផ្សេង។ ការសន្ទនាថ្មីនៅតែត្រូវបានចែកចាយតាមយុទ្ធសាស្ត្រ។",
   "Each conversation stays on the model that answered it, so the provider's prompt cache stays warm. It switches only if that model fails. New conversations are still spread by the strategy.": "ការសន្ទនានីមួយៗស្ថិតនៅលើម៉ូដែលដែលបានឆ្លើយវា ដូច្នេះឃ្លាំងសម្ងាត់សំណើរបស់អ្នកផ្តល់សេវានៅតែក្តៅ។ វានឹងប្តូរតែប្រសិនបើម៉ូដែលនោះបរាជ័យ។ ការសន្ទនាថ្មីនៅតែត្រូវបានចែកចាយតាមយុទ្ធសាស្ត្រ។",
   "Each tool has a button to copy its configuration and set it up by hand.": "ឧបករណ៍នីមួយៗមានប៊ូតុងសម្រាប់ចម្លងការកំណត់របស់វាហើយដំឡើងដោយដៃ។",
   "Edit": "កែសម្រួល",

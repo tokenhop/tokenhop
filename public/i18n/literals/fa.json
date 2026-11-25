@@ -853,6 +853,7 @@
   "Drop filler, keep grammar": "کلمات پرانتزی را حذف کنید، گرامر را حفظ کنید",
   "Duration": "مدت زمان",
   "Each conversation stays on the account that answered it, so the provider's prompt cache stays warm. It moves only if that account is unavailable. New conversations are still spread by the strategy.": "هر گفتگو روی حسابی می‌ماند که به آن پاسخ داده است، تا کش پرامپت ارائه‌دهنده گرم بماند. تنها زمانی جابه‌جا می‌شود که آن حساب در دسترس نباشد. گفتگوهای جدید همچنان با استراتژی پخش می‌شوند.",
+  "Each conversation stays on the model that answered it, so the provider's prompt cache stays warm. If that model fails, the request returns its error instead of moving the conversation to another model. New conversations are still spread by the strategy.": "هر مکالمه روی مدلی که به آن پاسخ داده باقی می‌ماند، بنابراین کش پرامپت ارائه‌دهنده گرم باقی می‌ماند. اگر مدل شکست بخورد، درخواست به‌جای انتقال مکالمه به مدل دیگر، خطا برمی‌گرداند. مکالمه‌های جدید همچنان بر اساس استراتژی توزیع می‌شوند.",
   "Each conversation stays on the model that answered it, so the provider's prompt cache stays warm. It switches only if that model fails. New conversations are still spread by the strategy.": "هر مکالمه روی مدلی که به آن پاسخ داده است می‌ماند تا کش پرامپت ارائه‌دهنده گرم بماند. فقط در صورت خرابی آن مدل جابه‌جا می‌شود. مکالمات جدید همچنان بر اساس استراتژی توزیع می‌شوند.",
   "Each tool has a button to copy its configuration and set it up by hand.": "هر ابزار دارای دکمه‌ای برای کپی پیکربندی و راه‌اندازی دستی است.",
   "Edit": "ویرایش",

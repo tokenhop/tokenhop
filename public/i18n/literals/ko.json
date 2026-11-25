@@ -812,6 +812,7 @@
   "Drop filler, keep grammar": "불필요한 수식어 제거, 문법 유지",
   "Duration": "기간",
   "Each conversation stays on the account that answered it, so the provider's prompt cache stays warm. It moves only if that account is unavailable. New conversations are still spread by the strategy.": "각 대화는 응답한 계정에 유지되어 공급자의 프롬프트 캐시가 웜 상태를 유지합니다. 해당 계정을 사용할 수 없는 경우에만 이동합니다. 새 대화는 여전히 전략에 따라 분산됩니다.",
+  "Each conversation stays on the model that answered it, so the provider's prompt cache stays warm. If that model fails, the request returns its error instead of moving the conversation to another model. New conversations are still spread by the strategy.": "각 대화는 응답했던 모델에 계속 고정되어 제공자의 프롬프트 캐시가 유지됩니다. 모델이 실패하면 대화를 다른 모델로 넘기지 않고 요청이 오류를 반환합니다. 새 대화는 전략에 따라 계속 분산됩니다.",
   "Each conversation stays on the model that answered it, so the provider's prompt cache stays warm. It switches only if that model fails. New conversations are still spread by the strategy.": "각 대화는 응답한 모델에 유지되어 공급자의 프롬프트 캐시를 따뜻하게 유지합니다. 모델이 실패할 때만 전환되며, 새 대화는 여전히 전략에 따라 분산됩니다.",
   "Each tool has a button to copy its configuration and set it up by hand.": "각 도구에는 구성을 복사하고 직접 설정할 수 있는 버튼이 있습니다.",
   "Edit": "편집",

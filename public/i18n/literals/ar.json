@@ -812,6 +812,7 @@
   "Drop filler, keep grammar": "احذف الحشو واحتفظ بالقواعد",
   "Duration": "المدة",
   "Each conversation stays on the account that answered it, so the provider's prompt cache stays warm. It moves only if that account is unavailable. New conversations are still spread by the strategy.": "كل محادثة تبقى على الحساب الذي أجاب عنها، لذا تظل ذاكرة التخزين المؤقت للأوامر الخاصة بالمزود نشطة. تنتقل فقط إذا كان ذلك الحساب غير متاح. ولا تزال المحادثات الجديدة تُوزَّع وفق الاستراتيجية.",
+  "Each conversation stays on the model that answered it, so the provider's prompt cache stays warm. If that model fails, the request returns its error instead of moving the conversation to another model. New conversations are still spread by the strategy.": "تبقى كل محادثة على النموذج الذي ردّ عليها، حتى تبقى ذاكرة التخزين المؤقت للمطالبات لدى المزوّد نشطة. إذا فشل ذلك النموذج، يُعاد الخطأ الخاص به بدلاً من نقل المحادثة إلى نموذج آخر. ما زالت المحادثات الجديدة تُوزَّع وفق الاستراتيجية.",
   "Each conversation stays on the model that answered it, so the provider's prompt cache stays warm. It switches only if that model fails. New conversations are still spread by the strategy.": "تبقى كل محادثة على النموذج الذي أجاب عليها، ليبقى التخزين المؤقت للمطالبات لدى المزود نشطًا. ولا يتم التبديل إلا إذا تعطل ذلك النموذج. وتظل المحادثات الجديدة موزعة وفق الاستراتيجية.",
   "Each tool has a button to copy its configuration and set it up by hand.": "لكل أداة زر لنسخ إعداداتها وإعدادها يدويًا.",
   "Edit": "تحرير",
