@@ -13,9 +13,10 @@ import { ACTIVE } from "@/shared/brand";
 import { readCredentialEncryptionState } from "../credentialEncryptionState.js";
 import { CREDENTIAL_FIELD_ALLOWLIST, buildAad, encryptBytes } from "../../security/envelope.js";
 import {
+  clearCredentialCache,
   decodeCredentialRowSync,
-  ensureWorkspaceDekSync,
   prepareCredentialContext,
+  provisionSettingsSecretDekSync,
 } from "../helpers/credentialStorage.js";
 import { loadMasterKey } from "../../security/masterKey.js";
 import {
@@ -235,7 +236,7 @@ function metadataView(raw) {
 // Encrypt secret updates on established storage so plaintext never lands.
 // Secret updates arrive plaintext (or null/"" to clear); an envelope-shaped
 // caller value is refused (same rule as the row codec).
-function encodeSecretUpdates(db, updates, root, state) {
+function encodeSecretUpdates(db, updates, root, state, onProvision) {
   const touched = Object.keys(updates).filter((k) => SECRET_KEYS.includes(k));
   for (const k of touched) {
     const value = updates[k];
@@ -262,7 +263,10 @@ function encodeSecretUpdates(db, updates, root, state) {
         code: "DATA_CORRUPT",
       });
     }
-    dek ??= ensureWorkspaceDekSync(db, workspaceId, ctx);
+    if (!dek) {
+      onProvision?.(workspaceId);
+      dek = provisionSettingsSecretDekSync(db, workspaceId, ctx);
+    }
     next[key] = encryptBytes(
       dek.dek,
       dek.kid,
@@ -351,29 +355,39 @@ export async function updateSettings(updates, snapshot) {
   const root =
     state.storage === "encrypted" ? await loadMasterKey({ expectedKid: state.kekKid }) : null;
   let next;
-  db.transaction(() => {
-    const row = db.get(`SELECT data FROM settings WHERE id = 1`);
-    // Raw merge: envelope values for untouched keys pass through byte-exact
-    // (never decrypted here); touched secrets are encrypted above in encode.
-    const current = row ? parseJson(row.data, {}) : {};
-    if (snapshot) snapshot.previous = metadataView(mergeWithDefaults(current));
-    const encoded =
-      state.storage === "encrypted" ? encodeSecretUpdates(db, updates, root, state) : updates;
-    next = { ...current, ...encoded };
-    // Pin the issuer the first time SAML settings are saved, so a later brand
-    // flip can't change the SP entity ID the IdP already trusts.
-    if (Object.keys(updates).some((k) => k.startsWith("saml")) && !next.samlIssuer) {
-      next.samlIssuer = ACTIVE.samlIssuerDefault;
-    }
-    db.run(
-      `INSERT INTO settings(id, data) VALUES(1, ?) ON CONFLICT(id) DO UPDATE SET data = excluded.data`,
-      [stringifyJson(next)],
-    );
-    // YAN-362 single-user path: a flat PATCH keeps the Default workspace row
-    // in step (see mirrorToDefaultWorkspace's ponytail note). Split mode never
-    // reaches this with workspace keys: the route 400s them.
-    mirrorToDefaultWorkspace(db, updates);
-  });
+  let provisionedWs = null;
+  try {
+    db.transaction(() => {
+      const row = db.get(`SELECT data FROM settings WHERE id = 1`);
+      // Raw merge: envelope values for untouched keys pass through byte-exact
+      // (never decrypted here); touched secrets are encrypted above in encode.
+      const current = row ? parseJson(row.data, {}) : {};
+      if (snapshot) snapshot.previous = metadataView(mergeWithDefaults(current));
+      const encoded =
+        state.storage === "encrypted"
+          ? encodeSecretUpdates(db, updates, root, state, (wsId) => {
+              provisionedWs = wsId;
+            })
+          : updates;
+      next = { ...current, ...encoded };
+      // Pin the issuer the first time SAML settings are saved, so a later brand
+      // flip can't change the SP entity ID the IdP already trusts.
+      if (Object.keys(updates).some((k) => k.startsWith("saml")) && !next.samlIssuer) {
+        next.samlIssuer = ACTIVE.samlIssuerDefault;
+      }
+      db.run(
+        `INSERT INTO settings(id, data) VALUES(1, ?) ON CONFLICT(id) DO UPDATE SET data = excluded.data`,
+        [stringifyJson(next)],
+      );
+      // YAN-362 single-user path: a flat PATCH keeps the Default workspace row
+      // in step (see mirrorToDefaultWorkspace's ponytail note). Split mode never
+      // reaches this with workspace keys: the route 400s them.
+      mirrorToDefaultWorkspace(db, updates);
+    });
+  } catch (err) {
+    if (provisionedWs) clearCredentialCache(db, provisionedWs);
+    throw err;
+  }
   // Trusted callers get plaintext secrets; stored blob stays ciphertext.
   return mergeWithDefaults(await decryptSecrets(db, next));
 }

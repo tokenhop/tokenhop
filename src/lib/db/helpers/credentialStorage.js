@@ -240,18 +240,19 @@ function workspaceHasEncryptedRows(db, workspaceId, { skipTables = [] } = {}) {
 
 /**
  * Guarded runtime DEK provisioner (deliberately NOT a general runtime create
- * path). Runtime DEK provisioning has exactly four entry points, each named for
+ * path). Runtime DEK provisioning has exactly five entry points, each named for
  * its only caller: move target (YAN-701), budget webhook secret write
- * (YAN-1831), workspace snapshot import (YAN-1055), and connection creation
- * (YAN-1055). `ensureWorkspaceDekSync` stays fail-closed for every other
- * runtime write. Admits only a genuine runtime context from
- * prepareCredentialContext holding a root for an encrypted instance; rereads
- * the live marker (kid must still match) and the workspace row inside the
- * caller's transaction. An existing DEK is validated through liveDek (unwrap +
- * generation check); a missing one gets a FRESH random DEK — a source DEK is
- * never copied. When `rejectExistingCiphertext` is set, a missing DEK on a
- * workspace that already holds encrypted credential rows fails closed with
- * KEY_MISSING instead of masking a lost key. Not re-exported from any barrel.
+ * (YAN-1831), workspace snapshot import (YAN-1055), connection creation
+ * (YAN-1055), and instance settings secret write (YAN-2460).
+ * `ensureWorkspaceDekSync` stays fail-closed for every other runtime write.
+ * Admits only a genuine runtime context from prepareCredentialContext holding a
+ * root for an encrypted instance; rereads the live marker (kid must still
+ * match) and the workspace row inside the caller's transaction. An existing DEK
+ * is validated through liveDek (unwrap + generation check); a missing one gets
+ * a FRESH random DEK — a source DEK is never copied. When
+ * `rejectExistingCiphertext` is set, a missing DEK on a workspace that already
+ * holds encrypted credential rows fails closed with KEY_MISSING instead of
+ * masking a lost key. Not re-exported from any barrel.
  * @returns {{kid:string,dek:Buffer}}
  */
 function provisionRuntimeDekSync(
@@ -308,6 +309,15 @@ export function provisionWorkspaceImportDekSync(db, workspaceId, ctx) {
 
 /** YAN-1055 connection-create entry point; see provisionRuntimeDekSync. */
 export function provisionConnectionCreateDekSync(db, workspaceId, ctx) {
+  return provisionRuntimeDekSync(db, workspaceId, ctx, { rejectExistingCiphertext: true });
+}
+
+/** YAN-2460 instance-settings secret entry point (Default workspace only); see provisionRuntimeDekSync. */
+export function provisionSettingsSecretDekSync(db, workspaceId, ctx) {
+  const defaultId = db.get(`SELECT value FROM _meta WHERE key = 'defaultWorkspaceId'`)?.value;
+  if (typeof defaultId !== "string" || defaultId.length === 0 || defaultId !== workspaceId) {
+    fail("KEY_MISSING", "settings secret DEK must target Default workspace");
+  }
   return provisionRuntimeDekSync(db, workspaceId, ctx, { rejectExistingCiphertext: true });
 }
 
