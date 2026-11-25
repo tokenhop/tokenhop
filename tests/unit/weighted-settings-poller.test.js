@@ -346,6 +346,7 @@ describe("usage hub keys keep the poller running (YAN-2447)", () => {
       "antigravity",
       "claude",
       "codex",
+      "grok-cli",
     ]);
   });
 

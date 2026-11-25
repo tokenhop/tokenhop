@@ -13,7 +13,7 @@ export function isUsageHubEnabled() {
 }
 
 /**
- * Providers the T3 Code usage hub lists (YAN-2018 contract §7). grok-cli
- * joins once its quota snapshots record usage windows (YAN-2446).
+ * Providers the T3 Code usage hub lists (YAN-2018 contract §7). grok-cli is
+ * T3's `xai` row; its snapshots record usage windows since YAN-2446.
  */
-export const HUB_PROVIDERS = Object.freeze(["claude", "codex", "antigravity"]);
+export const HUB_PROVIDERS = Object.freeze(["claude", "codex", "antigravity", "grok-cli"]);
