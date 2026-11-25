@@ -42,20 +42,20 @@ describe("capacity adapter pool scoping (YAN-692)", () => {
 
 describe("capacityAdapterBridgeModels (YAN-2467)", () => {
   const VISION = "cmc/moonshotai/Kimi-K3";
-  const vision = { capacityAdapter: { vision: { enabled: true, models: [VISION] } } };
+  const vision = { capacityAdapter: { vision: { enabled: true, models: [VISION, TEXT_ONLY] } } };
 
-  it("names configured adapter models already in the list, not other members", () => {
-    expect(capacityAdapterBridgeModels([TEXT_ONLY, VISION], ["vision"], vision)).toEqual([VISION]);
+  it("names the pool models that can read the input", () => {
+    expect(capacityAdapterBridgeModels(["vision"], vision)).toEqual([VISION]);
   });
 
   it("is empty without a hard capability or with the pool off", () => {
-    expect(capacityAdapterBridgeModels([TEXT_ONLY, VISION], [], vision)).toEqual([]);
+    expect(capacityAdapterBridgeModels([], vision)).toEqual([]);
     const off = { capacityAdapter: { vision: { enabled: false, models: [VISION] } } };
-    expect(capacityAdapterBridgeModels([TEXT_ONLY, VISION], ["vision"], off)).toEqual([]);
+    expect(capacityAdapterBridgeModels(["vision"], off)).toEqual([]);
   });
 
   it("only uses the pools of the capabilities the request needs", () => {
     const audio = { capacityAdapter: { audioInput: { enabled: true, models: [VISION] } } };
-    expect(capacityAdapterBridgeModels([TEXT_ONLY, VISION], ["vision"], audio)).toEqual([]);
+    expect(capacityAdapterBridgeModels(["vision"], audio)).toEqual([]);
   });
 });
