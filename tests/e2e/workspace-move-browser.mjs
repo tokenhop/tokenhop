@@ -24,15 +24,30 @@ async function cleanup() {
   if (cleaning) return cleaning;
   cleaning = (async () => {
     cdp?.close();
-    if (chrome?.pid && chrome.exitCode === null && chrome.signalCode === null) {
-      const exited = new Promise((done) => chrome.once("exit", done));
-      chrome.kill("SIGTERM");
-      const timer = setTimeout(() => chrome.kill("SIGKILL"), 3000);
-      await exited;
-      clearTimeout(timer);
+    if (chrome?.pid) {
+      // Chrome leads its own process group (detached spawn). Signal the whole
+      // group: helper processes keep writing to the profile after the main
+      // process exits, and rm then fails with ENOTEMPTY (YAN-2441).
+      const killGroup = (signal) => {
+        try {
+          process.kill(-chrome.pid, signal);
+        } catch {
+          chrome.kill(signal); // Group already gone (ESRCH) or no group signals.
+        }
+      };
+      if (chrome.exitCode === null && chrome.signalCode === null) {
+        const exited = new Promise((done) => chrome.once("exit", done));
+        killGroup("SIGTERM");
+        const sigkill = setTimeout(() => killGroup("SIGKILL"), 3000);
+        let giveUp;
+        await Promise.race([exited, new Promise((done) => (giveUp = setTimeout(done, 6000)))]);
+        clearTimeout(sigkill);
+        clearTimeout(giveUp);
+      }
+      killGroup("SIGKILL");
     }
     await server?.close();
-    await rm(scratch, { recursive: true, force: true });
+    await rm(scratch, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
   })();
   return cleaning;
 }
@@ -97,7 +112,7 @@ try {
       `--user-data-dir=${resolve(scratch, "chrome")}`,
       "about:blank",
     ],
-    { env: process.env, stdio: ["ignore", "ignore", "pipe"] },
+    { env: process.env, stdio: ["ignore", "ignore", "pipe"], detached: true },
   );
   chrome.stderr.on("data", (chunk) => {
     chromeLog = (chromeLog + chunk).slice(-10000);
