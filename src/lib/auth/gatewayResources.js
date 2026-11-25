@@ -4,10 +4,7 @@ import { parseJson } from "../db/helpers/jsonCol.js";
 import { deepFreeze } from "../utils/deepFreeze.js";
 import { decodeRequestCredentialRows, requestScopeOf } from "../security/requestCredentialScope.js";
 import { TABLE_NAMES } from "../security/envelope.js";
-import {
-  getProviderConnectionsMetadataUnscoped,
-  getProviderConnectionsUnscoped,
-} from "../db/repos/connectionsRepo.js";
+import { getProviderConnectionsUnscoped } from "../db/repos/connectionsRepo.js";
 import {
   getProviderNodesUnscoped,
   getProviderNodesRoutingUnscoped,
@@ -175,14 +172,59 @@ function projectConnectionMetadata(row, { workspaceId = null, grant = null } = {
   };
 }
 
+const CONNECTION_METADATA_COLS =
+  "id, provider, authType, name, email, priority, isActive, workspaceId";
+
+function grantedConnectionsMetadata(db, principal, filter, own) {
+  const grantee = [];
+  const params = [];
+  if (principal.workspaceId != null) {
+    grantee.push("g.workspaceId = ?");
+    params.push(principal.workspaceId);
+  }
+  if (principal.userId != null) {
+    grantee.push("g.userId = ?");
+    params.push(principal.userId);
+  }
+  if (!params.length) return [];
+  const rows = db.all(
+    `SELECT pc.id, pc.provider, pc.authType, pc.name, pc.email, pc.priority, pc.isActive, pc.workspaceId,
+            g.id AS grantId, g.allowedModels AS gModels, g.tosAcknowledgedAt AS gAck
+     FROM connectionGrants g
+     JOIN providerConnections pc ON pc.id = g.connectionId
+     WHERE g.revokedAt IS NULL AND (${grantee.join(" OR ")})
+     ORDER BY g.createdAt, g.id`,
+    params,
+  );
+  const seen = new Set(own.map((c) => c.id));
+  const out = [];
+  for (const row of rows) {
+    if (!row || seen.has(row.id)) continue;
+    if (filter.provider && row.provider !== filter.provider) continue;
+    if (
+      filter.isActive !== undefined &&
+      (row.isActive === 1 || row.isActive === true) !== !!filter.isActive
+    )
+      continue;
+    if (resolveSharing(row.provider, row.authType) === "personal" && !row.gAck) continue;
+    seen.add(row.id);
+    out.push({
+      row,
+      grantId: row.grantId,
+      allowedModels: row.gModels == null ? null : JSON.parse(row.gModels),
+    });
+  }
+  return out.sort((a, b) => (a.row.priority || 999) - (b.row.priority || 999));
+}
+
 export async function getGatewayConnectionsMetadata(principal, filter = {}) {
   const { db, workspaceId } = await requireGatewayWorkspace(principal);
-  if (!workspaceId) {
-    const rows = await getProviderConnectionsMetadataUnscoped(filter);
-    return rows.map((row) => projectConnectionMetadata(row));
+  const where = [];
+  const params = [];
+  if (workspaceId) {
+    where.push("workspaceId = ?");
+    params.push(workspaceId);
   }
-  const where = ["workspaceId = ?"];
-  const params = [workspaceId];
   if (filter.provider) {
     where.push("provider = ?");
     params.push(filter.provider);
@@ -191,14 +233,14 @@ export async function getGatewayConnectionsMetadata(principal, filter = {}) {
     where.push("isActive = ?");
     params.push(filter.isActive ? 1 : 0);
   }
-  const ownRows = db
-    .all(
-      `SELECT id, provider, authType, name, email, priority, isActive, workspaceId
-       FROM providerConnections WHERE ${where.join(" AND ")}`,
-      params,
-    )
-    .sort((a, b) => (a.priority || 999) - (b.priority || 999));
-  const granted = grantedConnections(db, principal, filter, ownRows);
+  const sql = `SELECT ${CONNECTION_METADATA_COLS} FROM providerConnections${
+    where.length ? ` WHERE ${where.join(" AND ")}` : ""
+  }`;
+  const ownRows = db.all(sql, params).sort((a, b) => (a.priority || 999) - (b.priority || 999));
+  if (!workspaceId) {
+    return ownRows.map((row) => projectConnectionMetadata(row));
+  }
+  const granted = grantedConnectionsMetadata(db, principal, filter, ownRows);
   return [
     ...ownRows.map((row) => projectConnectionMetadata(row, { workspaceId })),
     ...granted.map((g) => projectConnectionMetadata(g.row, { grant: g })),

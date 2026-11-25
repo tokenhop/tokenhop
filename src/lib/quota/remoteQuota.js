@@ -75,7 +75,7 @@ export function filterConnectionsByGatewayScope(connections, principal) {
 
   return connections.filter((conn) => {
     if (!conn || typeof conn.provider !== "string") return false;
-    if (!allowedProviders.has(conn.provider)) return false;
+    if (!allowedProviders.has(conn.provider.toLowerCase())) return false;
     if (
       conn.grantId &&
       Array.isArray(conn.grantAllowedModels) &&
