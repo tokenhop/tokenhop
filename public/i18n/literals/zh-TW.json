@@ -812,6 +812,7 @@
   "Drop filler, keep grammar": "刪除冗詞，保留文法",
   "Duration": "持續時間",
   "Each conversation stays on the account that answered it, so the provider's prompt cache stays warm. It moves only if that account is unavailable. New conversations are still spread by the strategy.": "每個對話都會保留在回答它的帳戶上，讓供應商的提示詞快取保持熱度。只有在該帳戶無法使用時才會轉移。新對話仍會依策略分配。",
+  "Each conversation stays on the model that answered it, so the provider's prompt cache stays warm. If that model fails, the request returns its error instead of moving the conversation to another model. New conversations are still spread by the strategy.": "每個對話會持續使用回應它的模型，讓供應商的提示快取保持有效。若模型失敗，請求會直接回傳錯誤，而不會將對話轉移到其他模型。新的對話仍會依策略分配。",
   "Each conversation stays on the model that answered it, so the provider's prompt cache stays warm. It switches only if that model fails. New conversations are still spread by the strategy.": "每段對話保留在回應它的模型上，讓提供者的提示快取保持暖快取狀態。僅在模型失敗時才切換。新對話仍按策略分配。",
   "Each tool has a button to copy its configuration and set it up by hand.": "每個工具都有按鈕可複製其設定並手動設定。",
   "Edit": "編輯",

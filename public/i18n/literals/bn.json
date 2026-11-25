@@ -812,6 +812,7 @@
   "Drop filler, keep grammar": "ফিলার বাদ দিন, ব্যাকরণ রাখুন",
   "Duration": "সময়কাল",
   "Each conversation stays on the account that answered it, so the provider's prompt cache stays warm. It moves only if that account is unavailable. New conversations are still spread by the strategy.": "প্রতিটি কথোপকথন যে অ্যাকাউন্টটি উত্তর দিয়েছে সেটিতেই থাকে, যাতে প্রদানকারীর প্রম্পট ক্যাশ উষ্ণ থাকে। সেই অ্যাকাউন্টটি অনুপলব্ধ হলেই কেবল এটি স্থানান্তরিত হয়। নতুন কথোপকথনগুলি এখনও কৌশল অনুযায়ী বিতরণ করা হয়।",
+  "Each conversation stays on the model that answered it, so the provider's prompt cache stays warm. If that model fails, the request returns its error instead of moving the conversation to another model. New conversations are still spread by the strategy.": "প্রতিটি কথোপকথন যে মডেল উত্তর দিয়েছে, তার সাথেই থাকে, যাতে প্রোভাইডারের প্রম্পট ক্যাশ সক্রিয় থাকে। মডেল ব্যর্থ হলে, অনুরোধ অন্য মডেলে স্থানান্তরিত না হয়ে ত্রুটি ফেরত দেয়। নতুন কথোপকথন এখনও কৌশল অনুযায়ী বণ্টিত হয়।",
   "Each conversation stays on the model that answered it, so the provider's prompt cache stays warm. It switches only if that model fails. New conversations are still spread by the strategy.": "প্রতিটি কথোপকথন যে মডেল উত্তর দিয়েছে সেটিতেই থাকে, যাতে প্রদানকারীর প্রম্পট ক্যাশ উষ্ণ থাকে। সেই মডেল ব্যর্থ হলেই কেবল বদল হয়। নতুন কথোপকথন তবুও কৌশল অনুযায়ী ভাগ করা হয়।",
   "Each tool has a button to copy its configuration and set it up by hand.": "প্রতিটি টুলে কনফিগারেশন কপি করা এবং ম্যানুয়ালি সেট আপ করার একটি বোতাম আছে।",
   "Edit": "সম্পাদনা করুন",

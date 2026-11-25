@@ -853,6 +853,7 @@
   "Drop filler, keep grammar": "去除填充内容，保持语法",
   "Duration": "持续时间",
   "Each conversation stays on the account that answered it, so the provider's prompt cache stays warm. It moves only if that account is unavailable. New conversations are still spread by the strategy.": "每个对话都会保留在应答它的账号上，从而保持提供商的提示词缓存热度。仅当账号不可用时才会迁移。新对话仍按策略分配。",
+  "Each conversation stays on the model that answered it, so the provider's prompt cache stays warm. If that model fails, the request returns its error instead of moving the conversation to another model. New conversations are still spread by the strategy.": "每个对话都会保留在回答它的模型上，以便提供商的提示词缓存保持有效。如果模型失败，请求将返回错误，而不会将对话转移到其他模型。新对话仍按策略分配。",
   "Each conversation stays on the model that answered it, so the provider's prompt cache stays warm. It switches only if that model fails. New conversations are still spread by the strategy.": "每个对话保留在最初回答的模型上,以保持提供商提示缓存热状态,仅在模型失败时切换。新对话仍按策略分配。",
   "Each tool has a button to copy its configuration and set it up by hand.": "每个工具都有按钮可复制其配置并手动设置。",
   "Edit": "编辑",

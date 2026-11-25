@@ -812,6 +812,7 @@
   "Drop filler, keep grammar": "Dolgu ifadelerini düşür, grameri koru",
   "Duration": "Süre",
   "Each conversation stays on the account that answered it, so the provider's prompt cache stays warm. It moves only if that account is unavailable. New conversations are still spread by the strategy.": "Her konuşma, onu yanıtlayan hesapta kalır, böylece sağlayıcının prompt önbelleği sıcak kalır. Yalnızca o hesap kullanılamıyorsa taşınır. Yeni konuşmalar yine de stratejiye göre dağıtılır.",
+  "Each conversation stays on the model that answered it, so the provider's prompt cache stays warm. If that model fails, the request returns its error instead of moving the conversation to another model. New conversations are still spread by the strategy.": "Her konuşma, yanıtlayan modelde kalır, böylece sağlayıcının istem önbelleği sıcak kalır. Model başarısız olursa, istek konuşmayı başka bir modele taşımak yerine bir hata döndürür. Yeni konuşmalar yine strateji ile dağıtılır.",
   "Each conversation stays on the model that answered it, so the provider's prompt cache stays warm. It switches only if that model fails. New conversations are still spread by the strategy.": "Her konuşma yanıt veren modelde kalır, böylece sağlayıcının istem önbelleği sıcak kalır. Yalnızca model başarısız olursa geçiş yapar. Yeni konuşmalar yine de stratejiye göre dağıtılır.",
   "Each tool has a button to copy its configuration and set it up by hand.": "Her aracın yapılandırmasını kopyalamak ve manuel olarak kurmak için bir düğmesi vardır.",
   "Edit": "Düzenle",
