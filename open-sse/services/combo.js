@@ -801,7 +801,8 @@ export async function handleComboChat({
   // First turn: claim the leading member now, synchronously, so a concurrent first
   // turn of this conversation reads it as a pin instead of advancing the strategy.
   if (affinityKey && !pinned && !pinExcludeSet.has(rotatedModels[0])) {
-    provisional = comboPins.set(affinityKey, rotatedModels[0]);
+    // Memory only: if the process stops before a member serves, it is not restored.
+    provisional = comboPins.set(affinityKey, rotatedModels[0], { durable: false });
   }
 
   // Fastest hedging (per-combo, no global opt-in): after model filters/ranking,
