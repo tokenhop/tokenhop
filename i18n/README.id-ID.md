@@ -406,7 +406,7 @@ Konversi mulus antar format:
 #### Catatan tentang cloud runtime
 
 - Untuk produksi, disarankan memakai variabel cloud sisi server:
-  - `BASE_URL` (URL callback internal yang dipakai scheduler sinkronisasi)
+  - `BASE_URL` (origin publik dashboard di balik reverse proxy, OIDC, SAML; biarkan tidak diatur untuk akses langsung)
   - `CLOUD_URL` (base URL endpoint cloud sync)
 - `NEXT_PUBLIC_BASE_URL` dan `NEXT_PUBLIC_CLOUD_URL` masih didukung untuk kompatibilitas/UI, tetapi runtime server memprioritaskan `BASE_URL`/`CLOUD_URL`.
 - Request cloud sync memakai timeout + perilaku fail-fast untuk menghindari UI menggantung saat DNS/jaringan cloud tidak tersedia.
@@ -870,7 +870,6 @@ docker run -d \
   -p 20128:20128 \
   -v tokenhop-data:/app/data \
   -e PORT=20128 \
-  -e BASE_URL=http://localhost:20128 \
   ghcr.io/tokenhop/tokenhop:latest
 ```
 
