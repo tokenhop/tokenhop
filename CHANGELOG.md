@@ -6,6 +6,7 @@
 
 ## Fixes
 
+- **Combos**: conversation pins (**Keep each conversation on one model**) are saved in the database and reloaded at startup. A gateway restart or upgrade no longer routes every running conversation as a new one, which could move it to a model from another vendor mid-session.
 - **Combos**: a conversation pinned by **Keep each conversation on one model** never moves to another model. If the pinned model fails, the request returns its error and the pin stays; only another member with the same model id through a different provider may answer instead. A Weighted pin is no longer dropped when live quota headroom reads 0. Before, one transient error re-pinned the conversation to the next member for good, so a later model received the first model's turns, and some providers refuse that (#1212).
 - **Meta Code**: a 403 `client_attestation_denied` (Muse Code subscription keys serve only the official client) is returned as a `permission_error` with its own code and a pay-as-you-go hint. It no longer triggers a token refresh or re-mint, a cooldown or a retry of the same key. A pay-as-you-go API-key connection is still tried next. Docs describe the limitation and the API-key setup.
 
