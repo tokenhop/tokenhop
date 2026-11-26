@@ -58,6 +58,8 @@ export const CACHE_AFFINITY_PROMPT_PIN_MAX_AGE_MS = envMs(
   "CACHE_AFFINITY_PROMPT_PIN_MAX_AGE_MS",
   15 * 60 * 1000,
 );
+// YAN-2468: a live combo pin re-saves its last-used time at most this often.
+export const CACHE_AFFINITY_PIN_TOUCH_MS = envMs("CACHE_AFFINITY_PIN_TOUCH_MS", 5 * 60 * 1000);
 
 function envUrl(name, def) {
   const raw = process.env[name]?.trim();

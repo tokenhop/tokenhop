@@ -11,7 +11,7 @@
  * are fail-open (release).
  */
 
-import { hasMeaningfulToken } from "./streamHelpers.js";
+import { hasAnswerToken, hasMeaningfulToken, refusalOf } from "./streamHelpers.js";
 
 const DEFAULT_MAX_BYTES = 262144;
 const DEFAULT_MAX_MS = 10 * 1000;
@@ -19,6 +19,14 @@ const DEFAULT_MAX_MS = 10 * 1000;
 function isMeaningful(parsed) {
   try {
     return hasMeaningfulToken(parsed);
+  } catch {
+    return false;
+  }
+}
+
+function isAnswer(parsed) {
+  try {
+    return hasAnswerToken(parsed);
   } catch {
     return false;
   }
@@ -118,11 +126,16 @@ function replayResponse(response, buffered, reader, pending = null) {
 
 /**
  * Peek at the head of a streaming response.
- * @returns {Promise<{outcome:"release"|"empty"|"error", response?, error?}>}
+ * A refusal before any answer token resolves "refused" with a replay of the
+ * stream and the refusal text, so the caller can serve it or skip the member.
+ * `untilAnswer` keeps reading through reasoning-only frames (a model may think,
+ * then refuse) until an answer token, a refusal or a cap; a stream that ends with
+ * reasoning only is still released (YAN-1031).
+ * @returns {Promise<{outcome:"release"|"refused"|"empty"|"error", response?, error?, refusal?}>}
  */
 export async function probeStreamHead(
   response,
-  { maxBytes = DEFAULT_MAX_BYTES, maxMs = DEFAULT_MAX_MS, signal = null } = {},
+  { maxBytes = DEFAULT_MAX_BYTES, maxMs = DEFAULT_MAX_MS, signal = null, untilAnswer = false } = {},
 ) {
   if (!response.body) return { outcome: "release", response };
 
@@ -134,9 +147,12 @@ export async function probeStreamHead(
   let bufferedBytes = 0;
   let text = "";
 
+  let sawAnswer = false;
+  // beforeAnswer: released on reasoning or a cap, so a refusal may still follow.
   const release = (pending = null) => ({
     outcome: "release",
     response: replayResponse(response, buffered, reader, pending),
+    beforeAnswer: !sawAnswer,
   });
   // Not awaited: cancel of a tee()'d branch only resolves once every branch
   // cancels, and the upstream abort runs through the stream's own cancel hook.
@@ -145,10 +161,25 @@ export async function probeStreamHead(
     return error ? { outcome: "error", error } : { outcome: "empty" };
   };
 
-  // Classify one parsed frame: "meaningful" | { error } | null (keep going).
+  let sawReasoning = false;
+  const refused = (refusal) => ({
+    outcome: "refused",
+    refusal,
+    response: replayResponse(response, buffered, reader),
+  });
+
+  // Classify one parsed frame: "meaningful" | { error } | { refusal } | null (keep going).
   const judge = (parsed) => {
     if (isErrorFrame(parsed)) return { error: errorMessage(parsed, "stream error") };
-    return isMeaningful(parsed) ? "meaningful" : null;
+    const refusal = refusalOf(parsed);
+    if (refusal !== null) return { refusal };
+    if (isAnswer(parsed)) {
+      sawAnswer = true;
+      return "meaningful";
+    }
+    if (!untilAnswer) return isMeaningful(parsed) ? "meaningful" : null;
+    if (isMeaningful(parsed)) sawReasoning = true;
+    return null;
   };
 
   // Scan decoded text. `eof` treats the unterminated tail as a complete event.
@@ -187,7 +218,10 @@ export async function probeStreamHead(
   };
 
   const deadline = Date.now() + maxMs;
-  const verdictOf = (v) => (v === "done" ? reject() : reject(v.error));
+  const verdictOf = (v) => {
+    if (v === "done") return sawReasoning ? release() : reject();
+    return v.refusal !== undefined ? refused(v.refusal) : reject(v.error);
+  };
 
   for (;;) {
     const read = reader.read();
@@ -232,4 +266,96 @@ export async function probeStreamHead(
     if (v !== "more") return verdictOf(v);
     if (bufferedBytes >= maxBytes) return release();
   }
+}
+
+/**
+ * Pass a released stream through unchanged while watching for a refusal that
+ * arrives before any answer token (YAN-2479: a model may reason, then refuse,
+ * after the probe already released on its reasoning). Calls onRefusal(text) at
+ * most once; stops parsing at the first answer token. Fail-open: a parse problem
+ * only ends the watch, never the stream.
+ * @param {Response} response
+ * @param {(refusal: string) => void} onRefusal
+ * @returns {Response}
+ */
+export function watchForLateRefusal(response, onRefusal) {
+  if (!response?.body) return response;
+  const contentType = (response.headers?.get?.("content-type") || "").toLowerCase();
+  const isNdjson = contentType.includes("ndjson") && !contentType.includes("text/event-stream");
+  const decoder = new TextDecoder();
+  let text = "";
+  let watching = true;
+  const inspect = (payloads) => {
+    for (const parsed of payloads) {
+      const refusal = refusalOf(parsed);
+      if (refusal !== null) {
+        watching = false;
+        try {
+          onRefusal(refusal);
+        } catch {
+          // observer must never break streaming
+        }
+        return;
+      }
+      if (isAnswer(parsed)) {
+        watching = false;
+        return;
+      }
+    }
+  };
+  const scan = (eof) => {
+    if (isNdjson) {
+      const lines = text.split("\n");
+      text = eof ? "" : (lines.pop() ?? "");
+      const payloads = [];
+      for (const line of lines) {
+        if (line.trim() === "") continue;
+        try {
+          payloads.push(JSON.parse(line));
+        } catch {
+          // unparseable line: ignore
+        }
+      }
+      inspect(payloads);
+      return;
+    }
+    const norm = text.replace(/\r\n/g, "\n");
+    const cut = eof ? norm.length : norm.lastIndexOf("\n\n");
+    if (cut < 0) {
+      text = norm;
+      return;
+    }
+    text = eof ? "" : norm.slice(cut + 2);
+    inspect(parseSseSegment(norm.slice(0, cut)).payloads);
+  };
+  const stream = response.body.pipeThrough(
+    new TransformStream({
+      transform(chunk, controller) {
+        controller.enqueue(chunk);
+        if (!watching) return;
+        try {
+          text += decoder.decode(chunk, { stream: true });
+          scan(false);
+          // Bound the watch buffer; a huge frame without a break is not watched.
+          if (text.length > DEFAULT_MAX_BYTES) watching = false;
+        } catch {
+          watching = false;
+        }
+      },
+      flush() {
+        if (!watching) return;
+        try {
+          text += decoder.decode();
+          scan(true);
+        } catch {
+          // ignore
+        }
+      },
+    }),
+  );
+  return new Response(stream, {
+    status: response.status,
+    statusText: response.statusText,
+    headers: response.headers,
+  });
 }
