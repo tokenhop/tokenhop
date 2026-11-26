@@ -135,6 +135,12 @@ const nextConfig = {
         source: "/v1/:path*",
         destination: "/api/v1/:path*",
       },
+      // YAN-2019: CLIProxyAPI-compatible usage hub (T3 Code). Gated at the
+      // edge by the hub key (src/lib/hub/hubAuth.js).
+      {
+        source: "/v0/management/:path*",
+        destination: "/api/v0/management/:path*",
+      },
       {
         source: "/v1",
         destination: "/api/v1",

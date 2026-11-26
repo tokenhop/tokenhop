@@ -285,3 +285,82 @@ describe("alias combo members (YAN-386)", () => {
     expect(vi.getTimerCount()).toBe(1);
   });
 });
+
+describe("usage hub keys keep the poller running (YAN-2447)", () => {
+  const fillFirst = { fallbackStrategy: "fill-first" };
+
+  it("hubActive needs the switch on and at least one active key, and never throws", async () => {
+    const { hubActive } = await import("../../src/shared/services/quotaSnapshotPoller.js");
+    const on = () => true;
+    await expect(hubActive({ enabled: () => false, countActiveKeys: async () => 3 })).resolves.toBe(
+      false,
+    );
+    await expect(hubActive({ enabled: on, countActiveKeys: async () => 0 })).resolves.toBe(false);
+    await expect(hubActive({ enabled: on, countActiveKeys: async () => 1 })).resolves.toBe(true);
+    await expect(
+      hubActive({ enabled: on, countActiveKeys: () => Promise.reject(new Error("db")) }),
+    ).resolves.toBe(false);
+  });
+
+  it("starts with no weighted settings or combos while a hub key exists, stops on the last revoke", async () => {
+    let active = true;
+    const sync = () =>
+      syncQuotaSnapshotPoller({
+        getSettings: async () => fillFirst,
+        getCombos: async () => [],
+        hubActive: async () => active,
+      });
+    await sync();
+    expect(vi.getTimerCount()).toBe(1);
+    active = false;
+    await sync();
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("revoking the last hub key keeps the poller when weighted settings still need it", () => {
+    configureQuotaSnapshotPoller({ fallbackStrategy: "weighted" }, [], {}, { hub: false });
+    expect(vi.getTimerCount()).toBe(1);
+  });
+
+  it("with no hub key and no weighted settings the poller stays off", async () => {
+    await syncQuotaSnapshotPoller({
+      getSettings: async () => fillFirst,
+      getCombos: async () => [],
+      hubActive: async () => false,
+    });
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("hub mode polls only the hub providers", async () => {
+    const getProviderConnectionsUnscoped = vi.fn(async () => []);
+    await runQuotaSnapshotTick(
+      {
+        getSettings: async () => fillFirst,
+        getCombos: async () => [],
+        getProviderConnectionsUnscoped,
+        hubActive: async () => true,
+      },
+      { running: false, failureCache: {} },
+    );
+    expect(getProviderConnectionsUnscoped.mock.calls.map(([f]) => f.provider).sort()).toEqual([
+      "antigravity",
+      "claude",
+      "codex",
+      "grok-cli",
+    ]);
+  });
+
+  it("no hub key: a non-weighted tick polls nothing", async () => {
+    const getProviderConnectionsUnscoped = vi.fn(async () => []);
+    await runQuotaSnapshotTick(
+      {
+        getSettings: async () => fillFirst,
+        getCombos: async () => [],
+        getProviderConnectionsUnscoped,
+        hubActive: async () => false,
+      },
+      { running: false, failureCache: {} },
+    );
+    expect(getProviderConnectionsUnscoped).not.toHaveBeenCalled();
+  });
+});

@@ -76,7 +76,8 @@ const GROUPS = {
   self: `auth/logout-all me/preferences`,
   settings: `settings settings/environment settings/proxy-test pricing proxy-pools
     proxy-pools/[id] proxy-pools/[id]/test proxy-pools/cloudflare-deploy
-    proxy-pools/deno-deploy proxy-pools/vercel-deploy auth/oidc/test auth/saml/test`,
+    proxy-pools/deno-deploy proxy-pools/vercel-deploy auth/oidc/test auth/saml/test
+    hub-keys hub-keys/[id]`,
   host: `version/shutdown settings/database settings/config/export settings/config/import
     cli-tool-presets cli-tool-settings cli-tool-settings/[toolId]
     headroom/restart headroom/extras headroom/status pxpipe/health pxpipe/logs

@@ -88,6 +88,8 @@ export const TABLE_CLASSES = {
     scopeColumn: "connectionId",
     note: "visible through the providerConnection it belongs to; never exported",
   },
+  // YAN-2019: usage hub management keys, owner/admin managed (hash only).
+  hubKeys: { class: "instance", note: "read-only usage hub keys; SHA-256 hash only" },
 };
 
 // Workspace kv scopes take the `ws:<workspaceId>/` key prefix when scoped.
