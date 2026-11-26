@@ -117,4 +117,14 @@ describe("combo refusal handling", () => {
     expect(body).toContain('"content":"hi"');
     expect(calls).toEqual(["p/a", "p/b"]);
   });
+
+  it("a hedged fastest race whose winner refuses writes no pin", async () => {
+    const { res, body } = await turn(
+      { "p/a": refusal, "p/b": refusal },
+      { comboStrategy: "fastest", hedgeDelayMs: 5 },
+    );
+    expect(res.status).toBe(200);
+    expect(body).toContain(REFUSAL_TEXT);
+    expect(comboPins.get(PIN_KEY)).toBeUndefined();
+  });
 });

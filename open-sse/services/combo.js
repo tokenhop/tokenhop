@@ -1358,7 +1358,8 @@ async function raceHedgedPair({
     slots[winner].result.attempt?.accept?.();
     if (slots[winner].result.outcome === "served") {
       slots[winner].result.attempt?.win();
-      onServed?.(models[winner]);
+      // A refusal never takes the pin (YAN-2479).
+      if (!slots[winner].result.refused) onServed?.(models[winner]);
     }
     if (loser.result && loser.result.outcome !== "next") cancelBody(loser.result.response);
     return slots[winner].result.response;
@@ -1388,7 +1389,7 @@ async function raceHedgedPair({
       parentAttempt,
       cancelSignal: clientSignal,
     });
-    if (step.outcome === "served") onServed?.(models[i]);
+    if (step.outcome === "served" && !step.refused) onServed?.(models[i]);
     if (step.outcome !== "next") return step.response;
     agg.add(step);
   }
