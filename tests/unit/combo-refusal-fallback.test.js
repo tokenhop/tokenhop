@@ -6,7 +6,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 
 import { handleComboChat, resetComboRotation } from "../../open-sse/services/combo.js";
 import { comboPins } from "../../open-sse/services/cacheAffinity.js";
-import { probeStreamHead } from "../../open-sse/utils/streamProbe.js";
+import { probeStreamHead, watchForLateRefusal } from "../../open-sse/utils/streamProbe.js";
 
 const log = { info: () => {}, warn: () => {}, debug: () => {} };
 const SSE = { "Content-Type": "text/event-stream" };
@@ -149,5 +149,83 @@ describe("combo refusal handling", () => {
     const { body, calls } = await turn({ "p/a": thinkOnly, "p/b": text });
     expect(body).toContain("hmm");
     expect(calls).toEqual(["p/a"]);
+  });
+});
+
+// Review on #1223: a member that cannot be skipped (last member, hedge winner)
+// is released on reasoning; a refusal that follows withdraws the pin it took.
+describe("late refusal after reasoning (YAN-2479)", () => {
+  const THINK_THEN_REFUSE_RAW =
+    chunk({ role: "assistant" }) +
+    chunk({ reasoning_content: "let me think" }) +
+    chunk({ refusal: REFUSAL_TEXT }, { finish_reason: "content_filter" }) +
+    DONE;
+  const thinkThenRefuse = () => new Response(THINK_THEN_REFUSE_RAW, { status: 200, headers: SSE });
+
+  it("the last member's late refusal removes the pin once the stream is read", async () => {
+    const { body, calls } = await turn({ "p/a": refusal, "p/b": thinkThenRefuse });
+    expect(calls).toEqual(["p/a", "p/b"]);
+    expect(body).toBe(THINK_THEN_REFUSE_RAW); // served byte-for-byte
+    expect(comboPins.get(PIN_KEY)).toBeUndefined();
+  });
+
+  it("a pinned turn's late refusal keeps the pin", async () => {
+    comboPins.set(PIN_KEY, "p/a");
+    const { body } = await turn({ "p/a": thinkThenRefuse, "p/b": text });
+    expect(body).toContain(REFUSAL_TEXT);
+    expect(comboPins.get(PIN_KEY)).toBe("p/a");
+  });
+
+  it("a hedge winner's late refusal removes the pin", async () => {
+    const { body } = await turn(
+      { "p/a": thinkThenRefuse, "p/b": thinkThenRefuse },
+      { comboStrategy: "fastest", hedgeDelayMs: 5 },
+    );
+    expect(body).toContain(REFUSAL_TEXT);
+    expect(comboPins.get(PIN_KEY)).toBeUndefined();
+  });
+
+  it("reasoning then an answer keeps the pin", async () => {
+    const thinkThenAnswer = () =>
+      new Response(chunk({ reasoning_content: "hmm" }) + chunk({ content: "ok" }) + DONE, {
+        status: 200,
+        headers: SSE,
+      });
+    await turn({ "p/a": refusal, "p/b": thinkThenAnswer });
+    expect(comboPins.get(PIN_KEY)).toBe("p/b");
+  });
+
+  it("watchForLateRefusal passes bytes through and reports only a refusal before an answer", async () => {
+    const seen = [];
+    const out = watchForLateRefusal(thinkThenRefuse(), (r) => seen.push(r));
+    expect(await out.text()).toBe(THINK_THEN_REFUSE_RAW);
+    expect(seen).toEqual([REFUSAL_TEXT]);
+
+    const after = [];
+    const raw = chunk({ content: "ok" }) + chunk({ refusal: "late" }) + DONE;
+    const out2 = watchForLateRefusal(new Response(raw, { headers: SSE }), (r) => after.push(r));
+    expect(await out2.text()).toBe(raw);
+    expect(after).toEqual([]);
+  });
+
+  it("a nested combo's late refusal before the outer commit drops its first-turn claim (review #1224)", async () => {
+    const held = [];
+    const parentAttempt = { commitOnServe: (fn, release) => held.push({ fn, release }) };
+    const missing = () =>
+      new Response(JSON.stringify({ error: { message: "model not found" } }), { status: 404 });
+    const res = await handleComboChat({
+      body: { messages: [{ role: "user", content: "x" }] },
+      models: ["p/a", "p/b"],
+      comboName: "c",
+      comboStrategy: "round-robin",
+      handleSingleModel: async (_b, m) => (m === "p/a" ? missing() : thinkThenRefuse()),
+      log,
+      conversationKey: "conv1",
+      cacheAffinity: true,
+      parentAttempt,
+    });
+    await res.text(); // the late refusal is seen while the stream is read
+    for (const h of held) h.fn(); // the outer level then commits
+    expect(comboPins.get(PIN_KEY)).toBeUndefined();
   });
 });
