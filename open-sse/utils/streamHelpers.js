@@ -1,6 +1,6 @@
 import { FORMATS } from "../translator/formats.js";
 import { extractReasoningText } from "../translator/concerns/reasoning.js";
-import { CLAUDE_BLOCK, RESPONSES_ITEM } from "../translator/schema/index.js";
+import { CLAUDE_BLOCK, CLAUDE_STOP, RESPONSES_ITEM } from "../translator/schema/index.js";
 import { buildErrorBody } from "./error.js";
 import { SSE_DONE } from "./sseConstants.js";
 
@@ -199,7 +199,7 @@ export function refusalOf(item) {
     return delta.refusal;
   }
   if (item.type === "response.refusal.delta") return hasText(item.delta) ? item.delta : null;
-  if (item.type === "message_delta" && item.delta?.stop_reason === "refusal") {
+  if (item.type === "message_delta" && item.delta?.stop_reason === CLAUDE_STOP.REFUSAL) {
     const explanation = item.delta?.stop_details?.explanation;
     return hasText(explanation) ? explanation : "Request refused by upstream provider.";
   }
