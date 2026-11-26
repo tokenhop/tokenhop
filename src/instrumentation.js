@@ -25,6 +25,16 @@ export async function register() {
     const { ensureGatewayKeyStartup } = await import("@/lib/db/startupReadiness.js");
     await ensureGatewayKeyStartup();
 
+    // YAN-2468: reload combo conversation pins after DB readiness and before any
+    // request, so a restart never moves a running conversation to another model.
+    try {
+      const { installComboPinPersistence } = await import("@/sse/services/comboPinKv.js");
+      const { restored } = await installComboPinPersistence();
+      if (restored) console.log(`[ComboPins] restored ${restored} conversation pins`);
+    } catch (err) {
+      console.warn("[ComboPins] persistence unavailable:", err?.message);
+    }
+
     // YAN-351: a bad users & teams switch env value fails startup, not the first request.
     await import("@/lib/users/featureSwitch.js");
 

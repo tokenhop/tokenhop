@@ -80,6 +80,10 @@ export const KV_SCOPE_CLASSES = {
   cliToolPresets: { class: "pending-scope", issue: "YAN-374" },
   pricing: { class: "instance" },
   gemini_thought_signatures: { class: "system", note: "upstream signature cache" },
+  comboPins: {
+    class: "system",
+    note: "combo conversation pins (YAN-2468); the key's first segment is the workspace id",
+  },
 };
 
 /**
