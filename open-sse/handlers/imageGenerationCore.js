@@ -5,8 +5,7 @@ import { getExecutor } from "../executors/index.js";
 import { proxyOptionsFromCredentials } from "../utils/connectionProxyOptions.js";
 import { proxyAwareFetch } from "../utils/proxyFetch.js";
 import { getImageAdapter } from "./imageProviders/index.js";
-import { urlToBase64 } from "./imageProviders/_base.js";
-import { detectImageMime, parseDataUri } from "../translator/concerns/image.js";
+import { detectImageMime, fetchImageBytes, parseDataUri } from "../translator/concerns/image.js";
 import { MAX_IMAGE_BYTES } from "../config/mediaConfig.js";
 import { mapProxyFetchError } from "../utils/proxyError.js";
 
@@ -42,9 +41,10 @@ async function binaryImageResponse(first, body, proxyOptions) {
     mime = buf.length <= MAX_IMAGE_BYTES ? detectImageMime(buf) : null;
     if (!mime) return null;
   } else if (first?.url) {
-    const fetched = await urlToBase64(first.url, proxyOptions);
+    // Raw bytes from the hardened fetcher; no base64 round trip.
+    const fetched = await fetchImageBytes(first.url, { proxyOptions });
     if (!fetched) return null;
-    buf = Buffer.from(fetched.b64, "base64");
+    buf = fetched.buf;
     mime = fetched.mimeType;
   }
   if (!buf) return null;
