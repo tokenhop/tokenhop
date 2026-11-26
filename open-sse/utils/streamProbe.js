@@ -11,7 +11,7 @@
  * are fail-open (release).
  */
 
-import { hasMeaningfulToken, refusalOf } from "./streamHelpers.js";
+import { hasAnswerToken, hasMeaningfulToken, refusalOf } from "./streamHelpers.js";
 
 const DEFAULT_MAX_BYTES = 262144;
 const DEFAULT_MAX_MS = 10 * 1000;
@@ -19,6 +19,14 @@ const DEFAULT_MAX_MS = 10 * 1000;
 function isMeaningful(parsed) {
   try {
     return hasMeaningfulToken(parsed);
+  } catch {
+    return false;
+  }
+}
+
+function isAnswer(parsed) {
+  try {
+    return hasAnswerToken(parsed);
   } catch {
     return false;
   }
@@ -120,11 +128,14 @@ function replayResponse(response, buffered, reader, pending = null) {
  * Peek at the head of a streaming response.
  * A refusal before any answer token resolves "refused" with a replay of the
  * stream and the refusal text, so the caller can serve it or skip the member.
+ * `untilAnswer` keeps reading through reasoning-only frames (a model may think,
+ * then refuse) until an answer token, a refusal or a cap; a stream that ends with
+ * reasoning only is still released (YAN-1031).
  * @returns {Promise<{outcome:"release"|"refused"|"empty"|"error", response?, error?, refusal?}>}
  */
 export async function probeStreamHead(
   response,
-  { maxBytes = DEFAULT_MAX_BYTES, maxMs = DEFAULT_MAX_MS, signal = null } = {},
+  { maxBytes = DEFAULT_MAX_BYTES, maxMs = DEFAULT_MAX_MS, signal = null, untilAnswer = false } = {},
 ) {
   if (!response.body) return { outcome: "release", response };
 
@@ -147,6 +158,7 @@ export async function probeStreamHead(
     return error ? { outcome: "error", error } : { outcome: "empty" };
   };
 
+  let sawReasoning = false;
   const refused = (refusal) => ({
     outcome: "refused",
     refusal,
@@ -158,7 +170,10 @@ export async function probeStreamHead(
     if (isErrorFrame(parsed)) return { error: errorMessage(parsed, "stream error") };
     const refusal = refusalOf(parsed);
     if (refusal !== null) return { refusal };
-    return isMeaningful(parsed) ? "meaningful" : null;
+    if (!untilAnswer) return isMeaningful(parsed) ? "meaningful" : null;
+    if (isAnswer(parsed)) return "meaningful";
+    if (isMeaningful(parsed)) sawReasoning = true;
+    return null;
   };
 
   // Scan decoded text. `eof` treats the unterminated tail as a complete event.
@@ -197,8 +212,10 @@ export async function probeStreamHead(
   };
 
   const deadline = Date.now() + maxMs;
-  const verdictOf = (v) =>
-    v === "done" ? reject() : v.refusal !== undefined ? refused(v.refusal) : reject(v.error);
+  const verdictOf = (v) => {
+    if (v === "done") return sawReasoning ? release() : reject();
+    return v.refusal !== undefined ? refused(v.refusal) : reject(v.error);
+  };
 
   for (;;) {
     const read = reader.read();

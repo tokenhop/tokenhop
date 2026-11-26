@@ -1018,6 +1018,9 @@ async function runMember({
         maxBytes: COMBO_STREAM_PROBE_MAX_BYTES,
         maxMs: COMBO_STREAM_PROBE_MAX_MS,
         signal: attempt?.signal,
+        // A skippable member is held through reasoning so a refusal that follows
+        // it is still caught (bounded by the probe caps).
+        untilAnswer: refusalFallback,
       });
       if (attempt?.signal?.aborted) {
         attempt?.settle({ cancelled: true });

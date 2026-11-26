@@ -127,4 +127,27 @@ describe("combo refusal handling", () => {
     expect(body).toContain(REFUSAL_TEXT);
     expect(comboPins.get(PIN_KEY)).toBeUndefined();
   });
+
+  it("a refusal after reasoning on an unpinned turn still skips the member (review #1221)", async () => {
+    const thinkThenRefuse = () =>
+      new Response(
+        chunk({ role: "assistant" }) +
+          chunk({ reasoning_content: "let me think" }) +
+          chunk({ refusal: REFUSAL_TEXT }, { finish_reason: "content_filter" }) +
+          DONE,
+        { status: 200, headers: SSE },
+      );
+    const { body, calls } = await turn({ "p/a": thinkThenRefuse, "p/b": text });
+    expect(body).toContain('"content":"hi"');
+    expect(calls).toEqual(["p/a", "p/b"]);
+    expect(comboPins.get(PIN_KEY)).toBe("p/b");
+  });
+
+  it("a reasoning-only stream on an unpinned turn is still served (YAN-1031)", async () => {
+    const thinkOnly = () =>
+      new Response(chunk({ reasoning_content: "hmm" }) + DONE, { status: 200, headers: SSE });
+    const { body, calls } = await turn({ "p/a": thinkOnly, "p/b": text });
+    expect(body).toContain("hmm");
+    expect(calls).toEqual(["p/a"]);
+  });
 });
