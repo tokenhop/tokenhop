@@ -8,6 +8,7 @@ import {
   getCodexRateLimitResetCredits,
 } from "open-sse/services/usage.js";
 import { resolveConnectionProxyConfig } from "@/lib/network/connectionProxy";
+import { proxyOptionsFromConfig } from "@/lib/network/proxyOptions";
 import { refreshAndUpdateCredentials } from "../route.js";
 import { clearQuotaOwnedLocks } from "@/sse/services/quotaLockRelease.js";
 
@@ -91,14 +92,7 @@ async function getCodexConnection(connectionId, capability) {
   }
 
   const proxyConfig = await resolveConnectionProxyConfig(connection.providerSpecificData);
-  const proxyOptions = {
-    connectionProxyEnabled: proxyConfig.connectionProxyEnabled === true,
-    connectionProxyUrl: proxyConfig.connectionProxyUrl || "",
-    connectionNoProxy: proxyConfig.connectionNoProxy || "",
-    vercelRelayUrl: proxyConfig.vercelRelayUrl || "",
-    strictProxy: proxyConfig.strictProxy === true,
-    connectionProxyPoolId: proxyConfig.proxyPoolId || null,
-  };
+  const proxyOptions = proxyOptionsFromConfig(proxyConfig);
 
   return { connection, isOAuth, proxyOptions };
 }

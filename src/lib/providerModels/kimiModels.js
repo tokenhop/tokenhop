@@ -7,6 +7,7 @@ import { proxyAwareFetch } from "open-sse/utils/proxyFetch.js";
 import { refreshTokenByProvider } from "open-sse/services/tokenRefresh.js";
 import { buildOAuthResolver } from "@/lib/providerModels/oauthResolver.js";
 import { resolveConnectionProxyConfig } from "@/lib/network/connectionProxy";
+import { proxyOptionsFromConfig } from "@/lib/network/proxyOptions";
 
 const KIMI_MODELS_URL = "https://api.kimi.com/coding/v1/models";
 const FETCH_TIMEOUT_MS = 10_000;
@@ -118,14 +119,7 @@ export async function resolveKimi(connection) {
     if (proxy.source === "error") {
       return { models: [], warning: `Failed to fetch Kimi models: proxy resolution failed` };
     }
-    const proxyOptions = {
-      connectionProxyEnabled: proxy.connectionProxyEnabled === true,
-      connectionProxyUrl: proxy.connectionProxyUrl || "",
-      connectionNoProxy: proxy.connectionNoProxy || "",
-      vercelRelayUrl: proxy.vercelRelayUrl || "",
-      strictProxy: proxy.strictProxy === true,
-      connectionProxyPoolId: proxy.proxyPoolId || "",
-    };
+    const proxyOptions = proxyOptionsFromConfig(proxy);
     const fetchCatalog = makeCatalogFetch(connection, proxyOptions);
 
     if (apiKey) {
