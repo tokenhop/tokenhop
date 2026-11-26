@@ -207,4 +207,25 @@ describe("late refusal after reasoning (YAN-2479)", () => {
     expect(await out2.text()).toBe(raw);
     expect(after).toEqual([]);
   });
+
+  it("a nested combo's late refusal before the outer commit drops its first-turn claim (review #1224)", async () => {
+    const held = [];
+    const parentAttempt = { commitOnServe: (fn, release) => held.push({ fn, release }) };
+    const missing = () =>
+      new Response(JSON.stringify({ error: { message: "model not found" } }), { status: 404 });
+    const res = await handleComboChat({
+      body: { messages: [{ role: "user", content: "x" }] },
+      models: ["p/a", "p/b"],
+      comboName: "c",
+      comboStrategy: "round-robin",
+      handleSingleModel: async (_b, m) => (m === "p/a" ? missing() : thinkThenRefuse()),
+      log,
+      conversationKey: "conv1",
+      cacheAffinity: true,
+      parentAttempt,
+    });
+    await res.text(); // the late refusal is seen while the stream is read
+    for (const h of held) h.fn(); // the outer level then commits
+    expect(comboPins.get(PIN_KEY)).toBeUndefined();
+  });
 });

@@ -744,6 +744,9 @@ export async function handleComboChat({
           if (pinWritten !== undefined && comboPins.version(affinityKey) === pinWritten) {
             comboPins.delete(affinityKey);
           }
+          // A deferred (nested) write is now cancelled, so the first-turn claim it
+          // would have replaced must go too (version-guarded).
+          dropProvisional();
         }
       : null;
   const repin = (model) => {

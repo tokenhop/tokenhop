@@ -11,6 +11,7 @@
 import {
   CACHE_AFFINITY_MAX_PINS,
   CACHE_AFFINITY_MAX_PINS_PER_WORKSPACE,
+  CACHE_AFFINITY_PIN_TOUCH_MS,
   CACHE_AFFINITY_PROMPT_PIN_MAX_AGE_MS,
   CACHE_AFFINITY_TTL_MS,
 } from "../config/runtimeConfig.js";
@@ -49,7 +50,7 @@ export function createPinStore({
   maxAgeFor = null,
   now = Date.now,
   persistence = () => null,
-  touchEveryMs = PIN_TOUCH_EVERY_MS,
+  touchEveryMs = CACHE_AFFINITY_PIN_TOUCH_MS,
 }) {
   /** @type {Map<string, {value: any, expiresAt: number, createdAt: number, scope: string, persistedAt?: number}>} */
   const map = new Map(); // insertion order = global LRU order (oldest first)
@@ -226,8 +227,6 @@ export function createPinStore({
  * @property {() => any} clear
  */
 
-/** A live pin re-saves its last-used time at most this often (YAN-2468). */
-const PIN_TOUCH_EVERY_MS = 5 * 60 * 1000;
 const COMBO_PIN_PERSISTENCE = Symbol.for("tokenhop.comboPinPersistence");
 
 /**
