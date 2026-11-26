@@ -77,6 +77,13 @@ vi.mock("open-sse/handlers/videoCore.js", async (importOriginal) => ({
 }));
 vi.mock("open-sse/handlers/search/index.js", () => ({ handleSearchCore: mocks.search }));
 vi.mock("open-sse/handlers/fetch/index.js", () => ({ handleFetchCore: mocks.fetch }));
+// YAN-1600: handleFetch runs the SSRF guard, which does a real DNS lookup of
+// the target host. Slow or private-answering runner DNS made the fetch case
+// time out or 400. SSRF behavior is covered by ssrf-guard-hardening.
+vi.mock("open-sse/shared/ssrfGuard.js", async (importOriginal) => ({
+  ...(await importOriginal()),
+  assertPublicUrlResolved: vi.fn(async () => {}),
+}));
 
 import { handleTts } from "../../src/sse/handlers/tts.js";
 import { handleStt } from "../../src/sse/handlers/stt.js";
@@ -229,8 +236,7 @@ describe("media handlers record usage attribution (YAN-370)", () => {
       const response = await run();
       expect(response.status).toBe(200);
       // stt records asynchronously (units parsed from the response body first).
-      for (let i = 0; i < 20 && mocks.saveRequestUsageUnscoped.mock.calls.length === 0; i++)
-        await new Promise((r) => setTimeout(r, 5));
+      await vi.waitFor(() => expect(mocks.saveRequestUsageUnscoped).toHaveBeenCalled());
       expect(mocks.saveRequestUsageUnscoped).toHaveBeenCalledTimes(1);
       expect(mocks.saveRequestUsageUnscoped).toHaveBeenCalledWith(
         expect.objectContaining({
