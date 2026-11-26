@@ -164,6 +164,18 @@ describe("connection maintenance (real SQLite)", () => {
     await mk("r-a", 10);
     await mk("r-b", 20);
     await mk("r-c", 30);
+    // Create already reorders, so make the priorities sparse behind its back.
+    const { getAdapter } = await import("@/lib/db/driver.js");
+    const raw = await getAdapter();
+    for (const [name, p] of [
+      ["r-a", 10],
+      ["r-b", 20],
+      ["r-c", 30],
+    ]) {
+      raw.run(`UPDATE providerConnections SET priority = ? WHERE name = ?`, [p, name]);
+    }
+    const sparse = await db.getProviderConnectionsUnscoped({ provider: "openai" });
+    expect(sparse.map((c) => c.priority)).toEqual([10, 20, 30]);
     await db.reorderProviderConnectionsUnscoped("openai");
     const list = await db.getProviderConnectionsUnscoped({ provider: "openai" });
     expect(list.map((c) => [c.name, c.priority])).toEqual([
