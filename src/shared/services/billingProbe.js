@@ -21,6 +21,7 @@ import {
 } from "@/lib/db/repos/connectionsRepo.js";
 import { saveRequestDetailUnscoped } from "@/lib/usageDb.js";
 import { resolveConnectionProxyConfig } from "@/lib/network/connectionProxy";
+import { proxyOptionsFromConfig } from "@/lib/network/proxyOptions";
 import { getExecutor } from "open-sse/executors/index.js";
 import { BILLING_PROBE_CONFIG } from "open-sse/config/errorConfig.js";
 import {
@@ -132,14 +133,7 @@ async function dispatchProbe(conn, spec, deps) {
       },
       signal: ctrl.signal,
       log: null,
-      proxyOptions: {
-        connectionProxyEnabled: proxy.connectionProxyEnabled === true,
-        connectionProxyUrl: proxy.connectionProxyUrl || "",
-        connectionNoProxy: proxy.connectionNoProxy || "",
-        vercelRelayUrl: proxy.vercelRelayUrl || "",
-        strictProxy: proxy.strictProxy === true,
-        connectionProxyPoolId: proxy.proxyPoolId || null,
-      },
+      proxyOptions: proxyOptionsFromConfig(proxy),
     });
     if (!response.ok) {
       const { statusCode, message } = await parseUpstreamError(response, executor);

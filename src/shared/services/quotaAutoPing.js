@@ -13,6 +13,7 @@ import { getExecutor } from "open-sse/executors/index.js";
 import { CLAUDE_CLI_SPOOF_HEADERS } from "open-sse/providers/shared.js";
 import { proxyAwareFetch } from "open-sse/utils/proxyFetch.js";
 import { resolveConnectionProxyConfig } from "@/lib/network/connectionProxy";
+import { proxyOptionsFromConfig } from "@/lib/network/proxyOptions";
 import { refreshAndUpdateCredentials } from "@/app/api/usage/[connectionId]/route.js";
 import { QUOTA_AUTOPING_CONFIG } from "@/shared/constants/config";
 
@@ -101,17 +102,6 @@ function shouldPingForReset(providerConfig, cachedReset, resetAt, now) {
 
   const resetMs = new Date(resetAt).getTime();
   return Number.isFinite(resetMs) && now >= resetMs - C.pingLeadMs;
-}
-
-function buildProxyOptions(cfg) {
-  return {
-    connectionProxyEnabled: cfg.connectionProxyEnabled === true,
-    connectionProxyUrl: cfg.connectionProxyUrl || "",
-    connectionNoProxy: cfg.connectionNoProxy || "",
-    vercelRelayUrl: cfg.vercelRelayUrl || "",
-    strictProxy: cfg.strictProxy === true,
-    connectionProxyPoolId: cfg.proxyPoolId || null,
-  };
 }
 
 async function sendClaudePing(connection, providerConfig, proxyOptions, deps) {
@@ -242,7 +232,7 @@ async function pingConnection(conn, provider, providerConfig, handler, deps, sta
   if (shouldSkipAfterFailure(state, key)) return;
 
   const proxyCfg = await deps.resolveConnectionProxyConfig(conn.providerSpecificData);
-  const proxyOptions = buildProxyOptions(proxyCfg);
+  const proxyOptions = proxyOptionsFromConfig(proxyCfg);
 
   let connection = conn;
   try {

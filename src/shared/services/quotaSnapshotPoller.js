@@ -17,6 +17,7 @@ import { getUsageForProvider } from "open-sse/services/usage.js";
 import { getSnapshot } from "open-sse/services/quotaSnapshot.js";
 import { QUOTA_SNAPSHOT } from "open-sse/config/quotaSnapshot.js";
 import { resolveConnectionProxyConfig } from "@/lib/network/connectionProxy";
+import { proxyOptionsFromConfig } from "@/lib/network/proxyOptions";
 import { refreshAndUpdateCredentials } from "@/app/api/usage/[connectionId]/route.js";
 import { comboMemberProviders, weightedProviders } from "./weightedTargets.js";
 import { USAGE_APIKEY_PROVIDERS } from "@/shared/constants/providers";
@@ -38,17 +39,6 @@ if (!global.__quotaSnapshotPoller) {
   };
 }
 const g = global.__quotaSnapshotPoller;
-
-function buildProxyOptions(cfg) {
-  return {
-    connectionProxyEnabled: cfg?.connectionProxyEnabled === true,
-    connectionProxyUrl: cfg?.connectionProxyUrl || "",
-    connectionNoProxy: cfg?.connectionNoProxy || "",
-    vercelRelayUrl: cfg?.vercelRelayUrl || "",
-    strictProxy: cfg?.strictProxy === true,
-    connectionProxyPoolId: cfg?.proxyPoolId || null,
-  };
-}
 
 // Same eligibility as GET /api/usage/[connectionId].
 function isEligible(connection) {
@@ -118,7 +108,7 @@ async function pollConnection(connection, deps, state) {
   }
   try {
     const proxyConfig = await deps.resolveConnectionProxyConfig(connection.providerSpecificData);
-    const proxyOptions = buildProxyOptions(proxyConfig);
+    const proxyOptions = proxyOptionsFromConfig(proxyConfig);
     // Reuse route refresh for OAuth only; API keys have no refresh flow.
     const freshConnection =
       connection.authType === "oauth"

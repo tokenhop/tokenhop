@@ -13,6 +13,7 @@ import { getUsageForProvider } from "open-sse/services/usage.js";
 import { getExecutor } from "open-sse/executors/index.js";
 import { needsReauthentication } from "open-sse/services/reauthState.js";
 import { resolveConnectionProxyConfig } from "@/lib/network/connectionProxy";
+import { proxyOptionsFromConfig } from "@/lib/network/proxyOptions";
 import { USAGE_APIKEY_PROVIDERS } from "@/shared/constants/providers";
 import {
   buildQuotaSnapshotView,
@@ -187,14 +188,7 @@ export async function GET(request, { params }) {
     // Resolve connection proxy config; strictProxy comes from the pool so a down
     // proxy surfaces as an error instead of silently going direct from the host IP.
     const proxyConfig = await resolveConnectionProxyConfig(connection.providerSpecificData);
-    const proxyOptions = {
-      connectionProxyEnabled: proxyConfig.connectionProxyEnabled === true,
-      connectionProxyUrl: proxyConfig.connectionProxyUrl || "",
-      connectionNoProxy: proxyConfig.connectionNoProxy || "",
-      vercelRelayUrl: proxyConfig.vercelRelayUrl || "",
-      strictProxy: proxyConfig.strictProxy === true,
-      connectionProxyPoolId: proxyConfig.proxyPoolId || null,
-    };
+    const proxyOptions = proxyOptionsFromConfig(proxyConfig);
 
     // Refresh credentials only for OAuth connections (apikey has no token refresh)
     if (isOAuth) {
