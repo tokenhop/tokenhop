@@ -12,7 +12,7 @@ import { coerceResponsesOutput } from "../translator/formats/responsesApi.js";
 import { pickSmoothWeighted } from "./weightedRoundRobin.js";
 import { effectiveComboWeight } from "./comboWeights.js";
 import { boundedMap } from "../utils/boundedMap.js";
-import { probeStreamHead } from "../utils/streamProbe.js";
+import { probeStreamHead, watchForLateRefusal } from "../utils/streamProbe.js";
 import { COMBO_HEDGE_DELAY_DEFAULT_MS, COMBO_HEDGE_DELAY_MAX_MS } from "./comboStrategy.js";
 import { clearComboPins, comboPins } from "./cacheAffinity.js";
 import { comboAffinityKey, pinnedCandidates, validComboPin } from "./comboAffinityOrder.js";
@@ -730,6 +730,22 @@ export async function handleComboChat({
       comboPins.delete(affinityKey);
     }
   };
+  // YAN-2479: a refusal seen after the stream was released (reasoning, then a
+  // refusal) withdraws the pin this turn wrote, or cancels a deferred one.
+  let pinWritten;
+  let lateRefusal = false;
+  const writePin = (model) => {
+    if (!lateRefusal) pinWritten = comboPins.set(affinityKey, model);
+  };
+  const onLateRefusal =
+    affinityKey && !pinned
+      ? () => {
+          lateRefusal = true;
+          if (pinWritten !== undefined && comboPins.version(affinityKey) === pinWritten) {
+            comboPins.delete(affinityKey);
+          }
+        }
+      : null;
   const repin = (model) => {
     // Capacity-adapter members are never pinned (spec §2): the old pin stays. Nor is
     // a member that only bridged a pinned turn (YAN-2467).
@@ -740,7 +756,7 @@ export async function handleComboChat({
     // waits until every enclosing member wins; a hedge loser or a member the outer
     // empty-stream probe skips releases it (and its provisional pin) instead.
     if (!parentAttempt?.commitOnServe) {
-      comboPins.set(affinityKey, model);
+      writePin(model);
       return;
     }
     // A deferred write must not replace a pin a later turn wrote meanwhile. A
@@ -750,8 +766,7 @@ export async function handleComboChat({
     const seenGen = comboPins.generation();
     const commit = () => {
       const now = comboPins.version(affinityKey);
-      if (now !== undefined ? now === seen : comboPins.generation() === seenGen)
-        comboPins.set(affinityKey, model);
+      if (now !== undefined ? now === seen : comboPins.generation() === seenGen) writePin(model);
     };
     parentAttempt.commitOnServe(commit, dropProvisional);
   };
@@ -831,6 +846,7 @@ export async function handleComboChat({
         clientSignal,
         delayMs: hedgeMs,
         onServed: repin,
+        onLateRefusal,
         parentAttempt,
       });
     }
@@ -853,6 +869,7 @@ export async function handleComboChat({
         // YAN-2468: an unpinned turn skips a member that refuses (another model may
         // answer); a pinned turn, or the last member, serves the refusal as is.
         refusalFallback: !pinned && i < rotatedModels.length - 1,
+        onLateRefusal,
       });
       // A refusal never takes the pin.
       if (step.outcome === "served" && !step.refused) repin(rotatedModels[i]);
@@ -945,6 +962,7 @@ async function runMember({
   cancelSignal = null,
   trackServe = false,
   refusalFallback = false,
+  onLateRefusal = null,
 }) {
   log.info("COMBO", `Trying model ${index + 1}/${total}: ${modelStr}`);
   const attemptStartedAt = Date.now();
@@ -1044,7 +1062,10 @@ async function runMember({
         }
       }
       if (probe.outcome === "release" || servesRefusal) {
-        result = probe.response;
+        result =
+          probe.outcome === "release" && probe.beforeAnswer && onLateRefusal
+            ? watchForLateRefusal(probe.response, onLateRefusal)
+            : probe.response;
       } else if (probe.outcome === "refused") {
         probe.response?.body?.cancel?.("refused")?.catch?.(() => {});
         attempt?.close();
@@ -1271,6 +1292,7 @@ async function raceHedgedPair({
   clientSignal = null,
   delayMs,
   onServed,
+  onLateRefusal = null,
   parentAttempt = null,
 }) {
   log.info("COMBO", `Fastest hedge: ${models[0]} vs delayed ${models[1]} (${delayMs}ms)`);
@@ -1308,6 +1330,7 @@ async function raceHedgedPair({
       recordLatency,
       signalCtrl: s.ctrl,
       parentAttempt,
+      onLateRefusal,
     })
       // A rejecting member must still settle its slot, or the race hangs.
       .catch((e) => ({
@@ -1392,6 +1415,7 @@ async function raceHedgedPair({
       recordLatency,
       parentAttempt,
       cancelSignal: clientSignal,
+      onLateRefusal,
     });
     if (step.outcome === "served" && !step.refused) onServed?.(models[i]);
     if (step.outcome !== "next") return step.response;

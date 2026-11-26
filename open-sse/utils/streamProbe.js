@@ -147,9 +147,12 @@ export async function probeStreamHead(
   let bufferedBytes = 0;
   let text = "";
 
+  let sawAnswer = false;
+  // beforeAnswer: released on reasoning or a cap, so a refusal may still follow.
   const release = (pending = null) => ({
     outcome: "release",
     response: replayResponse(response, buffered, reader, pending),
+    beforeAnswer: !sawAnswer,
   });
   // Not awaited: cancel of a tee()'d branch only resolves once every branch
   // cancels, and the upstream abort runs through the stream's own cancel hook.
@@ -170,8 +173,11 @@ export async function probeStreamHead(
     if (isErrorFrame(parsed)) return { error: errorMessage(parsed, "stream error") };
     const refusal = refusalOf(parsed);
     if (refusal !== null) return { refusal };
+    if (isAnswer(parsed)) {
+      sawAnswer = true;
+      return "meaningful";
+    }
     if (!untilAnswer) return isMeaningful(parsed) ? "meaningful" : null;
-    if (isAnswer(parsed)) return "meaningful";
     if (isMeaningful(parsed)) sawReasoning = true;
     return null;
   };
@@ -260,4 +266,96 @@ export async function probeStreamHead(
     if (v !== "more") return verdictOf(v);
     if (bufferedBytes >= maxBytes) return release();
   }
+}
+
+/**
+ * Pass a released stream through unchanged while watching for a refusal that
+ * arrives before any answer token (YAN-2479: a model may reason, then refuse,
+ * after the probe already released on its reasoning). Calls onRefusal(text) at
+ * most once; stops parsing at the first answer token. Fail-open: a parse problem
+ * only ends the watch, never the stream.
+ * @param {Response} response
+ * @param {(refusal: string) => void} onRefusal
+ * @returns {Response}
+ */
+export function watchForLateRefusal(response, onRefusal) {
+  if (!response?.body) return response;
+  const contentType = (response.headers?.get?.("content-type") || "").toLowerCase();
+  const isNdjson = contentType.includes("ndjson") && !contentType.includes("text/event-stream");
+  const decoder = new TextDecoder();
+  let text = "";
+  let watching = true;
+  const inspect = (payloads) => {
+    for (const parsed of payloads) {
+      const refusal = refusalOf(parsed);
+      if (refusal !== null) {
+        watching = false;
+        try {
+          onRefusal(refusal);
+        } catch {
+          // observer must never break streaming
+        }
+        return;
+      }
+      if (isAnswer(parsed)) {
+        watching = false;
+        return;
+      }
+    }
+  };
+  const scan = (eof) => {
+    if (isNdjson) {
+      const lines = text.split("\n");
+      text = eof ? "" : (lines.pop() ?? "");
+      const payloads = [];
+      for (const line of lines) {
+        if (line.trim() === "") continue;
+        try {
+          payloads.push(JSON.parse(line));
+        } catch {
+          // unparseable line: ignore
+        }
+      }
+      inspect(payloads);
+      return;
+    }
+    const norm = text.replace(/\r\n/g, "\n");
+    const cut = eof ? norm.length : norm.lastIndexOf("\n\n");
+    if (cut < 0) {
+      text = norm;
+      return;
+    }
+    text = eof ? "" : norm.slice(cut + 2);
+    inspect(parseSseSegment(norm.slice(0, cut)).payloads);
+  };
+  const stream = response.body.pipeThrough(
+    new TransformStream({
+      transform(chunk, controller) {
+        controller.enqueue(chunk);
+        if (!watching) return;
+        try {
+          text += decoder.decode(chunk, { stream: true });
+          scan(false);
+          // Bound the watch buffer; a huge frame without a break is not watched.
+          if (text.length > DEFAULT_MAX_BYTES) watching = false;
+        } catch {
+          watching = false;
+        }
+      },
+      flush() {
+        if (!watching) return;
+        try {
+          text += decoder.decode();
+          scan(true);
+        } catch {
+          // ignore
+        }
+      },
+    }),
+  );
+  return new Response(stream, {
+    status: response.status,
+    statusText: response.statusText,
+    headers: response.headers,
+  });
 }
