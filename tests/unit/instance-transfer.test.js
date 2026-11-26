@@ -24,7 +24,10 @@ vi.mock("@/lib/auth/apiKeyPrincipal.js", () => ({
   clearApiKeyPrincipalCache: vi.fn(),
 }));
 
-const NOW = "2026-10-09T00:00:00.000Z";
+const NOW = "2026-10-09T12:00:00.000Z";
+const NOW_LOCAL = new Date(NOW);
+const NOW_DATE_KEY = `${NOW_LOCAL.getFullYear()}-${String(NOW_LOCAL.getMonth() + 1).padStart(2, "0")}-${String(NOW_LOCAL.getDate()).padStart(2, "0")}`;
+const OTHER_LAST_USED_AT = "2026-10-09T13:00:00.000Z";
 const MASTER = Buffer.from(Array.from({ length: 32 }, (_, i) => (i * 7 + 3) % 256));
 const OTHER_MASTER = Buffer.from(Array.from({ length: 32 }, (_, i) => (i * 11 + 5) % 256));
 const KID = masterKeyId(MASTER);
@@ -188,13 +191,13 @@ function seedHashedInstanceFull() {
   );
   db.run(
     `INSERT INTO usageRollup(dateKey, workspaceId, userId, apiKeyId, provider, model, connectionId, endpoint, requests, tokensIn, tokensOut, tokensCached, cost)
-     VALUES('2026-10-09', ?, 'owner', 'hk-1', 'openai', 'gpt-4o', 'conn-1', '/v1/chat', 1, 10, 20, 0, 0.01)`,
-    [WS],
+     VALUES(?, ?, 'owner', 'hk-1', 'openai', 'gpt-4o', 'conn-1', '/v1/chat', 1, 10, 20, 0, 0.01)`,
+    [NOW_DATE_KEY, WS],
   );
   db.run(
     `INSERT INTO usageComboRollup(dateKey, workspaceId, userId, apiKeyId, comboName, requests)
-     VALUES('2026-10-09', ?, 'owner', 'hk-1', 'team combo', 3)`,
-    [WS],
+     VALUES(?, ?, 'owner', 'hk-1', 'team combo', 3)`,
+    [NOW_DATE_KEY, WS],
   );
   db.run(
     `INSERT INTO usageBudgetCarry(day, workspaceId, userId, apiKeyId, grantId, usd, tokens, requests, notionalUsd)
@@ -656,8 +659,8 @@ describe("instance full-table sections (encrypted v3)", () => {
     delete snapshot.usageComboRollup;
     // A stale live combo from the instance being replaced must not survive.
     db.run(
-      `INSERT INTO usageComboRollup(dateKey, workspaceId, userId, apiKeyId, comboName, requests) VALUES('2026-10-09', ?, 'owner', 'hk-1', 'stale combo', 9) ON CONFLICT DO UPDATE SET requests = excluded.requests`,
-      [WS],
+      `INSERT INTO usageComboRollup(dateKey, workspaceId, userId, apiKeyId, comboName, requests) VALUES(?, ?, 'owner', 'hk-1', 'stale combo', 9) ON CONFLICT DO UPDATE SET requests = excluded.requests`,
+      [NOW_DATE_KEY, WS],
     );
     await dbApi.importDb(structuredClone(snapshot), { masterKey: MASTER });
     const rollup = db.get(
@@ -675,7 +678,7 @@ describe("instance full-table sections (encrypted v3)", () => {
     // Live rollup holds rolled-up savings for pruned days that no history can reproduce.
     db.run(
       "UPDATE usageRollup SET savingsSavedEst = 77, rtkSavedEst = 77, lastUsedAt = ? WHERE apiKeyId = 'hk-1'",
-      ["2026-10-09T12:00:00.000Z"],
+      [OTHER_LAST_USED_AT],
     );
     const before = {
       rollup: dump("SELECT * FROM usageRollup ORDER BY dateKey, apiKeyId"),
@@ -697,8 +700,8 @@ describe("instance full-table sections (encrypted v3)", () => {
     const snapshot = await dbApi.exportDb();
     delete snapshot.usageComboRollup;
     db.run(
-      `INSERT INTO usageComboRollup(dateKey, workspaceId, userId, apiKeyId, comboName, requests) VALUES('2026-10-09', ?, 'owner', 'hk-1', 'stale combo', 9) ON CONFLICT DO UPDATE SET requests = excluded.requests`,
-      [WS],
+      `INSERT INTO usageComboRollup(dateKey, workspaceId, userId, apiKeyId, comboName, requests) VALUES(?, ?, 'owner', 'hk-1', 'stale combo', 9) ON CONFLICT DO UPDATE SET requests = excluded.requests`,
+      [NOW_DATE_KEY, WS],
     );
     await dbApi.importDb(structuredClone(snapshot), { masterKey: MASTER });
     // Savings are the snapshot's own values (current schema): not recomputed.
@@ -717,7 +720,7 @@ describe("instance full-table sections (plain hashed v2)", () => {
 
   it("Users & teams off: a schema-20 import never touches telemetry rollups", async () => {
     db.run("UPDATE usageRollup SET savingsSavedEst = 77, lastUsedAt = ? WHERE apiKeyId = 'hk-1'", [
-      "2026-10-09T12:00:00.000Z",
+      OTHER_LAST_USED_AT,
     ]);
     const snapshot = await dbApi.exportDb();
     snapshot.schemaVersion = 20;

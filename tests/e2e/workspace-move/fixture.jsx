@@ -1,3 +1,5 @@
+import { useState } from "react";
+import { flushSync } from "react-dom";
 import { createRoot } from "react-dom/client";
 import {
   ApiKeysFixture,
@@ -89,4 +91,21 @@ function App() {
   if (mode === "bulk") return <BulkFixture />;
   throw new Error(`Unknown fixture mode: ${mode}`);
 }
-createRoot(document.getElementById("root")).render(<App />);
+// Same element every render, so a tick re-renders nothing below the root.
+const app = <App />;
+/**
+ * `window.fixture.flushEffects()` runs every committed-but-pending passive
+ * effect. A flushSync update makes React flush pending effects before it
+ * renders. Listeners registered in effects (the dialog's Esc dismiss layer
+ * follows `closeOnEscape={!busy}`) are live only after this, not just once
+ * the DOM shows the new phase (YAN-1263).
+ */
+function Root() {
+  const [, setTick] = useState(0);
+  window.fixture.flushEffects = () => {
+    flushSync(() => setTick((tick) => tick + 1));
+    return true;
+  };
+  return app;
+}
+createRoot(document.getElementById("root")).render(<Root />);

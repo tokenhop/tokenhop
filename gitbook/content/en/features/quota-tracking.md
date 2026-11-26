@@ -113,6 +113,17 @@ Cost: $4.80
 
 ---
 
+## Recent quota trends
+
+On **Dashboard → Quota**, the **7d used** line shows sampled utilization for a
+quota window once there are at least two readings. The runway estimate uses
+recent readings from the current reset window; it may be unavailable when
+there are too few samples or the provider does not report a reset time.
+
+Tokenhop keeps sampled quota history locally for 60 days by default. Recent
+unexpired readings survive a restart, but a cached reading is not a live
+provider check. Deleting a connection removes its stored quota history.
+
 ## Quota Limits & Reset Times
 
 ### Subscription Providers
@@ -594,90 +605,121 @@ Charts, long periods and budgets use daily totals, which are not deleted. With a
 
 ## API Access
 
-### Get Quota Status
+### Get Quota Status (Remote / Gateway API Key)
+
+`GET /v1/quota` returns read-only, per-account quota snapshots authorized by a gateway API key. It works both locally and over a remote tunnel or reverse proxy, reads cached server-side snapshots only (this request path never refreshes or rotates OAuth tokens and makes no upstream provider calls), and never decrypts or returns secrets, tokens, or credentials.
+
+Authenticate with `Authorization: Bearer <your-api-key>` or `x-api-key: <your-api-key>` (avoid passing `?key=` in query strings, which can be recorded in proxy and access logs). Pass an optional `?provider=<provider-id-or-alias>` query parameter (for example `?provider=claude` or `?provider=cc`) to narrow the list to one provider.
+
+When hashed API-key storage is active (multi-user mode), results are scoped to the API key's workspace, active connection grants (without disclosing grantor emails), and model allow-list (`allowedModels` filters at the provider level; an empty `allowedModels` list is unrestricted even when `allowedCombos` is set). In legacy single-user storage, all active connections are returned. For own-workspace connections without a custom display name, `name` falls back to the connection's email or id.
 
 ```bash
-GET http://localhost:20128/api/quota
-Authorization: Bearer your-api-key
+curl -H "Authorization: Bearer your-api-key" \
+  https://your-gateway.example.com/v1/quota
+
+# Filter to a single provider (canonical id or alias)
+curl -H "Authorization: Bearer your-api-key" \
+  "http://localhost:20128/v1/quota?provider=claude"
+```
 
 Response:
+
+```json
 {
-  "providers": [
+  "object": "list",
+  "accounts": [
     {
-      "id": "cc",
-      "name": "Claude Code",
-      "quota": {
-        "used": 2.5,
-        "limit": 5,
-        "unit": "hours",
-        "percentage": 50
+      "id": "conn_01",
+      "name": "claude-work",
+      "provider": "claude",
+      "planTier": "default_claude_max_20x",
+      "fiveHour": {
+        "used": 42,
+        "limit": 100,
+        "unit": "provider",
+        "percentage": 42,
+        "remainingPercentage": 58,
+        "nextReset": "2026-11-25T15:00:00.000Z",
+        "observedAt": "2026-11-25T12:34:56.000Z"
       },
-      "reset": {
-        "type": "rolling",
-        "window": "5h",
-        "nextReset": "2026-02-04T06:45:00Z"
+      "weekly": {
+        "used": 18,
+        "limit": 100,
+        "unit": "provider",
+        "percentage": 18,
+        "remainingPercentage": 82,
+        "nextReset": "2026-12-01T00:00:00.000Z",
+        "observedAt": "2026-11-25T12:34:56.000Z"
       },
-      "cost": {
-        "today": 0,
-        "month": 0,
-        "currency": "USD"
-      }
+      "windows": [
+        {
+          "kind": "5h",
+          "used": 42,
+          "limit": 100,
+          "unit": "provider",
+          "percentage": 42,
+          "remainingPercentage": 58,
+          "nextReset": "2026-11-25T15:00:00.000Z",
+          "observedAt": "2026-11-25T12:34:56.000Z",
+          "source": "probe"
+        },
+        {
+          "kind": "7d",
+          "used": 18,
+          "limit": 100,
+          "unit": "provider",
+          "percentage": 18,
+          "remainingPercentage": 82,
+          "nextReset": "2026-12-01T00:00:00.000Z",
+          "observedAt": "2026-11-25T12:34:56.000Z",
+          "source": "probe"
+        }
+      ],
+      "updatedAt": "2026-11-25T12:34:56.000Z",
+      "stale": false
     },
     {
-      "id": "glm",
-      "name": "GLM-4.7",
-      "quota": {
-        "used": 7000000,
-        "limit": 10000000,
-        "unit": "tokens",
-        "percentage": 70
+      "id": "conn_02",
+      "name": "kimi-main",
+      "provider": "kimi",
+      "planTier": null,
+      "fiveHour": {
+        "used": 120000,
+        "limit": 500000,
+        "unit": "provider",
+        "percentage": 24,
+        "remainingPercentage": 76,
+        "nextReset": "2026-11-25T16:00:00.000Z",
+        "observedAt": "2026-11-25T12:34:56.000Z"
       },
-      "reset": {
-        "type": "daily",
-        "time": "10:00 AM UTC+8",
-        "nextReset": "2026-02-04T10:00:00+08:00"
-      },
-      "cost": {
-        "today": 4.20,
-        "month": 52.00,
-        "currency": "USD"
-      }
+      "weekly": null,
+      "windows": [
+        {
+          "kind": "5h",
+          "used": 120000,
+          "limit": 500000,
+          "unit": "provider",
+          "percentage": 24,
+          "remainingPercentage": 76,
+          "nextReset": "2026-11-25T16:00:00.000Z",
+          "observedAt": "2026-11-25T12:34:56.000Z",
+          "source": "probe"
+        }
+      ],
+      "updatedAt": "2026-11-25T12:34:56.000Z",
+      "stale": false
     }
   ]
 }
 ```
 
-### Get Usage Stats
+- `fiveHour` and `weekly` surface the `5h` and `7d` windows directly (or `null` when that provider does not report the window or no live window is cached). `windows` includes every live cached window for the account, such as `month` (Cursor, GitHub) or model-scoped windows (`model:*`).
+- `used` and `limit` reflect provider-reported values when available (`unit: "provider"`, such as Kimi token counts or Claude/Codex 0–100 utilization), and fall back to a `0–100` percentage scale (`unit: "percentage"`) when only a utilization fraction was observed (for example from response headers). `percentage` (% used, clamped to `0–100`) and `remainingPercentage` (% left) are always normalized percentages; `nextReset` is a future ISO-8601 UTC timestamp or `null` (windows whose reset time has passed are dropped).
+- Snapshots are populated in memory by passive upstream response headers, dashboard quota checks, and the background snapshot poller (which runs for weighted strategies and combo members). `stale` is `true` when no live windows exist (including missing, expired, or tier-only snapshots) or when the newest window `observedAt` is at least 15 minutes old.
 
-```bash
-GET http://localhost:20128/api/usage?period=today
-Authorization: Bearer your-api-key
+### Dashboard Usage Endpoints (Session / Local CLI Auth)
 
-Response:
-{
-  "period": "today",
-  "date": "2026-02-04",
-  "summary": {
-    "requests": 1234,
-    "tokens": 26000000,
-    "cost": 4.80
-  },
-  "byModel": [
-    {
-      "model": "cc/claude-opus-4-5",
-      "requests": 456,
-      "tokens": 15000000,
-      "cost": 0
-    },
-    {
-      "model": "glm/glm-4.7",
-      "requests": 234,
-      "tokens": 8000000,
-      "cost": 4.80
-    }
-  ]
-}
-```
+Dashboard usage routes under `/api/usage/*` (such as `/api/usage/stats`, `/api/usage/logs`, and `/api/usage/export`) and `/api/home/quota` are dashboard APIs authenticated by a signed-in dashboard session cookie or the local CLI token — they do not accept gateway Bearer API keys. There is no `/api/quota` or `/api/usage` route; unmapped `/api/*` paths fail closed with `403 LOCAL_ONLY`.
 
 ### Export usage history
 

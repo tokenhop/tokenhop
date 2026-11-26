@@ -1,4 +1,3 @@
-import { convertResponsesStreamToJson } from "../../transformer/streamToJsonConverter.js";
 import { createErrorResult } from "../../utils/error.js";
 import { decloakToolNames } from "../../utils/claudeCloaking.js";
 import { canonicalizeUsage } from "../../utils/usageTracking.js";
@@ -6,80 +5,20 @@ import { HTTP_STATUS } from "../../config/runtimeConfig.js";
 import { FORMATS, isFimFormat } from "../../translator/formats.js";
 import { PROVIDERS } from "../../config/providers.js";
 import {
-  buildRequestDetail,
   extractRequestConfig,
   extractUsageFromResponse,
-  saveUsageStats,
-  formatDoneLine,
   summarizeClientResponse,
 } from "./requestDetail.js";
 import { claudeSseToMessage, readSSEData } from "./claudeSseToMessage.js";
 import { openAICompletionToClientFormat } from "./completionToClient.js";
+import { createSuccessRecorder } from "./forcedSseSuccess.js";
+import { responsesSseToJson } from "./responsesSseToJson.js";
 import { fimContextFor } from "../../translator/concerns/fim.js";
 import { initState, translateResponse } from "../../translator/index.js";
-import {
-  OPENAI_FINISH,
-  ROLE,
-  RESPONSES_INCOMPLETE,
-  RESPONSES_ITEM,
-} from "../../translator/schema/index.js";
+import { ROLE } from "../../translator/schema/index.js";
 
 // Responses-API providers (e.g. codex) may emit SSE without content-type + use Responses output shape
 const isResponsesProvider = (p) => PROVIDERS[p]?.format === FORMATS.OPENAI_RESPONSES;
-import { saveRequestDetailUnscoped } from "../../services/usageSink.js";
-
-function textFromResponsesMessageItem(item) {
-  if (!item?.content || !Array.isArray(item.content)) return "";
-  const byType = item.content.find((c) => c.type === "output_text");
-  if (typeof byType?.text === "string") return byType.text;
-  const anyText = item.content.find((c) => typeof c.text === "string");
-  if (typeof anyText?.text === "string") return anyText.text;
-  return "";
-}
-
-/**
- * Codex / Responses API may emit many alternating reasoning + message items.
- * Early message blocks often have empty output_text; the user-visible answer is usually in the last non-empty message.
- */
-function pickAssistantMessageForChatCompletion(output) {
-  if (!Array.isArray(output)) return { msgItem: null, textContent: null };
-  const messages = output.filter((item) => item?.type === "message");
-  if (messages.length === 0) return { msgItem: null, textContent: null };
-  for (let i = messages.length - 1; i >= 0; i--) {
-    const text = textFromResponsesMessageItem(messages[i]);
-    if (text.length > 0) return { msgItem: messages[i], textContent: text };
-  }
-  const last = messages[messages.length - 1];
-  return { msgItem: last, textContent: textFromResponsesMessageItem(last) };
-}
-
-// Refusal content parts across all message items → chat message.refusal text.
-function refusalFromResponsesOutput(output) {
-  if (!Array.isArray(output)) return "";
-  return output
-    .filter((item) => item?.type === RESPONSES_ITEM.MESSAGE && Array.isArray(item.content))
-    .flatMap((item) => item.content)
-    .filter((part) => part?.type === RESPONSES_ITEM.REFUSAL && typeof part.refusal === "string")
-    .map((part) => part.refusal)
-    .join("");
-}
-
-// Responses terminal status → chat finish_reason. "incomplete" is not a chat
-// finish_reason: map its reason (content_filter / max_output_tokens). It wins
-// over tool calls, as in the streaming computeFinishReason: a cut-off
-// function call may carry partial arguments. Then tool calls; other statuses
-// keep their previous mapping.
-function chatFinishFromResponses(jsonResponse, hasToolCalls) {
-  const status = jsonResponse.status;
-  if (status === "incomplete") {
-    return jsonResponse.incomplete_details?.reason === RESPONSES_INCOMPLETE.CONTENT_FILTER
-      ? OPENAI_FINISH.CONTENT_FILTER
-      : OPENAI_FINISH.LENGTH;
-  }
-  if (hasToolCalls) return OPENAI_FINISH.TOOL_CALLS;
-  if (status === "completed" || status === "done") return OPENAI_FINISH.STOP;
-  return status || OPENAI_FINISH.STOP;
-}
 
 // Upstream formats whose response translator only reads its own event shape
 // and drops OpenAI chat chunks. Some providers answer in OpenAI chat shape
@@ -268,193 +207,44 @@ export async function handleForcedSSEToJson({
     providerRequest: finalBody || translatedBody || null,
   };
 
-  // Codex/Responses API SSE path
+  const recorder = createSuccessRecorder({
+    ctx,
+    provider,
+    model,
+    connectionId,
+    apiKey,
+    keyContext,
+    usageEndpoint,
+    requestStartTime,
+    clientRawRequest,
+    savings,
+    comboName,
+    appendLog,
+    reqTag,
+    log,
+  });
+
+  // Codex/Responses API SSE path (responsesSseToJson.js).
   // Branch on the UPSTREAM format (targetFormat = format we spoke to the provider in),
   // not the client format: a Responses-API client behind a chat-native forced-streaming
   // provider still receives chat SSE chunks, which must go through the standard path.
   const isCodexResponsesApi =
     isResponsesProvider(provider) || targetFormat === FORMATS.OPENAI_RESPONSES;
   if (isCodexResponsesApi) {
-    try {
-      const jsonResponse = await readResponse(() =>
-        convertResponsesStreamToJson(providerResponse.body),
-      );
-      if (onRequestSuccess) await onRequestSuccess();
-
-      const usage = jsonResponse.usage || {};
-      // Responses input_tokens includes nested cached_tokens; Claude-shaped cache fields do not.
-      const foldedCache = usage.cache_read_input_tokens || usage.cached_tokens || 0;
-      const cacheCreate = usage.cache_creation_input_tokens || 0;
-      const inTokens = (usage.input_tokens || 0) + foldedCache + cacheCreate;
-      const cacheRead = foldedCache || usage.input_tokens_details?.cached_tokens || 0;
-      const outTokens = usage.output_tokens || 0;
-      const reasoningTokens = usage.output_tokens_details?.reasoning_tokens || 0;
-      appendLog({ tokens: usage, status: "200 OK" });
-      saveUsageStats({
-        provider,
-        model,
-        tokens: usage,
-        connectionId,
-        apiKey,
-        keyContext,
-        endpoint: usageEndpoint,
-        latencyMs: Date.now() - requestStartTime,
-        userAgent: clientRawRequest?.headers?.["user-agent"],
-        savings,
-        comboName,
-        silent: true,
-      });
-      if (log?.line)
-        log.line(
-          reqTag,
-          "📊",
-          formatDoneLine({ usage, latency: { total: Date.now() - requestStartTime } }),
-        );
-
-      const { textContent } = pickAssistantMessageForChatCompletion(jsonResponse.output);
-      const totalLatency = Date.now() - requestStartTime;
-
-      saveRequestDetailUnscoped(
-        buildRequestDetail(
-          {
-            ...ctx,
-            latency: { ttft: totalLatency, total: totalLatency },
-            tokens: { prompt_tokens: inTokens, completion_tokens: outTokens },
-            response: {
-              content: textContent,
-              thinking: null,
-              finish_reason: jsonResponse.status || "unknown",
-            },
-            status: "success",
-          },
-          { endpoint: clientRawRequest?.endpoint || null },
-        ),
-      ).catch(() => {});
-
-      // Client is Responses API → return as-is
-      if (sourceFormat === FORMATS.OPENAI_RESPONSES) {
-        return {
-          success: true,
-          response: new Response(JSON.stringify(jsonResponse), {
-            headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" },
-          }),
-        };
-      }
-
-      // Build client-format response. Keep cache counts visible in
-      // prompt_tokens_details so a client can tell a cache hit from a small prompt.
-      const cacheDetails =
-        cacheRead > 0 || cacheCreate > 0
-          ? {
-              prompt_tokens_details: {
-                ...(cacheRead > 0 ? { cached_tokens: cacheRead } : {}),
-                ...(cacheCreate > 0 ? { cache_creation_tokens: cacheCreate } : {}),
-              },
-            }
-          : {};
-
-      // Extract tool calls from Responses API output (function_call items).
-      // No Gemini-family client branch: chatCore only calls this handler when
-      // !clientRequestedStreaming, which is always false for Gemini /
-      // Gemini-CLI / Antigravity sources (YAN-1853).
-      const funcCallItems = (jsonResponse.output || []).filter(
-        (item) => item.type === "function_call",
-      );
-      const toolCalls = funcCallItems.map((item, idx) => ({
-        id: item.call_id || `call_${item.name}_${Date.now()}_${idx}`,
-        type: "function",
-        function: {
-          name: item.name,
-          arguments:
-            typeof item.arguments === "string"
-              ? item.arguments
-              : JSON.stringify(item.arguments || {}),
-        },
-      }));
-      const hasToolCalls = toolCalls.length > 0;
-
-      const message = { role: ROLE.ASSISTANT, content: textContent || (hasToolCalls ? null : "") };
-      if (hasToolCalls) message.tool_calls = toolCalls;
-      const refusal = refusalFromResponsesOutput(jsonResponse.output);
-      if (refusal) message.refusal = refusal;
-      const finishReason = chatFinishFromResponses(jsonResponse, hasToolCalls);
-      const chatResp = {
-        id: jsonResponse.id || `chatcmpl-${Date.now()}`,
-        object: "chat.completion",
-        created: jsonResponse.created_at || Math.floor(Date.now() / 1000),
-        model: jsonResponse.model || model,
-        choices: [{ index: 0, message, finish_reason: finishReason }],
-        usage: {
-          prompt_tokens: inTokens,
-          completion_tokens: outTokens,
-          total_tokens: inTokens + outTokens,
-          ...(reasoningTokens > 0
-            ? { completion_tokens_details: { reasoning_tokens: reasoningTokens } }
-            : {}),
-          ...cacheDetails,
-        },
-      };
-      // Convert the chat.completion pivot to the client's format (Claude /
-      // Responses). Shared converter in completionToClient.js, imported
-      // without a circular import.
-      const finalResp = openAICompletionToClientFormat(
-        chatResp,
-        sourceFormat,
-        customToolNames,
-        fimContext,
-      );
-
-      return {
-        success: true,
-        response: new Response(JSON.stringify(finalResp), {
-          headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" },
-        }),
-      };
-    } catch (err) {
-      if (abortSignal?.aborted) throw err;
-      console.error("[ChatCore] Responses API SSE→JSON failed:", err);
-      return createErrorResult(
-        HTTP_STATUS.BAD_GATEWAY,
-        "Failed to convert streaming response to JSON",
-      );
-    }
+    return responsesSseToJson({
+      providerResponse,
+      sourceFormat,
+      model,
+      onRequestSuccess,
+      abortSignal,
+      readResponse,
+      customToolNames,
+      fimContext,
+      recorder,
+    });
   }
 
   // Standard Chat Completions SSE path (and native Claude for Claude → Claude).
-  // Logs, usage stats and the request detail for a successful aggregation.
-  const recordSuccess = (usage, response) => {
-    appendLog({ tokens: usage, status: "200 OK" });
-    saveUsageStats({
-      provider,
-      model,
-      tokens: usage,
-      connectionId,
-      apiKey,
-      keyContext,
-      endpoint: usageEndpoint,
-      latencyMs: Date.now() - requestStartTime,
-      userAgent: clientRawRequest?.headers?.["user-agent"],
-      savings,
-      comboName,
-      silent: true,
-    });
-    const totalLatency = Date.now() - requestStartTime;
-    if (log?.line)
-      log.line(reqTag, "📊", formatDoneLine({ usage, latency: { total: totalLatency } }));
-    saveRequestDetailUnscoped(
-      buildRequestDetail(
-        {
-          ...ctx,
-          latency: { ttft: totalLatency, total: totalLatency },
-          tokens: usage,
-          response,
-          status: "success",
-        },
-        { endpoint: clientRawRequest?.endpoint || null },
-      ),
-    ).catch(() => {});
-  };
-
   try {
     const sseText = await readResponse(() => providerResponse.text());
     const aggregated = aggregateSSEBody(sseText, {
@@ -483,7 +273,7 @@ export async function handleForcedSSEToJson({
     if (aggregated.format === FORMATS.CLAUDE) {
       const message = decloakToolNames(aggregated.body, toolNameMap);
       const usage = canonicalizeUsage(extractUsageFromResponse(message));
-      recordSuccess(usage, summarizeClientResponse(message));
+      recorder.recordSuccess(usage, summarizeClientResponse(message));
       return {
         success: true,
         response: new Response(JSON.stringify(message), {
@@ -494,7 +284,7 @@ export async function handleForcedSSEToJson({
 
     const parsed = aggregated.body;
     const usage = parsed.usage || {};
-    recordSuccess(usage, summarizeClientResponse(parsed));
+    recorder.recordSuccess(usage, summarizeClientResponse(parsed));
 
     // Re-attach usage explicitly. This handler already HAS the correct usage — it is
     // the same object written to the usage DB, and for a cached Claude request that DB

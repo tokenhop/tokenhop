@@ -407,7 +407,7 @@ Dịch chuyển liền mạch giữa các định dạng:
 #### Ghi chú Runtime Đám mây
 
 - Ưu tiên biến đám mây phía máy chủ trong môi trường production:
-  - `BASE_URL` (URL callback nội bộ được sử dụng bởi bộ lập lịch đồng bộ)
+  - `BASE_URL` (origin công khai của bảng điều khiển sau reverse proxy, OIDC, SAML; để trống khi truy cập trực tiếp)
   - `CLOUD_URL` (cơ sở endpoint đồng bộ đám mây)
 - `NEXT_PUBLIC_BASE_URL` và `NEXT_PUBLIC_CLOUD_URL` vẫn được hỗ trợ để thích/UI, nhưng runtime máy chủ hiện ưu tiên `BASE_URL`/`CLOUD_URL`.
 - Các yêu cầu đồng bộ đám mây hiện sử dụng thời gian chờ + hành vi fail-fast để tránh treo UI khi DNS/mạng đám mây không khả dụng.
@@ -1006,23 +1006,23 @@ docker stop tokenhop && docker rm tokenhop
 
 ### Biến môi trường
 
-| Biến                                                 | Mặc định                                | Mô tả                                                                                  |
-| ---------------------------------------------------- | --------------------------------------- | -------------------------------------------------------------------------------------- |
-| `JWT_SECRET`                                         | Tự động sinh (`~/.tokenhop/jwt-secret`) | Bí mật ký JWT cho cookie xác thực bảng điều khiển (đặt để chia sẻ giữa nhiều instance) |
-| `INITIAL_PASSWORD`                                   | `123456`                                | Mật khẩu đăng nhập đầu tiên khi không có hash đã lưu tồn tại                           |
-| `DATA_DIR`                                           | `~/.tokenhop`                           | ị trí cơ sở dữ liệu ứng dụng chính (`db.json`)                                         |
-| `PORT`                                               | framework default                       | Cổng dịch vụ (`20128` trong các ví dụ)                                                 |
-| `HOSTNAME`                                           | framework default                       | Bind host (Docker mặc định là `0.0.0.0`)                                               |
-| `NODE_ENV`                                           | runtime default                         | Đặt `production` để triển khai                                                         |
-| `BASE_URL`                                           | `http://localhost:20128`                | URL cơ sở nội bộ phía máy chủ được sử dụng bởi các tác vụ đồng bộ đám mây              |
-| `CLOUD_URL`                                          | `(không đặt)`                           | URL cơ sở endpoint đồng bộ đám mây phía máy chủ                                        |
-| `NEXT_PUBLIC_BASE_URL`                               | `http://localhost:3000`                 | URL cơ sở tương thích ngược/công khai (ưu tiên `BASE_URL` cho runtime máy chủ)         |
-| `NEXT_PUBLIC_CLOUD_URL`                              | `(không đặt)`                           | URL đám mây tương thích ngược/công khai (ưu tiên `CLOUD_URL` cho runtime máy chủ)      |
-| `API_KEY_SECRET`                                     | `endpoint-proxy-api-key-secret`         | B mật HMAC cho các API key được tạo                                                    |
-| `MACHINE_ID_SALT`                                    | `endpoint-proxy-salt`                   | Salt cho việc băm ID máy ổn định                                                       |
-| `ENABLE_REQUEST_LOGS`                                | `false`                                 | Bật log request/response dưới `logs/`                                                  |
-| `AUTH_COOKIE_SECURE`                                 | `false`                                 | Buộc cookie xác thực `Secure` (đặt `true` phía reverse proxy HTTPS)                    |
-| `HTTP_PROXY`, `HTTPS_PROXY`, `ALL_PROXY`, `NO_PROXY` | empty                                   | Proxy gửi đi tùy chọn cho các lệnh gọi nhà cung cấp upstream                           |
+| Biến                                                 | Mặc định                                | Mô tả                                                                                                  |
+| ---------------------------------------------------- | --------------------------------------- | ------------------------------------------------------------------------------------------------------ |
+| `JWT_SECRET`                                         | Tự động sinh (`~/.tokenhop/jwt-secret`) | Bí mật ký JWT cho cookie xác thực bảng điều khiển (đặt để chia sẻ giữa nhiều instance)                 |
+| `INITIAL_PASSWORD`                                   | `123456`                                | Mật khẩu đăng nhập đầu tiên khi không có hash đã lưu tồn tại                                           |
+| `DATA_DIR`                                           | `~/.tokenhop`                           | ị trí cơ sở dữ liệu ứng dụng chính (`db.json`)                                                         |
+| `PORT`                                               | framework default                       | Cổng dịch vụ (`20128` trong các ví dụ)                                                                 |
+| `HOSTNAME`                                           | framework default                       | Bind host (Docker mặc định là `0.0.0.0`)                                                               |
+| `NODE_ENV`                                           | runtime default                         | Đặt `production` để triển khai                                                                         |
+| `BASE_URL`                                           | `(không đặt)`                           | Origin công khai của bảng điều khiển (reverse proxy, OIDC, SAML); nếu không đặt, dùng Host của yêu cầu |
+| `CLOUD_URL`                                          | `(không đặt)`                           | URL cơ sở endpoint đồng bộ đám mây phía máy chủ                                                        |
+| `NEXT_PUBLIC_BASE_URL`                               | `(không đặt)`                           | Giá trị dự phòng cho `BASE_URL` làm origin công khai (kiểm tra origin, OIDC, SAML)                     |
+| `NEXT_PUBLIC_CLOUD_URL`                              | `(không đặt)`                           | URL đám mây tương thích ngược/công khai (ưu tiên `CLOUD_URL` cho runtime máy chủ)                      |
+| `API_KEY_SECRET`                                     | `endpoint-proxy-api-key-secret`         | B mật HMAC cho các API key được tạo                                                                    |
+| `MACHINE_ID_SALT`                                    | `endpoint-proxy-salt`                   | Salt cho việc băm ID máy ổn định                                                                       |
+| `ENABLE_REQUEST_LOGS`                                | `false`                                 | Bật log request/response dưới `logs/`                                                                  |
+| `AUTH_COOKIE_SECURE`                                 | `false`                                 | Buộc cookie xác thực `Secure` (đặt `true` phía reverse proxy HTTPS)                                    |
+| `HTTP_PROXY`, `HTTPS_PROXY`, `ALL_PROXY`, `NO_PROXY` | empty                                   | Proxy gửi đi tùy chọn cho các lệnh gọi nhà cung cấp upstream                                           |
 
 Ghi chú:
 
@@ -1126,7 +1126,6 @@ Ghi chú:
 
 **Lỗi đồng bộ đám mây**
 
-- Xác minh `BASE_URL` trỏ đến phiên bản đang chạy của bạn (ví dụ: `http://localhost:20128`)
 - Xác minh `CLOUD_URL` trỏ đến endpoint đám mây dự kiến của bạn (ví dụ: `https://your-cloud.example.com`)
 - Giữ các giá trị `NEXT_PUBLIC_*` phù hợp với giá trị phía máy chủ khi có thể.
 

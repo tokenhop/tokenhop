@@ -5,12 +5,15 @@ import {
   getProviderConnectionByIdUnscoped,
   updateProviderConnectionUnscoped,
   getConnection,
+  getConnectionQuotaHistory,
 } from "@/lib/db/index.js";
+import { ensureQuotaSnapshotsHydrated } from "@/shared/services/quotaHistoryHydration.js";
 import { loadScoped } from "@/lib/users/workspaceScope.js";
 import { getUsageForProvider } from "open-sse/services/usage.js";
 import { getExecutor } from "open-sse/executors/index.js";
 import { needsReauthentication } from "open-sse/services/reauthState.js";
 import { resolveConnectionProxyConfig } from "@/lib/network/connectionProxy";
+import { proxyOptionsFromConfig } from "@/lib/network/proxyOptions";
 import { USAGE_APIKEY_PROVIDERS } from "@/shared/constants/providers";
 import {
   buildQuotaSnapshotView,
@@ -146,7 +149,9 @@ export async function GET(request, { params }) {
   let connection;
   try {
     const { connectionId } = await params;
-    const force = new URL(request.url).searchParams.get("force") === "1";
+    const { searchParams } = new URL(request.url);
+    const force = searchParams.get("force") === "1";
+    const cached = !force && searchParams.get("cached") === "1";
 
     // YAN-361: switch on, only a connection in the principal's workspaces.
     // OAuth reads refresh (rotate) the row's tokens, so they need `use`.
@@ -159,6 +164,7 @@ export async function GET(request, { params }) {
     );
     if (loaded instanceof Response) return loaded;
     connection = loaded.row;
+    await ensureQuotaSnapshotsHydrated();
 
     // Allow OAuth connections, plus whitelisted apikey providers (glm/minimax/kiro/...)
     // Kiro's headless api-key flow persists authType "api_key" (underscore) while
@@ -171,17 +177,18 @@ export async function GET(request, { params }) {
       return Response.json({ message: "Usage not available for this connection" });
     }
 
+    if (cached) {
+      const quotaSnapshot = buildQuotaSnapshotView(connection.id, { includeQuotaKeys: true });
+      return Response.json(
+        { cached: true, quotaSnapshot, ...(await readQuotaTrends(loaded, connection.id)) },
+        { headers: { "Cache-Control": "no-store" } },
+      );
+    }
+
     // Resolve connection proxy config; strictProxy comes from the pool so a down
     // proxy surfaces as an error instead of silently going direct from the host IP.
     const proxyConfig = await resolveConnectionProxyConfig(connection.providerSpecificData);
-    const proxyOptions = {
-      connectionProxyEnabled: proxyConfig.connectionProxyEnabled === true,
-      connectionProxyUrl: proxyConfig.connectionProxyUrl || "",
-      connectionNoProxy: proxyConfig.connectionNoProxy || "",
-      vercelRelayUrl: proxyConfig.vercelRelayUrl || "",
-      strictProxy: proxyConfig.strictProxy === true,
-      connectionProxyPoolId: proxyConfig.proxyPoolId || null,
-    };
+    const proxyOptions = proxyOptionsFromConfig(proxyConfig);
 
     // Refresh credentials only for OAuth connections (apikey has no token refresh)
     if (isOAuth) {
@@ -193,6 +200,7 @@ export async function GET(request, { params }) {
         return Response.json(
           {
             error: `Credential refresh failed: ${refreshError.message}`,
+            code: "quota_credential_refresh_failed",
           },
           { status: 401 },
         );
@@ -249,17 +257,29 @@ export async function GET(request, { params }) {
     };
     // Same tier rule as routing (manual psd.planTier wins over detected snapshot tier).
     quotaSnapshot.effectiveWeight = effectiveWeightFor(connection, { snapshot });
-    // Forecast keys mirror `usage.quotas` keys (additive; never fails the response).
-    let forecasts = {};
-    try {
-      forecasts = getQuotaForecasts(connection.id);
-    } catch {
-      /* in-memory store read must not break the usage response */
-    }
-    return Response.json({ ...usage, quotaSnapshot, forecasts });
+    return Response.json({
+      ...usage,
+      quotaSnapshot,
+      ...(await readQuotaTrends(loaded, connection.id)),
+    });
   } catch (error) {
     const provider = connection?.provider ?? "unknown";
     console.warn(`[Usage] ${provider}: ${error.message}`);
     return Response.json({ error: error.message }, { status: 500 });
   }
+}
+
+// Both views add trends only after the existing connection authorization check.
+async function readQuotaTrends(loaded, connectionId) {
+  const forecasts = getQuotaForecasts(connectionId);
+  let history = {};
+  try {
+    history = await getConnectionQuotaHistory(
+      loaded.scope === null ? null : loaded.scope?.ctx,
+      connectionId,
+    );
+  } catch {
+    /* persisted history must not break quota reads */
+  }
+  return { forecasts, history };
 }

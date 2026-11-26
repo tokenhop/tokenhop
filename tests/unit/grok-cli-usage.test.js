@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
 vi.mock("../../open-sse/utils/proxyFetch.js", () => ({
   proxyAwareFetch: vi.fn(),
@@ -11,6 +11,10 @@ import { USAGE_SUPPORTED_PROVIDERS } from "../../src/shared/constants/providers.
 import { PROVIDERS } from "../../open-sse/providers/index.js";
 import { GROK_CLI_VERSION } from "../../open-sse/config/grokCli.js";
 import { parseQuotaData } from "../../src/app/(dashboard)/dashboard/quota/lib/quotaUtils.js";
+import { clearQuotaSnapshots, getExhaustedUntil } from "../../open-sse/services/quotaSnapshot.js";
+import { recordUsageSnapshot } from "../../src/sse/services/quotaSnapshotSync.js";
+
+vi.mock("@/lib/quota/forecastStore.js", () => ({ recordQuotaSample: vi.fn() }));
 
 function jsonResponse(body, status = 200) {
   return new Response(JSON.stringify(body), {
@@ -241,6 +245,11 @@ const GRPC_CREDITS_URL = "https://grok.com/grok_api_v2.GrokBuildBilling/GetGrokC
 describe("getUsageForProvider(grok-cli)", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    clearQuotaSnapshots();
+  });
+
+  afterEach(() => {
+    clearQuotaSnapshots();
   });
 
   it("returns normalized quotas from billing + user endpoints", async () => {
@@ -364,6 +373,40 @@ describe("getUsageForProvider(grok-cli)", () => {
     expect(grpcCall[1].headers["X-Grpc-Web"]).toBe("1");
     // Empty gRPC-web request frame is required (flag 0 + length 0)
     expect(Buffer.from(grpcCall[1].body)).toEqual(EMPTY_GRPC_WEB_FRAME);
+  });
+
+  it.each([
+    [0.995, false],
+    [0.996, false],
+    [1 - 2 ** -24, false],
+    [1, true],
+  ])("records gRPC usage ratio %s with exhausted=%s", async (ratio, exhausted) => {
+    const resetSeconds = Math.floor(Date.now() / 1000) + 3600;
+    proxyAwareFetch
+      .mockResolvedValueOnce(jsonResponse(EXHAUSTED_BILLING))
+      .mockResolvedValueOnce(jsonResponse({ ...USER_PROFILE, subscriptionTier: "XPremiumPlus" }))
+      .mockResolvedValueOnce(binaryResponse(buildCreditsResponseBuffer(ratio, resetSeconds, 0)));
+
+    const usage = await getUsageForProvider({
+      provider: "grok-cli",
+      accessToken: accessTokenWithTier(5),
+    });
+    const snapshot = await recordUsageSnapshot({
+      connectionId: `grok-cli-${ratio}`,
+      provider: "grok-cli",
+      usage,
+    });
+
+    expect(snapshot.windows).toEqual([expect.objectContaining({ kind: "7d" })]);
+    const [{ usedFraction }] = snapshot.windows;
+    const exhaustedUntil = getExhaustedUntil(snapshot, "grok", snapshot.updatedAt);
+    if (exhausted) {
+      expect(usedFraction).toBe(1);
+      expect(exhaustedUntil).toBeGreaterThan(snapshot.updatedAt);
+    } else {
+      expect(usedFraction).toBeLessThan(1);
+      expect(exhaustedUntil).toBe(0);
+    }
   });
 
   it("keeps subscription message when REST empty and gRPC fails open", async () => {

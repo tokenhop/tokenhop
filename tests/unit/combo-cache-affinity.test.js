@@ -79,59 +79,200 @@ describe("isolation", () => {
   });
 
   it("the same conversationKey under different combo names pins independently", async () => {
-    const { handle, failing } = makeHandler();
+    const { handle } = makeHandler();
     expect(await turn(handle, { comboName: "ws1:c" })).toBe("p/a");
-    expect(await turn(handle, { comboName: "ws2:c" })).toBe("p/a");
-    failing.add("p/a");
-    expect(await turn(handle, { comboName: "ws1:c" })).toBe("p/b"); // ws1 re-pins
-    failing.clear();
-    expect(await turn(handle, { comboName: "ws1:c" })).toBe("p/b");
-    expect(await turn(handle, { comboName: "ws2:c" })).toBe("p/a"); // ws2 untouched
+    comboPins.set("\nws2:c\nconv1", "p/b");
+    expect(await turn(handle, { comboName: "ws1:c" })).toBe("p/a");
+    expect(await turn(handle, { comboName: "ws2:c" })).toBe("p/b");
   });
 });
 
-describe("re-pin on failure", () => {
-  it("serves from the next member and keeps the new pin after recovery", async () => {
+// Raw turn: returns the response and the members tried, whatever the status.
+async function rawTurn(handle, extra = {}) {
+  const calls = [];
+  const wrapped = async (body, model, ...rest) => {
+    calls.push(model);
+    return handle(body, model, ...rest);
+  };
+  const res = await handleComboChat({
+    body: { messages: [{ role: "user", content: "x" }] },
+    models: ["p/a", "p/b", "p/c"],
+    comboName: "c",
+    comboStrategy: "round-robin",
+    handleSingleModel: wrapped,
+    log,
+    conversationKey: "conv1",
+    cacheAffinity: true,
+    ...extra,
+  });
+  return { res, calls };
+}
+
+describe("a pinned conversation never switches models (YAN-2467)", () => {
+  it.each([
+    ["round-robin", {}],
+    ["weighted", { comboWeights: { "p/a": 2, "p/b": 1, "p/c": 1 } }],
+    ["fastest", { hedgeDelayMs: 0 }],
+  ])("%s: a failing pinned member returns its error; the pin stays", async (strategy, extra) => {
     const { handle, failing } = makeHandler();
-    expect(await turn(handle)).toBe("p/a");
-    failing.add("p/a");
-    expect(await turn(handle)).toBe("p/b");
+    const opts = { comboStrategy: strategy, ...extra };
+    comboPins.set("\nc\nconv1", "p/b");
+    expect(await turn(handle, opts)).toBe("p/b");
+    failing.add("p/b");
+    const { res, calls } = await rawTurn(handle, opts);
+    expect(res.status).toBeGreaterThanOrEqual(500);
+    expect(calls).toEqual(["p/b"]);
+    expect(comboPins.get("\nc\nconv1")).toBe("p/b");
     failing.clear();
-    expect(await turn(handle)).toBe("p/b");
-    expect(await turn(handle)).toBe("p/b");
+    expect(await turn(handle, opts)).toBe("p/b");
   });
 
-  it("an all-failed turn does not move the pin", async () => {
+  it("a mixed-vendor weighted combo keeps a GPT conversation off the Claude member", async () => {
+    const models = ["cc/claude-x", "cx/gpt-x", "ag/gemini-x"];
+    const weights = { "cc/claude-x": 2, "cx/gpt-x": 1, "ag/gemini-x": 1 };
     const { handle, failing } = makeHandler();
-    await turn(handle);
-    for (const m of ["p/a", "p/b", "p/c"]) failing.add(m);
-    const res = await handleComboChat({
-      body: { messages: [] },
-      models: ["p/a", "p/b", "p/c"],
+    const opts = { models, comboStrategy: "weighted", comboWeights: weights };
+    comboPins.set("\nc\nconv1", "cx/gpt-x");
+    expect(await turn(handle, opts)).toBe("cx/gpt-x");
+    failing.add("cx/gpt-x"); // a transient 5xx / 429 / empty stream
+    const { res, calls } = await rawTurn(handle, opts);
+    expect(res.status).toBeGreaterThanOrEqual(500);
+    expect(calls).toEqual(["cx/gpt-x"]);
+    failing.clear();
+    for (let i = 0; i < 3; i++) expect(await turn(handle, opts)).toBe("cx/gpt-x");
+  });
+
+  it("fails over to the same model id through another provider and pins it", async () => {
+    const models = ["cx/gpt-x", "cc/claude-x", "openai/gpt-x"];
+    const { handle, failing } = makeHandler(new Set(["cx/gpt-x"]));
+    comboPins.set("\nc\nconv1", "cx/gpt-x");
+    const { res, calls } = await rawTurn(handle, { models });
+    expect(res.status).toBe(200);
+    expect(calls).toEqual(["cx/gpt-x", "openai/gpt-x"]);
+    expect(comboPins.get("\nc\nconv1")).toBe("openai/gpt-x");
+    failing.clear();
+  });
+
+  it("a nested combo member pin is matched by name only", async () => {
+    const models = ["inner", "p/inner", "p/b"];
+    const { handle } = makeHandler(new Set(["inner"]));
+    comboPins.set("\nc\nconv1", "inner");
+    const { res, calls } = await rawTurn(handle, { models });
+    expect(res.status).toBeGreaterThanOrEqual(500);
+    expect(calls).toEqual(["inner"]);
+  });
+
+  it("a first turn (no pin yet) still falls back and pins the member that served", async () => {
+    const { handle } = makeHandler(new Set(["p/a"]));
+    const { res, calls } = await rawTurn(handle);
+    expect(res.status).toBe(200);
+    expect(calls).toEqual(["p/a", "p/b"]);
+    expect(comboPins.get("\nc\nconv1")).toBe("p/b");
+  });
+
+  it("an all-failed first turn leaves no pin; the next turn starts fresh", async () => {
+    const { handle, failing } = makeHandler(new Set(["p/a", "p/b", "p/c"]));
+    const { res } = await rawTurn(handle);
+    expect(res.status).toBeGreaterThanOrEqual(500);
+    expect(comboPins.get("\nc\nconv1")).toBeUndefined();
+    failing.clear();
+    expect(await turn(handle)).toBeDefined();
+  });
+
+  it("a request-scoped error on the pinned member is returned as-is", async () => {
+    const handle = async () => fail(400);
+    comboPins.set("\nc\nconv1", "p/a");
+    const { res, calls } = await rawTurn(handle);
+    expect(res.status).toBe(400);
+    expect(calls).toEqual(["p/a"]);
+  });
+});
+
+describe("capacity-adapter members", () => {
+  it("an adapter-added member serving a first turn never takes the pin", async () => {
+    const { handle } = makeHandler(new Set(["p/a", "p/b"]));
+    const extra = { models: ["p/a", "p/b", "p/x"], pinExclude: ["p/x"] };
+    expect(await turn(handle, extra)).toBe("p/x");
+    expect(comboPins.get("\nc\nconv1")).toBeUndefined();
+  });
+
+  it("a pinned turn never fails over to an adapter-added member", async () => {
+    const { handle } = makeHandler(new Set(["p/a"]));
+    const extra = { models: ["p/a", "p/b", "p/x"], pinExclude: ["p/x"] };
+    comboPins.set("\nc\nconv1", "p/a");
+    const { res, calls } = await rawTurn(handle, extra);
+    expect(res.status).toBeGreaterThanOrEqual(500);
+    expect(calls).toEqual(["p/a"]);
+    expect(comboPins.get("\nc\nconv1")).toBe("p/a");
+  });
+});
+
+describe("capacity-adapter bridge on a pinned turn", () => {
+  const imageBody = {
+    messages: [{ role: "user", content: [{ type: "image_url", image_url: { url: "x" } }] }],
+  };
+  const run = (handle, models, pinExclude, pinBridge = []) =>
+    handleComboChat({
+      body: imageBody,
+      models,
       comboName: "c",
       comboStrategy: "round-robin",
       handleSingleModel: handle,
       log,
       conversationKey: "conv1",
       cacheAffinity: true,
+      pinExclude,
+      pinBridge,
     });
-    expect(res.status).toBeGreaterThanOrEqual(500);
-    failing.clear();
-    expect(await turn(handle)).toBe("p/a");
-  });
-});
 
-describe("capacity-adapter members", () => {
-  it("an adapter-added member serving a turn never moves the pin", async () => {
-    const { handle, failing } = makeHandler();
-    const extra = { models: ["p/a", "p/b", "p/x"], pinExclude: ["p/x"] };
-    expect(await turn(handle, extra)).toBe("p/a");
-    failing.add("p/a");
-    failing.add("p/b");
-    expect(await turn(handle, extra)).toBe("p/x");
-    expect(comboPins.get("\nc\nconv1")).toBe("p/a");
-    failing.clear();
-    expect(await turn(handle, extra)).toBe("p/a");
+  it("bridges an input the pinned model cannot read, without moving the pin", async () => {
+    // deepseek-chat has no vision; the adapter's claude-sonnet does.
+    const { handle, calls } = makeHandler();
+    const models = ["deepseek/deepseek-chat", "p/b", "anthropic/claude-sonnet-4.6"];
+    comboPins.set("\nc\nconv1", "deepseek/deepseek-chat");
+    const res = await run(handle, models, ["anthropic/claude-sonnet-4.6"]);
+    expect(res.status).toBe(200);
+    expect(calls).toEqual(["anthropic/claude-sonnet-4.6"]);
+    expect(comboPins.get("\nc\nconv1")).toBe("deepseek/deepseek-chat");
+  });
+
+  it("bridges through a configured adapter model that is already a combo member", async () => {
+    const { handle, calls } = makeHandler();
+    const models = ["deepseek/deepseek-chat", "p/b", "anthropic/claude-sonnet-4.6"];
+    comboPins.set("\nc\nconv1", "deepseek/deepseek-chat");
+    const res = await run(handle, models, [], ["anthropic/claude-sonnet-4.6"]);
+    expect(res.status).toBe(200);
+    expect(calls).toEqual(["anthropic/claude-sonnet-4.6"]);
+    expect(comboPins.get("\nc\nconv1")).toBe("deepseek/deepseek-chat");
+  });
+
+  it("bridges through a configured adapter model outside the combo", async () => {
+    const { handle, calls } = makeHandler();
+    const models = ["deepseek/deepseek-chat", "anthropic/claude-sonnet-4.6"];
+    comboPins.set("\nc\nconv1", "deepseek/deepseek-chat");
+    const res = await run(handle, models, [], ["openai/gpt-4o"]);
+    expect(res.status).toBe(200);
+    expect(calls).toEqual(["openai/gpt-4o"]);
+    expect(comboPins.get("\nc\nconv1")).toBe("deepseek/deepseek-chat");
+  });
+
+  it("never bridges through a capable member that is not a configured adapter model", async () => {
+    const { handle, calls } = makeHandler();
+    const models = ["deepseek/deepseek-chat", "p/b", "anthropic/claude-sonnet-4.6"];
+    comboPins.set("\nc\nconv1", "deepseek/deepseek-chat");
+    const res = await run(handle, models, []);
+    expect(res.status).toBe(200);
+    expect(calls).toEqual(["deepseek/deepseek-chat"]);
+    expect(comboPins.get("\nc\nconv1")).toBe("deepseek/deepseek-chat");
+  });
+
+  it("never bridges when the pinned model reads the input itself", async () => {
+    const { handle, calls } = makeHandler(new Set(["anthropic/claude-sonnet-4.6"]));
+    const models = ["anthropic/claude-sonnet-4.6", "p/b", "openai/gpt-4o"];
+    comboPins.set("\nc\nconv1", "anthropic/claude-sonnet-4.6");
+    const res = await run(handle, models, ["openai/gpt-4o"]);
+    expect(res.status).toBeGreaterThanOrEqual(500);
+    expect(calls).toEqual(["anthropic/claude-sonnet-4.6"]);
   });
 });
 
@@ -147,14 +288,12 @@ describe("hedged rank2+ re-pin", () => {
 
 describe("workspace isolation", () => {
   it("comboRotationKey-built names keep per-workspace pins independent", async () => {
-    const { handle, failing } = makeHandler();
+    const { handle } = makeHandler();
     const ws1 = comboRotationKey("w1", "c");
     const ws2 = comboRotationKey("w2", "c");
-    expect(await turn(handle, { comboName: ws1 })).toBe("p/a");
-    expect(await turn(handle, { comboName: ws2 })).toBe("p/a");
-    failing.add("p/a");
+    comboPins.set(`\n${ws1}\nconv1`, "p/b");
     expect(await turn(handle, { comboName: ws1 })).toBe("p/b");
-    failing.clear();
+    expect(await turn(handle, { comboName: ws2 })).toBe("p/a");
     expect(comboPins.get(`\n${ws1}\nconv1`)).toBe("p/b");
     expect(comboPins.get(`\n${ws2}\nconv1`)).toBe("p/a");
   });
@@ -222,6 +361,16 @@ describe("weighted drain", () => {
     const served = await turn(handle, { ...base, comboWeights: { "p/a": 0, "p/b": 1 } });
     expect(served).toBe("p/b");
     expect(comboPins.get("\nc\nconv1")).toBe("p/b");
+  });
+
+  it("keeps a pin whose live quota headroom reads 0 (YAN-2467)", async () => {
+    const { handle } = makeHandler();
+    const base = { comboStrategy: "weighted", models: ["p/a", "p/b"] };
+    comboPins.set("\nc\nconv1", "p/a");
+    const headroomFn = (m) => (m === "p/a" ? 0 : 1);
+    const served = await turn(handle, { ...base, comboWeights: {}, headroomFn });
+    expect(served).toBe("p/a");
+    expect(comboPins.get("\nc\nconv1")).toBe("p/a");
   });
 });
 
@@ -329,12 +478,11 @@ describe("workspace-scoped pins and resets (YAN-1221)", () => {
   });
 
   it("two workspaces with the same combo name and conversation pin independently", async () => {
-    const { handle, failing } = makeHandler();
-    expect(await turn(handle, inWorkspace("wsA"))).toBe("p/a");
-    expect(await turn(handle, inWorkspace("wsB"))).toBe("p/a");
-    failing.add("p/a");
+    const { handle } = makeHandler();
+    comboPins.set(`wsA\n${comboRotationKey("wsA", "c")}\nconv1`, "p/b");
     expect(await turn(handle, inWorkspace("wsA"))).toBe("p/b");
-    failing.clear();
+    expect(await turn(handle, inWorkspace("wsB"))).toBe("p/a");
+    expect(await turn(handle, inWorkspace("wsA"))).toBe("p/b");
     expect(await turn(handle, inWorkspace("wsB"))).toBe("p/a");
   });
 });
@@ -650,7 +798,8 @@ describe("serve-only attempts and cleanup review regressions", () => {
 
   it.each([
     ["a first turn", undefined],
-    ["an established pin", "p/a"],
+    // A pinned turn never leaves its model (YAN-2467), so the established pin is the server.
+    ["an established pin", "p/b"],
   ])(
     "an unrelated reset still lets %s confirm the member that served (YAN-1676)",
     async (_label, existing) => {
@@ -669,7 +818,7 @@ describe("serve-only attempts and cleanup review regressions", () => {
         parentAttempt,
         cacheAffinity: true,
       });
-      expect(res.ok).toBe(true); // p/a (provisional or pinned) failed, p/b served
+      expect(res.ok).toBe(true); // p/b served (after a failed provisional p/a, or as the pin)
       resetComboRotation("other"); // another combo saved before the outer level commits
       held[0].fn();
       expect(comboPins.peek("\ninner\nconv1")).toBe("p/b"); // never the failed p/a

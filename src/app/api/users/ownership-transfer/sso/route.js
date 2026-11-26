@@ -23,9 +23,9 @@ import {
 } from "@/lib/auth/ownershipTransferState.js";
 import {
   accountKey,
-  checkLoginLocks,
+  checkProofLocks,
   getClientIp,
-  recordLoginFail,
+  recordProofFail,
 } from "@/lib/auth/loginLimiter.js";
 import { getSettings } from "@/lib/db/index.js";
 import { listIdentitiesUnscoped } from "@/lib/db/repos/identitiesRepo.js";
@@ -129,7 +129,12 @@ export async function POST(request) {
 
     const ip = getClientIp(request);
     const account = accountKey({ userId: principal.userId });
-    const lock = checkLoginLocks({ ip, account });
+    // YAN-1999: starting a transfer begins a fresh SSO proof, so it shares the
+    // proof buckets with the callbacks (like the SSO preview start). A stale
+    // session or bad target from an already-authenticated owner is not a
+    // password guess, so it must not lock ordinary login; it still counts
+    // against the proof buckets, which also honor any active login lock.
+    const lock = checkProofLocks({ ip, account });
     if (lock.locked) {
       return json(
         { error: "Too many attempts", code: "rate_limited", retryAfter: lock.retryAfter },
@@ -148,12 +153,12 @@ export async function POST(request) {
       claims?.sub !== owner.id ||
       claims.sv !== owner.sessionVersion
     ) {
-      recordLoginFail({ ip, account });
+      recordProofFail({ ip, account });
       return forbidden();
     }
     const target = await getUserUnscoped(body.toUserId);
     if (!target || target.id === owner.id || target.status !== "active") {
-      recordLoginFail({ ip, account });
+      recordProofFail({ ip, account });
       return badTarget();
     }
 

@@ -11,6 +11,7 @@
 import {
   CACHE_AFFINITY_MAX_PINS,
   CACHE_AFFINITY_MAX_PINS_PER_WORKSPACE,
+  CACHE_AFFINITY_PIN_TOUCH_MS,
   CACHE_AFFINITY_PROMPT_PIN_MAX_AGE_MS,
   CACHE_AFFINITY_TTL_MS,
 } from "../config/runtimeConfig.js";
@@ -36,6 +37,10 @@ const firstSegment = (key) => {
  * @param {((key: string) => number)|null} [options.maxAgeFor] - Absolute lifetime of a key
  *   measured from its first write; get/set never extend it. Infinity = sliding only.
  * @param {() => number} [options.now]
+ * @param {() => (PinPersistence|null)} [options.persistence] - Write-through store
+ *   (YAN-2468): writes, removals and a throttled last-used touch are mirrored to it
+ *   fire-and-forget; reads never wait on it. Null (default) = memory only.
+ * @param {number} [options.touchEveryMs] - Re-save a live entry on read at most this often.
  */
 export function createPinStore({
   ttlMs,
@@ -44,8 +49,10 @@ export function createPinStore({
   scopeOf = firstSegment,
   maxAgeFor = null,
   now = Date.now,
+  persistence = () => null,
+  touchEveryMs = CACHE_AFFINITY_PIN_TOUCH_MS,
 }) {
-  /** @type {Map<string, {value: any, expiresAt: number, createdAt: number, scope: string}>} */
+  /** @type {Map<string, {value: any, expiresAt: number, createdAt: number, scope: string, persistedAt?: number}>} */
   const map = new Map(); // insertion order = global LRU order (oldest first)
   /** @type {Map<string, Set<string>>} */
   const scopes = new Map(); // scope -> keys, insertion order = per-scope LRU order
@@ -57,7 +64,28 @@ export function createPinStore({
   // in-flight deferred writes that have no entry yet (e.g. first-turn account pins,
   // whose provisional pin lives in pendingAccountPins); the next turn pins again.
   let generation = 0;
-  function remove(key) {
+
+  // Persistence is fail-open: a throw or rejection never reaches routing.
+  const mirror = (op, ...args) => {
+    const store = persistence();
+    if (!store?.[op]) return;
+    try {
+      Promise.resolve(store[op](...args)).catch(() => {});
+    } catch {
+      // ignore
+    }
+  };
+  const persistEntry = (key, entry) => {
+    entry.persistedAt = now();
+    mirror("save", key, {
+      value: entry.value,
+      createdAt: entry.createdAt,
+      touchedAt: entry.persistedAt,
+    });
+  };
+
+  // Drop from memory only (an entry being re-inserted keeps its persisted copy).
+  function unlink(key) {
     const entry = map.get(key);
     if (!entry) return;
     map.delete(key);
@@ -67,15 +95,32 @@ export function createPinStore({
     if (set.size === 0) scopes.delete(entry.scope);
   }
 
-  function insert(key, value, createdAt, version) {
-    remove(key);
+  // Drop for good: expiry, eviction or an explicit delete.
+  function remove(key) {
+    if (!map.has(key)) return;
+    unlink(key);
+    mirror("remove", key);
+  }
+
+  function insert(
+    key,
+    value,
+    createdAt,
+    version,
+    persistedAt,
+    expiresAt = now() + ttlMs,
+    durable = true,
+  ) {
+    unlink(key);
     const scope = scopeOf(key);
-    map.set(key, { value, createdAt, expiresAt: now() + ttlMs, scope, version });
+    const entry = { value, createdAt, expiresAt, scope, version, persistedAt, durable };
+    map.set(key, entry);
     let set = scopes.get(scope);
     if (!set) scopes.set(scope, (set = new Set()));
     set.add(key);
     while (set.size > maxPinsPerScope) remove(set.values().next().value);
     while (map.size > maxPins) remove(map.keys().next().value);
+    return entry;
   }
 
   function live(key, entry) {
@@ -93,7 +138,19 @@ export function createPinStore({
         remove(key);
         return undefined;
       }
-      insert(key, entry.value, entry.createdAt, entry.version);
+      const renewed = insert(
+        key,
+        entry.value,
+        entry.createdAt,
+        entry.version,
+        entry.persistedAt,
+        undefined,
+        entry.durable,
+      );
+      // A memory-only entry (an unconfirmed first-turn claim) is never saved by a read.
+      if (renewed.durable && !(now() - (renewed.persistedAt ?? 0) < touchEveryMs)) {
+        persistEntry(key, renewed);
+      }
       return entry.value;
     },
     /** Value when live, without renewing anything. */
@@ -106,12 +163,30 @@ export function createPinStore({
       }
       return entry.value;
     },
-    /** Write; a live entry keeps its createdAt so re-pinning never extends max age. */
-    set(key, value) {
+    /**
+     * Write; a live entry keeps its createdAt so re-pinning never extends max age.
+     * `durable: false` keeps the entry in memory only (an unconfirmed first-turn
+     * claim must not survive a restart); a later durable set persists it.
+     */
+    set(key, value, { durable = true } = {}) {
       const prev = map.get(key);
       const version = Symbol("pinVersion");
-      insert(key, value, prev && live(key, prev) ? prev.createdAt : now(), version);
+      const createdAt = prev && live(key, prev) ? prev.createdAt : now();
+      const entry = insert(key, value, createdAt, version, undefined, undefined, durable);
+      if (durable) persistEntry(key, entry);
       return version;
+    },
+    /**
+     * Re-load a persisted entry (startup). Keeps its createdAt and sliding expiry
+     * from its last touch; never writes back. False when it is no longer live.
+     */
+    restore(key, value, createdAt, touchedAt) {
+      if (![createdAt, touchedAt].every(Number.isFinite)) return false;
+      const entry = { createdAt, expiresAt: touchedAt + ttlMs };
+      if (!live(key, entry)) return false;
+      const version = Symbol("pinVersion");
+      insert(key, value, createdAt, version, touchedAt, entry.expiresAt);
+      return map.has(key);
     },
     /** Identity of a live write; reads preserve it, every set replaces it. */
     version(key) {
@@ -137,11 +212,48 @@ export function createPinStore({
       generation++;
       map.clear();
       scopes.clear();
+      mirror("clear");
     },
     get size() {
       return map.size;
     },
   };
+}
+
+/**
+ * @typedef {object} PinPersistence
+ * @property {(key: string, record: {value: any, createdAt: number, touchedAt: number}) => any} save
+ * @property {(key: string) => any} remove
+ * @property {() => any} clear
+ */
+
+const COMBO_PIN_PERSISTENCE = Symbol.for("tokenhop.comboPinPersistence");
+
+/**
+ * Install (or clear with null) the store combo pins are mirrored to, so a gateway
+ * restart does not move running conversations to another model (YAN-2468). The app
+ * installs it at startup; open-sse never imports the DB layer.
+ * @param {PinPersistence|null} store
+ */
+export function setComboPinPersistence(store) {
+  globalThis[COMBO_PIN_PERSISTENCE] = store || null;
+}
+
+/**
+ * Load persisted combo pins into memory, oldest touch first so LRU order holds.
+ * @param {Iterable<[string, {value: any, createdAt: number, touchedAt: number}]>} records
+ * @returns {{ restored: number, stale: string[] }} stale = keys no longer live (delete them)
+ */
+export function restoreComboPins(records) {
+  const rows = [...records].filter(([key, r]) => typeof key === "string" && r && "value" in r);
+  rows.sort((a, b) => (a[1].touchedAt ?? 0) - (b[1].touchedAt ?? 0));
+  const stale = [];
+  let restored = 0;
+  for (const [key, r] of rows) {
+    if (comboPins.restore(key, r.value, r.createdAt, r.touchedAt)) restored++;
+    else stale.push(key);
+  }
+  return { restored, stale };
 }
 
 // Prompt-hash ("p:") conversation keys are shared by every request that opens with
@@ -155,7 +267,16 @@ const storeConfig = {
   maxPinsPerScope: CACHE_AFFINITY_MAX_PINS_PER_WORKSPACE,
   maxAgeFor: promptPinMaxAge,
 };
-export const comboPins = createPinStore(storeConfig);
+// One process-wide store on globalThis (like quotaSnapshot.js): Next.js route
+// bundles and the startup hook may load separate copies of this module, and the
+// pins restored at startup must be the ones routing reads.
+const COMBO_PINS_SLOT = Symbol.for("tokenhop.comboPins");
+globalThis[COMBO_PINS_SLOT] ??= createPinStore({
+  ...storeConfig,
+  now: () => Date.now(),
+  persistence: () => globalThis[COMBO_PIN_PERSISTENCE] || null,
+});
+export const comboPins = globalThis[COMBO_PINS_SLOT];
 export const accountPins = createPinStore(storeConfig);
 /**
  * Provisional account pins (YAN-1222): written at selection so a concurrent first

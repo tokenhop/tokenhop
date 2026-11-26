@@ -23,6 +23,22 @@ export async function activate(cdp, label, dialog = false) {
   await cdp.pressEnter();
 }
 
+/**
+ * Run every committed-but-pending passive effect (and the microtasks they
+ * queue) before the evaluate returns. The DOM can show a new phase before its
+ * effects run: the dialog's Esc listener is re-registered in an effect when
+ * `busy` flips, and an async close restores focus from the focus trap's effect
+ * cleanup plus a microtask.
+ */
+async function flushEffects(cdp) {
+  assert.equal(await cdp.evaluate(`window.fixture.flushEffects()`), true, "effects flushed");
+}
+
+async function pressEscapeWhenLive(cdp) {
+  await flushEffects(cdp);
+  await cdp.pressEscape();
+}
+
 async function checkbox(cdp, label) {
   await poll(
     () =>
@@ -128,7 +144,7 @@ export async function runCase(cdp, baseUrl, definition) {
     } else if (step === "cancel") {
       await activate(cdp, "Cancel", true);
     } else if (step === "escape") {
-      await cdp.pressEscape();
+      await pressEscapeWhenLive(cdp);
     } else if (step === "conflict-assert") {
       await poll(
         () =>
@@ -180,7 +196,7 @@ export async function runCase(cdp, baseUrl, definition) {
       );
       assert.equal((await snapshot(cdp, trigger)).inside, true, "Review keeps focus trapped");
       if (step === "bulk-cancel") await activate(cdp, "Cancel", true);
-      else if (step === "bulk-escape") await cdp.pressEscape();
+      else if (step === "bulk-escape") await pressEscapeWhenLive(cdp);
       else {
         await activate(cdp, "Check move", true);
         await activate(cdp, "Move", true);
@@ -194,6 +210,7 @@ export async function runCase(cdp, baseUrl, definition) {
       () => cdp.evaluate(`!document.querySelector('[role="dialog"]')`),
       "cancel/escape closes",
     );
+    await flushEffects(cdp);
   } else if (definition.immediate) {
     // The row/trigger is removed in the SAME commit as close (or synchronously
     // before it for immediate-flush). No gated release; commit-order proof below.
@@ -201,6 +218,7 @@ export async function runCase(cdp, baseUrl, definition) {
       () => cdp.evaluate(`window.fixture.refreshed && !document.querySelector('[role="dialog"]')`),
       "immediate refresh commits",
     );
+    await flushEffects(cdp);
   } else {
     // Close first, then verify focus lands BEFORE the refresh can run.
     await poll(
@@ -208,7 +226,10 @@ export async function runCase(cdp, baseUrl, definition) {
       "dialog closes before refresh",
     );
     await poll(() => cdp.evaluate(`!!window.fixture.releaseRefresh`), "refresh is still gated");
+    // Focus restore runs in effects; the gate holds the refresh meanwhile.
+    await flushEffects(cdp);
     const beforeRefresh = await snapshot(cdp, trigger);
+    assert.deepEqual(beforeRefresh.rows, initialRows, "rows unchanged while refresh is gated");
     assert.equal(
       beforeRefresh.headingFocused,
       true,

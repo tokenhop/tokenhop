@@ -11,6 +11,8 @@ const UsageTokensChartInner = dynamic(() => import("./UsageTokensChartInner"), {
 const BUCKETS_PROP = PropTypes.arrayOf(
   PropTypes.shape({
     label: PropTypes.string,
+    grain: PropTypes.string,
+    start: PropTypes.string,
     input: PropTypes.number,
     cached: PropTypes.number,
     output: PropTypes.number,

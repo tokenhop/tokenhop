@@ -488,6 +488,21 @@ export const TABLES = {
       updatedAt: "TEXT NOT NULL",
     },
   },
+  // Usage hub management keys (migration 026, YAN-2019): read-only keys for
+  // the T3 Code hub routes. SHA-256 keyHash only (never the raw key); revoked
+  // rows stay as tombstones. Instance-level, owner/admin managed.
+  hubKeys: {
+    columns: {
+      id: "TEXT PRIMARY KEY",
+      keyHash: "TEXT UNIQUE NOT NULL",
+      prefix: "TEXT NOT NULL",
+      name: "TEXT",
+      createdByUserId: "TEXT REFERENCES users(id) ON DELETE SET NULL",
+      createdAt: "TEXT NOT NULL",
+      lastUsedAt: "TEXT",
+      revokedAt: "TEXT",
+    },
+  },
   // YAN-751: one row per signed-in device, keyed by the non-secret `sid` JWT
   // claim. userAgent/ip hold derived labels only (never the raw UA or full IP).
   // Soft revoke (revokedAt) stays as a tombstone until expiresAt.
@@ -505,6 +520,28 @@ export const TABLES = {
       revokedAt: "TEXT",
     },
     indexes: ["CREATE INDEX IF NOT EXISTS idx_sessions_user_exp ON sessions(userId, expiresAt)"],
+  },
+  // Quota snapshot history (migration 025, YAN-422): rate-limited samples of
+  // quota window utilization (no secrets) for startup snapshot restore, runway
+  // forecasts, and 7d sparklines. Deleted with the connection; never exported.
+  quotaHistory: {
+    columns: {
+      id: "INTEGER PRIMARY KEY AUTOINCREMENT",
+      connectionId: "TEXT NOT NULL REFERENCES providerConnections(id) ON DELETE CASCADE",
+      provider: "TEXT NOT NULL",
+      windowKind: "TEXT NOT NULL",
+      quotaKey: "TEXT NOT NULL DEFAULT ''",
+      usedFraction: "REAL NOT NULL CHECK (usedFraction >= 0 AND usedFraction <= 1)",
+      resetsAt: "INTEGER NOT NULL DEFAULT 0",
+      planTier: "TEXT",
+      source: "TEXT NOT NULL DEFAULT 'probe'",
+      ts: "INTEGER NOT NULL",
+    },
+    indexes: [
+      "CREATE INDEX IF NOT EXISTS idx_qh_conn_ts ON quotaHistory(connectionId, ts DESC)",
+      "CREATE INDEX IF NOT EXISTS idx_qh_conn_window_ts ON quotaHistory(connectionId, windowKind, ts DESC)",
+      "CREATE INDEX IF NOT EXISTS idx_qh_ts ON quotaHistory(ts)",
+    ],
   },
 };
 

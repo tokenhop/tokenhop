@@ -3,13 +3,29 @@ import {
   openaiResponsesToOpenAIRequest,
   openaiToOpenAIResponsesRequest,
 } from "../translator/request/openai-responses.js";
+import { headroomRequestHeaders } from "./headroomAuth.js";
 
 const DEFAULT_TIMEOUT_MS = 3000;
+// Headroom /v1/compress cost grows ~linearly with payload size and saves little
+// on big contexts, so larger payloads skip it instead of waiting out the timeout.
+export const DEFAULT_HEADROOM_MAX_BODY_BYTES = 256 * 1024;
 
 function normalizeTimeout(value) {
   return typeof value === "number" && Number.isFinite(value) && value > 0
     ? value
     : DEFAULT_TIMEOUT_MS;
+}
+
+// 0 = no cap; missing/invalid falls back to the default cap.
+function normalizeMaxBodyBytes(value) {
+  return typeof value === "number" && Number.isFinite(value) && value >= 0
+    ? Math.floor(value)
+    : DEFAULT_HEADROOM_MAX_BODY_BYTES;
+}
+
+function formatKb(bytes, round = Math.ceil) {
+  if (bytes < 1024) return `${bytes}B`;
+  return bytes % 1024 === 0 ? `${bytes / 1024}KB` : `${round(bytes / 1024)}KB`;
 }
 
 function jsonBytes(value) {
@@ -294,17 +310,34 @@ function applyHeadroomMessages(projection, compressedMessages, diagnostics, labe
 }
 
 // POST messages to Headroom /v1/compress; returns compressed messages + stats or null.
-async function callCompress(url, messages, model, timeoutMs, compressUserMessages, diagnostics) {
-  const endpoint = buildCompressEndpoint(url);
-  diagnostics.endpoint = maskEndpoint(endpoint);
+// Payloads above `maxBodyBytes` (0 = no cap) skip the call entirely.
+async function callCompress(
+  messages,
+  { url, model, timeoutMs, compressUserMessages, maxBodyBytes },
+  diagnostics,
+) {
   const payload = { messages, model };
   if (compressUserMessages) payload.config = { compress_user_messages: true };
+  const requestBody = JSON.stringify(payload);
+  if (maxBodyBytes > 0) {
+    const payloadBytes = new TextEncoder().encode(requestBody).length;
+    if (payloadBytes > maxBodyBytes) {
+      diagnostics.oversize = { payloadBytes, maxBodyBytes };
+      setDiagnostic(
+        diagnostics,
+        `payload ${formatKb(payloadBytes)} > cap ${formatKb(maxBodyBytes, Math.floor)}`,
+      );
+      return null;
+    }
+  }
+  const endpoint = buildCompressEndpoint(url);
+  diagnostics.endpoint = maskEndpoint(endpoint);
   let res;
   try {
     res = await fetch(endpoint, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
+      headers: headroomRequestHeaders({ "Content-Type": "application/json" }),
+      body: requestBody,
       signal: AbortSignal.timeout(timeoutMs),
     });
   } catch (error) {
@@ -335,10 +368,17 @@ export async function compressWithHeadroom(
     format,
     compressUserMessages,
     timeoutMs = DEFAULT_TIMEOUT_MS,
+    maxBodyBytes = DEFAULT_HEADROOM_MAX_BODY_BYTES,
     diagnostics = null,
   } = {},
 ) {
-  timeoutMs = normalizeTimeout(timeoutMs);
+  const callOptions = {
+    url,
+    model,
+    timeoutMs: normalizeTimeout(timeoutMs),
+    compressUserMessages,
+    maxBodyBytes: normalizeMaxBodyBytes(maxBodyBytes),
+  };
   if (!enabled) {
     setDiagnostic(diagnostics, "disabled");
     return null;
@@ -368,14 +408,7 @@ export async function compressWithHeadroom(
         setDiagnostic(diagnostics, "Claude request did not project to messages[]");
         return null;
       }
-      const data = await callCompress(
-        url,
-        projection.messages,
-        model,
-        timeoutMs,
-        compressUserMessages,
-        diagnostics || {},
-      );
+      const data = await callCompress(projection.messages, callOptions, diagnostics || {});
       if (!data) return null;
       if (!applyHeadroomMessages(projection, data.messages, diagnostics, "Claude")) return null;
       if (diagnostics) diagnostics.after = captureSizeSnapshot(body);
@@ -398,14 +431,7 @@ export async function compressWithHeadroom(
         setDiagnostic(diagnostics, "openai-responses request did not translate to messages[]");
         return null;
       }
-      const data = await callCompress(
-        url,
-        oai.messages,
-        model,
-        timeoutMs,
-        compressUserMessages,
-        diagnostics || {},
-      );
+      const data = await callCompress(oai.messages, callOptions, diagnostics || {});
       if (!data) return null;
       // input: undefined so the translator rebuilds input from the compressed
       // messages instead of returning the original input unchanged.
@@ -428,14 +454,7 @@ export async function compressWithHeadroom(
         setDiagnostic(diagnostics, "Kiro request did not project to messages[]");
         return null;
       }
-      const data = await callCompress(
-        url,
-        projection.messages,
-        model,
-        timeoutMs,
-        compressUserMessages,
-        diagnostics || {},
-      );
+      const data = await callCompress(projection.messages, callOptions, diagnostics || {});
       if (!data) return null;
       if (!applyHeadroomMessages(projection, data.messages, diagnostics, "Kiro")) return null;
       if (diagnostics) diagnostics.after = captureSizeSnapshot(body);
@@ -452,14 +471,7 @@ export async function compressWithHeadroom(
       setDiagnostic(diagnostics, `unsupported ${format || "unknown"} request shape`);
       return null;
     }
-    const data = await callCompress(
-      url,
-      body[key],
-      model,
-      timeoutMs,
-      compressUserMessages,
-      diagnostics || {},
-    );
+    const data = await callCompress(body[key], callOptions, diagnostics || {});
     if (!data) return null;
     body[key] = data.messages;
     if (diagnostics) diagnostics.after = captureSizeSnapshot(body);

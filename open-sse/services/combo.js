@@ -12,10 +12,10 @@ import { coerceResponsesOutput } from "../translator/formats/responsesApi.js";
 import { pickSmoothWeighted } from "./weightedRoundRobin.js";
 import { effectiveComboWeight } from "./comboWeights.js";
 import { boundedMap } from "../utils/boundedMap.js";
-import { probeStreamHead } from "../utils/streamProbe.js";
+import { probeStreamHead, watchForLateRefusal } from "../utils/streamProbe.js";
 import { COMBO_HEDGE_DELAY_DEFAULT_MS, COMBO_HEDGE_DELAY_MAX_MS } from "./comboStrategy.js";
-import { clearComboPins, comboPins, orderAroundPin } from "./cacheAffinity.js";
-import { comboAffinityKey, validComboPin } from "./comboAffinityOrder.js";
+import { clearComboPins, comboPins } from "./cacheAffinity.js";
+import { comboAffinityKey, pinnedCandidates, validComboPin } from "./comboAffinityOrder.js";
 import {
   COMBO_STREAM_PROBE_MAX_BYTES,
   COMBO_STREAM_PROBE_MAX_MS,
@@ -674,6 +674,8 @@ function createAttemptFeedback(startedAt, record, parent) {
  *   or when a bulk pin reset removed the entry in between (YAN-1676).
  * @param {string|null} [options.workspaceId=null] - Gateway workspace owning the pins (null = legacy)
  * @param {Iterable<string>} [options.pinExclude] - Capacity-adapter-added members; never pinned
+ * @param {Iterable<string>} [options.pinBridge] - Capacity-adapter pool models (combo members or
+ *   not) that may answer one pinned turn whose model cannot read the input; never pinned (YAN-2467)
  * @param {Function} [options.onFallback] - Awaited before trying the next model: ({ model, status }) => void
  * @param {Function} [options.onAttempt] - Attempt observer: (attempt) => void. Fail-open: any throw is swallowed.
  *   Called after each step resolves (success, fallback-eligible failure, or non-fallback failure).
@@ -704,6 +706,7 @@ export async function handleComboChat({
   cacheAffinity = false,
   workspaceId = null,
   pinExclude = [],
+  pinBridge = [],
 }) {
   // Cache affinity: a valid pin skips the strategy call entirely (no state advance).
   const affinityKey = comboAffinityKey({
@@ -714,9 +717,11 @@ export async function handleComboChat({
     workspaceId,
     onAttempt,
   });
-  const pin = validComboPin(affinityKey, models, { comboStrategy, comboWeights, headroomFn });
+  const pin = validComboPin(affinityKey, models, { comboStrategy, comboWeights });
   const pinned = pin !== undefined;
   const pinExcludeSet = new Set(pinExclude);
+  // Members a pinned turn may serve from and re-pin to (YAN-2467): the pinned model only.
+  const lockedSet = pinned ? new Set(pinnedCandidates(models, pin, pinExcludeSet)) : null;
   let provisional;
   let repinned = false;
   // Drop the provisional first-turn pin unless a later turn replaced it.
@@ -725,15 +730,36 @@ export async function handleComboChat({
       comboPins.delete(affinityKey);
     }
   };
+  // YAN-2479: a refusal seen after the stream was released (reasoning, then a
+  // refusal) withdraws the pin this turn wrote, or cancels a deferred one.
+  let pinWritten;
+  let lateRefusal = false;
+  const writePin = (model) => {
+    if (!lateRefusal) pinWritten = comboPins.set(affinityKey, model);
+  };
+  const onLateRefusal =
+    affinityKey && !pinned
+      ? () => {
+          lateRefusal = true;
+          if (pinWritten !== undefined && comboPins.version(affinityKey) === pinWritten) {
+            comboPins.delete(affinityKey);
+          }
+          // A deferred (nested) write is now cancelled, so the first-turn claim it
+          // would have replaced must go too (version-guarded).
+          dropProvisional();
+        }
+      : null;
   const repin = (model) => {
-    // Capacity-adapter members are never pinned (spec §2): the old pin stays.
+    // Capacity-adapter members are never pinned (spec §2): the old pin stays. Nor is
+    // a member that only bridged a pinned turn (YAN-2467).
     if (!affinityKey || pinExcludeSet.has(model)) return;
+    if (lockedSet && !lockedSet.has(model)) return;
     repinned = true;
     // YAN-1624: a nested combo serving says nothing about the outer level. Its pin
     // waits until every enclosing member wins; a hedge loser or a member the outer
     // empty-stream probe skips releases it (and its provisional pin) instead.
     if (!parentAttempt?.commitOnServe) {
-      comboPins.set(affinityKey, model);
+      writePin(model);
       return;
     }
     // A deferred write must not replace a pin a later turn wrote meanwhile. A
@@ -743,20 +769,15 @@ export async function handleComboChat({
     const seenGen = comboPins.generation();
     const commit = () => {
       const now = comboPins.version(affinityKey);
-      if (now !== undefined ? now === seen : comboPins.generation() === seenGen)
-        comboPins.set(affinityKey, model);
+      if (now !== undefined ? now === seen : comboPins.generation() === seenGen) writePin(model);
     };
     parentAttempt.commitOnServe(commit, dropProvisional);
   };
 
-  // Apply rotation strategy if enabled
+  // Apply rotation strategy if enabled. A pinned turn tries only the pinned model
+  // (YAN-2467): no other model, so a fallback never hands one model's turns to another.
   let rotatedModels = pinned
-    ? comboStrategy === "round-robin"
-      ? rotateModelsFromIndex(models, models.indexOf(pin))
-      : orderAroundPin(
-          comboStrategy === "fastest" ? getFastestModels(models, comboName, () => 1) : models,
-          pin,
-        )
+    ? [...lockedSet]
     : comboStrategy === "weighted"
       ? getWeightedModels(models, comboName, comboWeights, headroomFn, comboStickyLimit)
       : comboStrategy === "fastest"
@@ -775,7 +796,19 @@ export async function handleComboChat({
   if (autoSwitch) {
     const required = detectRequiredCapabilities(body);
     if (required.size > 0) {
-      const reordered = reorderByCapabilities(rotatedModels, required);
+      let reordered = reorderByCapabilities(rotatedModels, required);
+      // Pinned: a capacity-adapter pool model (added for this request, already a combo
+      // member, or outside the combo) may still bridge an input the pinned model cannot
+      // read, only when it floats to the front. It is never pinned.
+      if (pinned) {
+        const adapters = [
+          ...new Set([...models.filter((m) => pinExcludeSet.has(m)), ...pinBridge]),
+        ].filter((m) => !lockedSet.has(m));
+        const bridged = adapters.length
+          ? reorderByCapabilities([...rotatedModels, ...adapters], required)
+          : reordered;
+        if (adapters.includes(bridged[0])) reordered = bridged;
+      }
       if (reordered[0] !== rotatedModels[0]) {
         log.info("COMBO", `auto-switch for [${[...required].join(",")}] → ${reordered[0]}`);
       }
@@ -786,7 +819,8 @@ export async function handleComboChat({
   // First turn: claim the leading member now, synchronously, so a concurrent first
   // turn of this conversation reads it as a pin instead of advancing the strategy.
   if (affinityKey && !pinned && !pinExcludeSet.has(rotatedModels[0])) {
-    provisional = comboPins.set(affinityKey, rotatedModels[0]);
+    // Memory only: if the process stops before a member serves, it is not restored.
+    provisional = comboPins.set(affinityKey, rotatedModels[0], { durable: false });
   }
 
   // Fastest hedging (per-combo, no global opt-in): after model filters/ranking,
@@ -815,6 +849,7 @@ export async function handleComboChat({
         clientSignal,
         delayMs: hedgeMs,
         onServed: repin,
+        onLateRefusal,
         parentAttempt,
       });
     }
@@ -834,10 +869,18 @@ export async function handleComboChat({
         recordLatency,
         parentAttempt,
         trackServe: Boolean(conversationKey),
+        // YAN-2468: an unpinned turn skips a member that refuses (another model may
+        // answer); a pinned turn, or the last member, serves the refusal as is.
+        refusalFallback: !pinned && i < rotatedModels.length - 1,
+        onLateRefusal,
       });
-      if (step.outcome === "served") repin(rotatedModels[i]);
+      // A refusal never takes the pin.
+      if (step.outcome === "served" && !step.refused) repin(rotatedModels[i]);
       if (step.outcome !== "next") return step.response;
       agg.add(step);
+    }
+    if (pinned) {
+      log.warn("COMBO", `Conversation pinned to ${pin}: not switching to another model`);
     }
     return agg.response(log);
   } finally {
@@ -921,6 +964,8 @@ async function runMember({
   signalCtrl = null,
   cancelSignal = null,
   trackServe = false,
+  refusalFallback = false,
+  onLateRefusal = null,
 }) {
   log.info("COMBO", `Trying model ${index + 1}/${total}: ${modelStr}`);
   const attemptStartedAt = Date.now();
@@ -960,6 +1005,7 @@ async function runMember({
   if (cancelSignal && attempt) attempt.signal = cancelSignal;
   attempt?.signal?.addEventListener("abort", () => attempt.close(), { once: true });
   let served = false;
+  let refused = false;
   // Raced requests mutate the body in place (RTK, prefetch, savers): clone.
   let detachAbort = () => {};
   try {
@@ -994,17 +1040,23 @@ async function runMember({
         maxBytes: COMBO_STREAM_PROBE_MAX_BYTES,
         maxMs: COMBO_STREAM_PROBE_MAX_MS,
         signal: attempt?.signal,
+        // A skippable member is held through reasoning so a refusal that follows
+        // it is still caught (bounded by the probe caps).
+        untilAnswer: refusalFallback,
       });
       if (attempt?.signal?.aborted) {
         attempt?.settle({ cancelled: true });
         (probe.response?.body ?? null)?.cancel?.("hedge loser")?.catch?.(() => {});
         return { outcome: "cancelled", response: cancelledResponse() };
       }
+      // A refusal is served (flagged, never pinned) unless this member may be skipped.
+      const servesRefusal = probe.outcome === "refused" && !refusalFallback;
+      if (servesRefusal) refused = true;
       if (attempt) {
         attempt.probing = false;
         const held = attempt.heldParentSettle;
         attempt.heldParentSettle = null;
-        if (probe.outcome === "release") {
+        if (probe.outcome === "release" || servesRefusal) {
           try {
             held?.();
           } catch {
@@ -1012,8 +1064,33 @@ async function runMember({
           }
         }
       }
-      if (probe.outcome === "release") {
-        result = probe.response;
+      if (probe.outcome === "release" || servesRefusal) {
+        result =
+          probe.outcome === "release" && probe.beforeAnswer && onLateRefusal
+            ? watchForLateRefusal(probe.response, onLateRefusal)
+            : probe.response;
+      } else if (probe.outcome === "refused") {
+        probe.response?.body?.cancel?.("refused")?.catch?.(() => {});
+        attempt?.close();
+        notifyAttempt({
+          model: modelStr,
+          status: result.status,
+          latencyMs: Date.now() - attemptStartedAt,
+          errorType: "refused",
+          outcome: "skipped",
+        });
+        log.warn("COMBO", `Model ${modelStr} refused the request, trying next`);
+        if (onFallback) {
+          try {
+            await onFallback({ model: modelStr, status: 403 });
+          } catch {}
+        }
+        return {
+          outcome: "next",
+          attempt,
+          lastError: `Refused by upstream provider: ${probe.refusal}`,
+          lastStatus: 403,
+        };
       } else {
         const errorType = probe.outcome === "empty" ? "empty-stream" : "stream-error";
         // One failure sample: settle() is a no-op if the drained stream
@@ -1057,11 +1134,11 @@ async function runMember({
         errorType: null,
         outcome: "served",
       });
-      log.info("COMBO", `Model ${modelStr} succeeded`);
+      log.info("COMBO", `Model ${modelStr} ${refused ? "served a refusal" : "succeeded"}`);
       served = true;
       // A raced attempt wins only through raceHedgedPair (the loser's commits drop).
       if (!signalCtrl) attempt?.win();
-      return { outcome: "served", response: result, attempt };
+      return { outcome: "served", response: result, attempt, refused };
     }
 
     detachAbort();
@@ -1218,6 +1295,7 @@ async function raceHedgedPair({
   clientSignal = null,
   delayMs,
   onServed,
+  onLateRefusal = null,
   parentAttempt = null,
 }) {
   log.info("COMBO", `Fastest hedge: ${models[0]} vs delayed ${models[1]} (${delayMs}ms)`);
@@ -1255,6 +1333,7 @@ async function raceHedgedPair({
       recordLatency,
       signalCtrl: s.ctrl,
       parentAttempt,
+      onLateRefusal,
     })
       // A rejecting member must still settle its slot, or the race hangs.
       .catch((e) => ({
@@ -1309,7 +1388,8 @@ async function raceHedgedPair({
     slots[winner].result.attempt?.accept?.();
     if (slots[winner].result.outcome === "served") {
       slots[winner].result.attempt?.win();
-      onServed?.(models[winner]);
+      // A refusal never takes the pin (YAN-2479).
+      if (!slots[winner].result.refused) onServed?.(models[winner]);
     }
     if (loser.result && loser.result.outcome !== "next") cancelBody(loser.result.response);
     return slots[winner].result.response;
@@ -1338,8 +1418,9 @@ async function raceHedgedPair({
       recordLatency,
       parentAttempt,
       cancelSignal: clientSignal,
+      onLateRefusal,
     });
-    if (step.outcome === "served") onServed?.(models[i]);
+    if (step.outcome === "served" && !step.refused) onServed?.(models[i]);
     if (step.outcome !== "next") return step.response;
     agg.add(step);
   }
@@ -1457,7 +1538,9 @@ async function checkServedAnswer(res, { signal = null } = {}) {
       maxMs: COMBO_STREAM_PROBE_MAX_MS,
       signal,
     });
-    return probe.outcome === "release"
+    // A refusal is an answer here: it is served as before (YAN-2468 only skips
+    // refusing members of an unpinned combo turn).
+    return probe.outcome === "release" || probe.outcome === "refused"
       ? { empty: false, response: probe.response }
       : { empty: true, response: null };
   }

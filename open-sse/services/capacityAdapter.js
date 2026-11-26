@@ -108,6 +108,21 @@ export function augmentModelsWithCapacityAdapter(models, requiredCapabilities, s
   return [...pool, ...models];
 }
 
+/**
+ * Models from the request's enabled capacity-adapter pools that can read its hard
+ * inputs, in pool order, whether or not they are combo members. A pinned
+ * conversation may bridge one turn through these when its own model cannot read the
+ * input; they never take the pin (YAN-2467).
+ * @param {Iterable<string>} requiredCapabilities
+ * @param {object} settings
+ * @returns {string[]}
+ */
+export function capacityAdapterBridgeModels(requiredCapabilities, settings) {
+  const hard = [...(requiredCapabilities || [])].filter((c) => HARD_CAPS.has(c));
+  if (hard.length === 0) return [];
+  return getCapacityAdapterModels(settings, hard).filter((m) => modelSatisfies(m, hard));
+}
+
 const CHARS_PER_TOKEN = 4; // rough estimate; avoids pulling in a tokenizer dependency
 const HEAD_KEEP = 6; // messages after system kept verbatim before dropping the middle
 

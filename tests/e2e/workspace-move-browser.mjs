@@ -1,13 +1,15 @@
 #!/usr/bin/env node
 // Component-browser E2E: installed Vite + native CDP/WebSocket; no npm additions.
 // CHROME_BIN=/usr/bin/google-chrome node tests/e2e/workspace-move-browser.mjs
-// --only=delayed-middle selects one case. This is NOT a full dashboard-routing E2E.
+// --only=delayed-middle selects one case. CHROME_STARTUP_TIMEOUT_MS overrides the
+// 60 s Chrome startup budget. This is NOT a full dashboard-routing E2E.
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
-import { mkdtemp, mkdir, readFile, rm } from "node:fs/promises";
+import { mkdtemp, mkdir, rm } from "node:fs/promises";
 import { homedir } from "node:os";
 import { resolve } from "node:path";
-import { connect, poll } from "./workspace-move/cdp.mjs";
+import { connect } from "./workspace-move/cdp.mjs";
+import { CHROME_STARTUP_TIMEOUT_MS, waitForDevTools } from "./workspace-move/chrome.mjs";
 import { BEHAVIOUR_CASES, ENTRY_CASES } from "./workspace-move/cases.mjs";
 import { runCase } from "./workspace-move/driver.mjs";
 
@@ -18,21 +20,35 @@ const inherited = { ...process.env };
 let server;
 let chrome;
 let cdp;
-let chromeLog = "";
 let cleaning;
 async function cleanup() {
   if (cleaning) return cleaning;
   cleaning = (async () => {
     cdp?.close();
-    if (chrome?.pid && chrome.exitCode === null && chrome.signalCode === null) {
-      const exited = new Promise((done) => chrome.once("exit", done));
-      chrome.kill("SIGTERM");
-      const timer = setTimeout(() => chrome.kill("SIGKILL"), 3000);
-      await exited;
-      clearTimeout(timer);
+    if (chrome?.pid) {
+      // Chrome leads its own process group (detached spawn). Signal the whole
+      // group: helper processes keep writing to the profile after the main
+      // process exits, and rm then fails with ENOTEMPTY (YAN-2441).
+      const killGroup = (signal) => {
+        try {
+          process.kill(-chrome.pid, signal);
+        } catch {
+          chrome.kill(signal); // Group already gone (ESRCH) or no group signals.
+        }
+      };
+      if (chrome.exitCode === null && chrome.signalCode === null) {
+        const exited = new Promise((done) => chrome.once("exit", done));
+        killGroup("SIGTERM");
+        const sigkill = setTimeout(() => killGroup("SIGKILL"), 3000);
+        let giveUp;
+        await Promise.race([exited, new Promise((done) => (giveUp = setTimeout(done, 6000)))]);
+        clearTimeout(sigkill);
+        clearTimeout(giveUp);
+      }
+      killGroup("SIGKILL");
     }
     await server?.close();
-    await rm(scratch, { recursive: true, force: true });
+    await rm(scratch, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
   })();
   return cleaning;
 }
@@ -97,29 +113,14 @@ try {
       `--user-data-dir=${resolve(scratch, "chrome")}`,
       "about:blank",
     ],
-    { env: process.env, stdio: ["ignore", "ignore", "pipe"] },
+    { env: process.env, stdio: ["ignore", "ignore", "pipe"], detached: true },
   );
-  chrome.stderr.on("data", (chunk) => {
-    chromeLog = (chromeLog + chunk).slice(-10000);
+  // waitForDevTools detaches its own listeners once settled; this one stays so
+  // a late child "error" (e.g. a failed kill) can never crash the runner.
+  chrome.on("error", () => {});
+  const { port } = await waitForDevTools(chrome, {
+    timeout: Number(inherited.CHROME_STARTUP_TIMEOUT_MS) || CHROME_STARTUP_TIMEOUT_MS,
   });
-  let launchError;
-  chrome.on("error", (error) => {
-    launchError = error;
-  });
-  const port = await poll(async () => {
-    if (launchError)
-      throw new Error(
-        `Chrome unavailable: ${launchError.message}. Set CHROME_BIN (no silent skip).`,
-      );
-    if (chrome.exitCode !== null) throw new Error(`Chrome exited: ${chromeLog}`);
-    try {
-      return Number(
-        (await readFile(resolve(scratch, "chrome/DevToolsActivePort"), "utf8")).split("\n")[0],
-      );
-    } catch {
-      return false;
-    }
-  }, "isolated Chrome startup");
   const targets = await (await fetch(`http://127.0.0.1:${port}/json/list`)).json();
   cdp = await connect(targets.find((target) => target.type === "page").webSocketDebuggerUrl);
   const browserErrors = [];

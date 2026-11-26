@@ -382,18 +382,31 @@ describe("quota lock release on a positive poll", () => {
   });
 
   it("a stale clearAccountError keeps a quota lock whose generation moved on", async () => {
-    const conn = await githubConn();
-    const locked = await lockGithubMonthly(conn.id);
-    // Re-lock in the same month: same expiry value, newer generation.
-    await auth.markAccountUnavailable(conn.id, 402, GITHUB_MONTHLY, "github", "claude-x");
-    const relocked = await row(conn.id);
-    expect(relocked.modelLock___all).toBe(locked.modelLock___all);
-    expect(relocked[META_ALL].generation).toBeGreaterThan(locked[META_ALL].generation);
+    // YAN-1857: the monthly lock expiry is computed from two Date.now() reads,
+    // so a millisecond tick between them under load shifts it off the month
+    // boundary. Freeze Date (only Date: real timers keep SQLite/async working)
+    // so both locks land on the same expiry and only the generation differs.
+    vi.useFakeTimers({ toFake: ["Date"] });
+    try {
+      vi.setSystemTime(new Date("2026-06-15T12:00:00.000Z"));
+      const conn = await githubConn();
+      const locked = await lockGithubMonthly(conn.id);
+      expect(locked.modelLock___all).toBe("2026-07-01T00:00:00.000Z");
 
-    await auth.clearAccountError(conn.id, locked, "claude-x");
-    const after = await row(conn.id);
-    expect(after.modelLock___all).toBe(relocked.modelLock___all);
-    expect(after[META_ALL]).toEqual(relocked[META_ALL]);
+      // Re-lock later in the same month: same expiry value, newer generation.
+      vi.setSystemTime(new Date("2026-06-15T12:00:01.000Z"));
+      await auth.markAccountUnavailable(conn.id, 402, GITHUB_MONTHLY, "github", "claude-x");
+      const relocked = await row(conn.id);
+      expect(relocked.modelLock___all).toBe(locked.modelLock___all);
+      expect(relocked[META_ALL].generation).toBeGreaterThan(locked[META_ALL].generation);
+
+      await auth.clearAccountError(conn.id, locked, "claude-x");
+      const after = await row(conn.id);
+      expect(after.modelLock___all).toBe(relocked.modelLock___all);
+      expect(after[META_ALL]).toEqual(relocked[META_ALL]);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("the activation reset (testStatus active) drops the metadata", async () => {

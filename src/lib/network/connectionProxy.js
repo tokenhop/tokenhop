@@ -1,5 +1,8 @@
 import { getProxyPoolById } from "@/models";
 import { boundedMap } from "open-sse/utils/boundedMap.js";
+import { proxyOptionsFromConfig } from "./proxyOptions.js";
+
+export { proxyOptionsFromConfig };
 
 // Safely normalize any value into a trimmed string.
 function normalizeString(value) {
@@ -170,21 +173,6 @@ export async function resolveConnectionProxyConfig(providerSpecificData = {}) {
       strictProxy: false,
     };
   }
-}
-
-/**
- * Map a resolveConnectionProxyConfig() result onto proxyAwareFetch options.
- * Callers must fail closed on `source === "error"` before using this.
- */
-export function proxyOptionsFromConfig(proxy) {
-  return {
-    connectionProxyEnabled: proxy?.connectionProxyEnabled === true,
-    connectionProxyUrl: proxy?.connectionProxyUrl || "",
-    connectionNoProxy: proxy?.connectionNoProxy || "",
-    vercelRelayUrl: proxy?.vercelRelayUrl || "",
-    strictProxy: proxy?.strictProxy === true,
-    connectionProxyPoolId: proxy?.proxyPoolId || null,
-  };
 }
 
 /**

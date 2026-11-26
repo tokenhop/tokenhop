@@ -24,8 +24,8 @@ const mocks = vi.hoisted(() => ({
   isSamlConfigured: vi.fn(),
   resolveAuthModes: vi.fn(),
   sealOwnerTransferState: vi.fn(),
-  checkLoginLocks: vi.fn(),
-  recordLoginFail: vi.fn(),
+  checkProofLocks: vi.fn(),
+  recordProofFail: vi.fn(),
   cookieStore: { get: vi.fn(), set: vi.fn(), delete: vi.fn() },
 }));
 
@@ -54,9 +54,9 @@ vi.mock("@/lib/db/index.js", async (importOriginal) => ({
 vi.mock("@/lib/auth/authModes", () => ({ resolveAuthModes: mocks.resolveAuthModes }));
 vi.mock("@/lib/auth/loginLimiter.js", () => ({
   accountKey: ({ userId }) => `acct:${userId}`,
-  checkLoginLocks: mocks.checkLoginLocks,
+  checkProofLocks: mocks.checkProofLocks,
   getClientIp: () => "1.2.3.4",
-  recordLoginFail: mocks.recordLoginFail,
+  recordProofFail: mocks.recordProofFail,
 }));
 vi.mock("@/lib/auth/oidc", () => ({
   buildOidcAuthorizationUrl: mocks.buildOidcAuthorizationUrl,
@@ -101,7 +101,7 @@ beforeEach(() => {
   mocks.cookieStore.get.mockReturnValue({ value: "jws" });
   mocks.getDashboardAuthSession.mockResolvedValue({ sub: OWNER_ID, sv: 3 });
   mocks.shouldUseSecureCookie.mockReturnValue(true);
-  mocks.checkLoginLocks.mockReturnValue({ locked: false });
+  mocks.checkProofLocks.mockReturnValue({ locked: false });
   mocks.getUserUnscoped.mockImplementation(async (id) =>
     id === OWNER_ID ? OWNER : id === TARGET_ID ? TARGET : null,
   );
@@ -155,9 +155,37 @@ describe("gates", () => {
     const res = await POST(post());
     expect(res.status).toBe(403);
     expect(await res.json()).toMatchObject({ code: "forbidden" });
-    expect(mocks.recordLoginFail).toHaveBeenCalledOnce();
+    expect(mocks.recordProofFail).toHaveBeenCalledOnce();
     expect(mocks.sealOwnerTransferState).not.toHaveBeenCalled();
     expect(mocks.cookieStore.set).not.toHaveBeenCalled();
+  });
+
+  // YAN-1999: start failures count against the proof buckets, never login ones.
+  it("bad target -> 409 and one proof failure on the owner's bucket", async () => {
+    mocks.getUserUnscoped.mockImplementation(async (id) => (id === OWNER_ID ? OWNER : null));
+    const res = await POST(post());
+    expect(res.status).toBe(409);
+    expect(await res.json()).toMatchObject({ code: "invalid_target" });
+    expect(mocks.recordProofFail).toHaveBeenCalledOnce();
+    expect(mocks.recordProofFail).toHaveBeenCalledWith({
+      ip: "1.2.3.4",
+      account: `acct:${OWNER_ID}`,
+    });
+    expect(mocks.sealOwnerTransferState).not.toHaveBeenCalled();
+  });
+
+  it("proof lock -> 429 before any user, IdP or state work", async () => {
+    mocks.checkProofLocks.mockReturnValue({ locked: true, retryAfter: 30 });
+    const res = await POST(post());
+    expect(res.status).toBe(429);
+    expect(await res.json()).toMatchObject({ code: "rate_limited", retryAfter: 30 });
+    expect(mocks.checkProofLocks).toHaveBeenCalledWith({
+      ip: "1.2.3.4",
+      account: `acct:${OWNER_ID}`,
+    });
+    expect(mocks.getUserUnscoped).not.toHaveBeenCalled();
+    expect(mocks.getOidcRuntimeConfig).not.toHaveBeenCalled();
+    expect(mocks.sealOwnerTransferState).not.toHaveBeenCalled();
   });
 });
 

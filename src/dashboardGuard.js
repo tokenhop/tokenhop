@@ -18,6 +18,7 @@ import { LOCAL_ONLY_CODE } from "@/shared/utils/localOnly";
 import { can } from "@/lib/users/principal.js";
 import { audit } from "@/lib/users/audit";
 import { isMultiUserEnabled } from "@/lib/users/featureSwitch";
+import { authorizeHubRequest } from "@/lib/hub/hubAuth.js";
 
 // Skill markdown reads: static content any network peer may fetch (the URL is
 // pasted to AI agents), so /skills never requires auth or an API key. Still
@@ -180,6 +181,20 @@ function urlWorkspaceId(request) {
  * error response.
  */
 async function checkApiPolicy(request, policy) {
+  // YAN-2019: usage hub routes take only a hub management key (hubAuth.js),
+  // before any other gate: sessions, the CLI token and gateway keys never
+  // authorize them. 404 while TOKENHOP_USAGE_HUB is off.
+  if (policy.hub) {
+    const verdict = await authorizeHubRequest(request, {
+      pathname: request.nextUrl?.pathname,
+      method: request.method,
+    });
+    if (verdict.ok) return null;
+    return NextResponse.json(verdict.body, {
+      status: verdict.status,
+      headers: { "Cache-Control": "no-store" },
+    });
+  }
   // YAN-360: switch off hides the route (same 404 body as requireMultiUser)
   // before any local/auth check, so no 401/403 leaks. Fails closed (hidden).
   if (policy.multiUserOnly && !(await isMultiUserEnabled().catch(() => false))) {

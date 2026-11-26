@@ -223,6 +223,9 @@ export async function initRuntimeI18n() {
 
   if (getLocaleFromCookie() === "en") return;
   if (!(await loadCookieLocale())) return;
+  reloadCallbacks.forEach((callback) => {
+    callback();
+  });
   processElement(document.body);
   startObserver();
 }

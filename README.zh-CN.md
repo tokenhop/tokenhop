@@ -427,7 +427,7 @@ tokenhop 与所有主流 AI 编程工具无缝协作：
 #### 云运行时说明
 
 - 生产环境中优先使用服务端云变量：
-  - `BASE_URL`（云同步调度程序使用的内部回调 URL）
+  - `BASE_URL`（控制面板的公开 origin，用于反向代理、OIDC、SAML；直接访问时保持未设置）
   - `CLOUD_URL`（云同步端点基础 URL）
 - `NEXT_PUBLIC_BASE_URL` 和 `NEXT_PUBLIC_CLOUD_URL` 仍用于兼容性/UI，但服务端运行时现在优先使用 `BASE_URL`/`CLOUD_URL`。
 - 云同步请求现在使用超时 + 快速失败行为，以避免云 DNS/网络不可用时 UI 挂起。
@@ -1049,23 +1049,23 @@ docker stop tokenhop && docker rm tokenhop
 
 ### 环境变量
 
-| 变量                                                 | 默认值                               | 描述                                                             |
-| ---------------------------------------------------- | ------------------------------------ | ---------------------------------------------------------------- |
-| `JWT_SECRET`                                         | 自动生成（`~/.tokenhop/jwt-secret`） | 用于控制面板 auth cookie 的 JWT 签名密钥（设置可在多实例间共享） |
-| `INITIAL_PASSWORD`                                   | `123456`                             | 当没有保存的哈希时首次登录的密码                                 |
-| `DATA_DIR`                                           | `~/.tokenhop`                        | 主应用数据库位置（`db.json`）                                    |
-| `PORT`                                               | 框架默认值                           | 服务端口（示例中为 `20128`）                                     |
-| `HOSTNAME`                                           | 框架默认值                           | 绑定主机（Docker 默认为 `0.0.0.0`）                              |
-| `NODE_ENV`                                           | 运行时默认值                         | 设置 `production` 用于部署                                       |
-| `BASE_URL`                                           | `http://localhost:20128`             | 云同步任务使用的服务端内部基础 URL                               |
-| `CLOUD_URL`                                          | 空（未设置）                         | 可选：自托管云同步端点基础 URL（无默认云服务）                   |
-| `NEXT_PUBLIC_BASE_URL`                               | `http://localhost:3000`              | 向后兼容/公开基础 URL（服务端运行时优先使用 `BASE_URL`）         |
-| `NEXT_PUBLIC_CLOUD_URL`                              | 空（未设置）                         | 向后兼容/公开云 URL（可选；服务端运行时优先使用 `CLOUD_URL`）    |
-| `API_KEY_SECRET`                                     | `endpoint-proxy-api-key-secret`      | 生成 API key 的 HMAC 密钥                                        |
-| `MACHINE_ID_SALT`                                    | `endpoint-proxy-salt`                | 稳定机器 ID 哈希的盐值                                           |
-| `ENABLE_REQUEST_LOGS`                                | `false`                              | 在 `logs/` 下启用请求/响应日志                                   |
-| `AUTH_COOKIE_SECURE`                                 | `false`                              | 强制 `Secure` auth cookie（在 HTTPS 反向代理后面设置为 `true`）  |
-| `HTTP_PROXY`、`HTTPS_PROXY`、`ALL_PROXY`、`NO_PROXY` | 空                                   | 用于上游提供商调用的可选出站代理                                 |
+| 变量                                                 | 默认值                               | 描述                                                                   |
+| ---------------------------------------------------- | ------------------------------------ | ---------------------------------------------------------------------- |
+| `JWT_SECRET`                                         | 自动生成（`~/.tokenhop/jwt-secret`） | 用于控制面板 auth cookie 的 JWT 签名密钥（设置可在多实例间共享）       |
+| `INITIAL_PASSWORD`                                   | `123456`                             | 当没有保存的哈希时首次登录的密码                                       |
+| `DATA_DIR`                                           | `~/.tokenhop`                        | 主应用数据库位置（`db.json`）                                          |
+| `PORT`                                               | 框架默认值                           | 服务端口（示例中为 `20128`）                                           |
+| `HOSTNAME`                                           | 框架默认值                           | 绑定主机（Docker 默认为 `0.0.0.0`）                                    |
+| `NODE_ENV`                                           | 运行时默认值                         | 设置 `production` 用于部署                                             |
+| `BASE_URL`                                           | 未设置                               | 控制面板的公开 origin（反向代理、OIDC、SAML）；未设置时使用请求的 Host |
+| `CLOUD_URL`                                          | 空（未设置）                         | 可选：自托管云同步端点基础 URL（无默认云服务）                         |
+| `NEXT_PUBLIC_BASE_URL`                               | 未设置                               | `BASE_URL` 未设置时的后备公开 origin（同源检查、OIDC、SAML）           |
+| `NEXT_PUBLIC_CLOUD_URL`                              | 空（未设置）                         | 向后兼容/公开云 URL（可选；服务端运行时优先使用 `CLOUD_URL`）          |
+| `API_KEY_SECRET`                                     | `endpoint-proxy-api-key-secret`      | 生成 API key 的 HMAC 密钥                                              |
+| `MACHINE_ID_SALT`                                    | `endpoint-proxy-salt`                | 稳定机器 ID 哈希的盐值                                                 |
+| `ENABLE_REQUEST_LOGS`                                | `false`                              | 在 `logs/` 下启用请求/响应日志                                         |
+| `AUTH_COOKIE_SECURE`                                 | `false`                              | 强制 `Secure` auth cookie（在 HTTPS 反向代理后面设置为 `true`）        |
+| `HTTP_PROXY`、`HTTPS_PROXY`、`ALL_PROXY`、`NO_PROXY` | 空                                   | 用于上游提供商调用的可选出站代理                                       |
 
 注意：
 

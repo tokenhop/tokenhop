@@ -5,8 +5,10 @@
  */
 
 import { resolveConnectionProxyConfig } from "@/lib/network/connectionProxy";
+import { proxyOptionsFromConfig } from "@/lib/network/proxyOptions";
 import { getAntigravityUsage } from "open-sse/services/usage/google.js";
 import { recordProbeWindows } from "open-sse/services/quotaSnapshot.js";
+import { recordQuotaHistorySamplesUnscoped } from "@/lib/db/repos/quotaHistoryRepo.js";
 import * as log from "../utils/logger.js";
 
 // Compat Map (auth pre-filter + tests read/write this directly). Every
@@ -79,11 +81,23 @@ function _safeQuotaCopy(quotas) {
   return out;
 }
 
-function _writeQuotas(connectionId, quotas, { merge = false } = {}) {
+function _writeQuotas(connectionId, quotas, { merge = false, persist = true } = {}) {
   const windows = Object.entries(quotas || {})
     .map(([modelId, entry]) => _toSnapshotWindow(modelId, entry))
     .filter(Boolean);
-  if (windows.length > 0) recordProbeWindows(connectionId, "antigravity", windows);
+  if (windows.length > 0) {
+    recordProbeWindows(connectionId, "antigravity", windows);
+    if (persist) {
+      const samples = windows.map((w) => ({
+        windowKind: w.kind,
+        quotaKey: w.kind.startsWith("model:") ? w.kind.slice("model:".length) : "",
+        usedFraction: w.usedFraction,
+        resetsAt: w.resetsAt ?? null,
+        source: "probe",
+      }));
+      recordQuotaHistorySamplesUnscoped(connectionId, "antigravity", samples).catch(() => {});
+    }
+  }
   const entry = merge
     ? Object.assign(_safeQuotaCopy(quotaCache.get(connectionId)), _safeQuotaCopy(quotas))
     : _safeQuotaCopy(quotas);
@@ -226,13 +240,7 @@ export async function refreshAntigravityQuota(connectionId, accessToken, provide
 async function _doRefresh(connectionId, accessToken, providerSpecificData) {
   try {
     const proxyCfg = await resolveConnectionProxyConfig(providerSpecificData || {});
-    const proxyOptions = {
-      connectionProxyEnabled: proxyCfg.connectionProxyEnabled === true,
-      connectionProxyUrl: proxyCfg.connectionProxyUrl || "",
-      connectionNoProxy: proxyCfg.connectionNoProxy || "",
-      vercelRelayUrl: proxyCfg.vercelRelayUrl || "",
-      strictProxy: proxyCfg.strictProxy === true,
-    };
+    const proxyOptions = proxyOptionsFromConfig(proxyCfg);
 
     const usage = await getAntigravityUsage(accessToken, providerSpecificData, proxyOptions);
     // 401/403 usage responses can contain an empty quotas object plus message.
@@ -302,7 +310,7 @@ export async function handleAntigravityQuotaError(
         _writeQuotas(
           connectionId,
           { [model]: { remainingPercentage: 0, resetAt: new Date(blockedUntil).toISOString() } },
-          { merge: true },
+          { merge: true, persist: false },
         );
       }
       return blockedUntil;

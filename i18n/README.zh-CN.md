@@ -409,7 +409,7 @@ Combo: "my-coding-stack"
 #### 云端运行说明
 
 - 在生产环境中优先使用服务器端云变量：
-  - `BASE_URL`（同步调度器使用的内部回调 URL）
+  - `BASE_URL`（控制面板的公开 origin，用于反向代理、OIDC、SAML；直接访问时保持未设置）
   - `CLOUD_URL`（云端同步端点基础 URL）
 - `NEXT_PUBLIC_BASE_URL` 和 `NEXT_PUBLIC_CLOUD_URL` 仍支持兼容性/UI，但服务器运行时现在优先使用 `BASE_URL`/`C_URL`。
 - 云端同步请求现在使用超时 + 快速失败行为，以避免在云端 DNS/网络不可用时 UI 挂起。
@@ -1029,9 +1029,9 @@ docker stop tokenhop && docker rm tokenhop
 | `PORT`                                               | 框架默认值                           | 服务端口（示例中为 `20128`）                                                                                                  |
 | `HOSTNAME`                                           | 框架默认值                           | 绑定主机（Docker 默认为 `0.0.0.0`）                                                                                           |
 | `NODE_ENV`                                           | 运行时默认值                         | 部署时设置 `production`                                                                                                       |
-| `BASE_URL`                                           | <http://localhost:20128`>            | 云同步作业使用的服务器端内部基础 URL                                                                                          |
+| `BASE_URL`                                           | 未设置                               | 控制面板的公开 origin（反向代理、OIDC、SAML）；未设置时使用请求的 Host                                                        |
 | `CLOUD_URL`                                          | 空                                   | 可选：自托管云同步端点 URL（默认没有云端服务；留空不发送任何数据）                                                            |
-| `NEXT_PUBLIC_BASE_URL`                               | `http://localhost:3000`              | 向后兼容/公共基础 URL（服务器运行时优先使用 `BASE_URL`）                                                                      |
+| `NEXT_PUBLIC_BASE_URL`                               | 未设置                               | `BASE_URL` 未设置时的后备公开 origin（同源检查、OIDC、SAML）                                                                  |
 | `NEXT_PUBLIC_CLOUD_URL`                              | 空                                   | 向后兼容/公共云 URL（可选，仅用于自托管云端端点）                                                                             |
 | `API_KEY_SECRET`                                     | `endpoint-proxy-api-secret`          | 生成的 API Key 的 HMAC 密钥                                                                                                   |
 | `MACHINE_ID_SALT`                                    | `endpoint-proxy-salt`                | 稳定机器 ID 哈希的盐值                                                                                                        |
@@ -1139,7 +1139,6 @@ docker stop tokenhop && docker rm tokenhop
 
 **云端同步错误**
 
-- 验证 `BASE_URL` 指向您正在运行的实例（例如：`http://localhost:20128`）
 - 验证 `CLOUD_URL` 指向您自己运行的云端同步端点（可选；默认不设置）
 - 尽可能保持 `NEXT_PUBLIC_*` 值与服务器端值一致。
 

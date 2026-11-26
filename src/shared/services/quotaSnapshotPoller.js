@@ -1,5 +1,7 @@
 // Quota snapshot poller (YAN-259): backfills the snapshot store from USAGE_HANDLERS
-// probes for connections of weighted providers/combos. Never sends chat pings.
+// probes for connections of weighted providers/combos, and of the usage hub
+// providers while an active hub management key exists (YAN-2447). Never sends
+// chat pings.
 // DI shape mirrors quotaAutoPing: runQuotaSnapshotTick(deps, state).
 import "open-sse/index.js";
 
@@ -15,9 +17,12 @@ import { getUsageForProvider } from "open-sse/services/usage.js";
 import { getSnapshot } from "open-sse/services/quotaSnapshot.js";
 import { QUOTA_SNAPSHOT } from "open-sse/config/quotaSnapshot.js";
 import { resolveConnectionProxyConfig } from "@/lib/network/connectionProxy";
+import { proxyOptionsFromConfig } from "@/lib/network/proxyOptions";
 import { refreshAndUpdateCredentials } from "@/app/api/usage/[connectionId]/route.js";
 import { comboMemberProviders, weightedProviders } from "./weightedTargets.js";
 import { USAGE_APIKEY_PROVIDERS } from "@/shared/constants/providers";
+import { HUB_PROVIDERS, isUsageHubEnabled } from "@/lib/hub/hubConfig.js";
+import { countActiveHubKeysUnscoped } from "@/lib/db/repos/hubKeysRepo.js";
 import {
   fetchAndPersistClaudePlanTier,
   recordUsageSnapshot,
@@ -34,17 +39,6 @@ if (!global.__quotaSnapshotPoller) {
   };
 }
 const g = global.__quotaSnapshotPoller;
-
-function buildProxyOptions(cfg) {
-  return {
-    connectionProxyEnabled: cfg?.connectionProxyEnabled === true,
-    connectionProxyUrl: cfg?.connectionProxyUrl || "",
-    connectionNoProxy: cfg?.connectionNoProxy || "",
-    vercelRelayUrl: cfg?.vercelRelayUrl || "",
-    strictProxy: cfg?.strictProxy === true,
-    connectionProxyPoolId: cfg?.proxyPoolId || null,
-  };
-}
 
 // Same eligibility as GET /api/usage/[connectionId].
 function isEligible(connection) {
@@ -64,7 +58,25 @@ export function createDefaultDeps() {
     resolveConnectionProxyConfig,
     refreshAndUpdateCredentials,
     getUsageForProvider,
+    hubActive,
   };
+}
+
+/**
+ * Whether the usage hub needs fresh snapshots (YAN-2447): the hub switch is on
+ * and at least one active hub management key exists. Never throws; a read
+ * failure counts as inactive (the weighted/combo rules still apply).
+ */
+export async function hubActive({
+  enabled = isUsageHubEnabled,
+  countActiveKeys = countActiveHubKeysUnscoped,
+} = {}) {
+  if (!enabled()) return false;
+  try {
+    return (await countActiveKeys()) > 0;
+  } catch {
+    return false;
+  }
 }
 
 const FAILURE_CACHE_CAP = 1000;
@@ -96,7 +108,7 @@ async function pollConnection(connection, deps, state) {
   }
   try {
     const proxyConfig = await deps.resolveConnectionProxyConfig(connection.providerSpecificData);
-    const proxyOptions = buildProxyOptions(proxyConfig);
+    const proxyOptions = proxyOptionsFromConfig(proxyConfig);
     // Reuse route refresh for OAuth only; API keys have no refresh flow.
     const freshConnection =
       connection.authType === "oauth"
@@ -168,6 +180,11 @@ export async function runQuotaSnapshotTick(deps = createDefaultDeps(), state = g
         // Keep the original provider set when the connection read fails.
       }
     }
+    // YAN-2447: the hub answers only from cached snapshots, so keep its
+    // providers fresh while a hub key exists. Only these providers are added.
+    if (deps.hubActive && (await deps.hubActive().catch(() => false))) {
+      for (const id of HUB_PROVIDERS) providers.add(id);
+    }
     if (providers.size === 0) return;
 
     for (const provider of providers) {
@@ -225,10 +242,20 @@ function hasWeightedSettings(settings) {
 
 // `settings` may be one effective view or an array of them (instance +
 // workspaces). The shared poller keeps running while ANY entry needs it, so
-// one workspace going non-weighted never stops another's polling.
-export function configureQuotaSnapshotPoller(settings, combos = [], aliases = {}) {
+// one workspace going non-weighted never stops another's polling. `hub` (YAN-
+// 2447): an active usage hub key also keeps it running.
+export function configureQuotaSnapshotPoller(
+  settings,
+  combos = [],
+  aliases = {},
+  { hub = false } = {},
+) {
   const views = Array.isArray(settings) ? settings : [settings];
-  if (views.some(hasWeightedSettings) || comboMemberProviders(combos, aliases).size > 0) {
+  if (
+    hub === true ||
+    views.some(hasWeightedSettings) ||
+    comboMemberProviders(combos, aliases).size > 0
+  ) {
     startQuotaSnapshotPoller();
   } else stopQuotaSnapshotPoller();
 }
@@ -246,8 +273,12 @@ export async function syncQuotaSnapshotPoller({
   listPreferencesUnscoped: readPrefs = readSettings === getSettings
     ? listEffectivePreferencesUnscoped
     : null,
+  // YAN-2447: an injected readSettings without an injected hub reader stays
+  // hub-less (test seam), like listPreferencesUnscoped.
+  hubActive: readHub = readSettings === getSettings ? hubActive : null,
 } = {}) {
   try {
+    const hub = readHub ? await readHub().catch(() => false) : false;
     const instance = await readSettings();
     let settings = instance;
     if (readPrefs) {
@@ -261,10 +292,10 @@ export async function syncQuotaSnapshotPoller({
       aliases = readAliases ? await readAliases() : {};
     } catch (error) {
       console.warn(`[QuotaSnapshotPoller] sync: combos/aliases read failed: ${error?.message}`);
-      if (!g.timer) configureQuotaSnapshotPoller(settings);
+      if (!g.timer) configureQuotaSnapshotPoller(settings, [], {}, { hub });
       return;
     }
-    configureQuotaSnapshotPoller(settings, combos, aliases);
+    configureQuotaSnapshotPoller(settings, combos, aliases, { hub });
   } catch (error) {
     console.warn(`[QuotaSnapshotPoller] sync: ${error?.message}`);
   }

@@ -81,6 +81,15 @@ export const TABLE_CLASSES = {
     scopeColumn: "workspaceId",
     note: "one optional webhook per workspace; secret is a D10 credential leaf",
   },
+  // YAN-422: sampled quota snapshot history; belongs to its connection (FK cascade)
+  // and is read only for connections the caller is already authorized to access.
+  quotaHistory: {
+    class: "scoped",
+    scopeColumn: "connectionId",
+    note: "visible through the providerConnection it belongs to; never exported",
+  },
+  // YAN-2019: usage hub management keys, owner/admin managed (hash only).
+  hubKeys: { class: "instance", note: "read-only usage hub keys; SHA-256 hash only" },
 };
 
 // Workspace kv scopes take the `ws:<workspaceId>/` key prefix when scoped.
@@ -93,6 +102,10 @@ export const KV_SCOPE_CLASSES = {
   cliToolPresets: { class: "pending-scope", issue: "YAN-374" },
   pricing: { class: "instance" },
   gemini_thought_signatures: { class: "system", note: "upstream signature cache" },
+  comboPins: {
+    class: "system",
+    note: "combo conversation pins (YAN-2468); the key's first segment is the workspace id",
+  },
 };
 
 /**

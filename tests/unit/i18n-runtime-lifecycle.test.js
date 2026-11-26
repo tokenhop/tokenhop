@@ -184,4 +184,19 @@ describe("runtime i18n lifecycle", () => {
     await runtime.reloadTranslations();
     expect(walked).toHaveLength(0);
   });
+
+  it("notifies onLocaleChange listeners when initRuntimeI18n loads a non-English cookie locale", async () => {
+    installDom("es");
+    const runtime = await loadRuntime();
+    const seen = [];
+    const unsubscribe = runtime.onLocaleChange(() => seen.push(runtime.getCurrentLocale()));
+
+    await runtime.initRuntimeI18n();
+    expect(seen).toEqual(["es"]);
+
+    Object.assign(document, { cookie: "locale=en" });
+    unsubscribe();
+    await runtime.reloadTranslations();
+    expect(seen).toEqual(["es"]);
+  });
 });

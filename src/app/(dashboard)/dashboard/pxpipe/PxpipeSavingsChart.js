@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useMemo, useState } from "react";
 import PropTypes from "prop-types";
 import {
   AreaChart,
@@ -10,7 +11,8 @@ import {
   Tooltip,
   ResponsiveContainer,
 } from "recharts";
-import { formatTokens } from "./pxpipePresentation";
+import { getCurrentLocale, onLocaleChange, translate } from "@/i18n/runtime";
+import { formatTokens, localizePxpipeTimeline } from "./pxpipePresentation";
 
 const CHART = {
   stroke: "var(--signal-ok)",
@@ -24,9 +26,18 @@ const CHART = {
 
 /** Client-only chart of tokens saved per day, in Signal token colors. */
 export default function PxpipeSavingsChart({ data }) {
+  const [locale, setLocale] = useState(() => getCurrentLocale());
+
+  useEffect(() => {
+    setLocale(getCurrentLocale());
+    return onLocaleChange(() => setLocale(getCurrentLocale()));
+  }, []);
+
+  const series = useMemo(() => localizePxpipeTimeline(data, locale), [data, locale]);
+
   return (
     <ResponsiveContainer width="100%" height={220}>
-      <AreaChart data={data} margin={{ top: 4, right: 8, left: 0, bottom: 0 }}>
+      <AreaChart data={series} margin={{ top: 4, right: 8, left: 0, bottom: 0 }}>
         <defs>
           <linearGradient id="gradPxpipeSignal" x1="0" y1="0" x2="0" y2="1">
             <stop offset="5%" stopColor={CHART.stroke} stopOpacity={0.25} />
@@ -35,9 +46,9 @@ export default function PxpipeSavingsChart({ data }) {
         </defs>
         <CartesianGrid strokeDasharray="3 3" stroke={CHART.grid} strokeOpacity={0.6} />
         <XAxis
-          dataKey="date"
+          dataKey="label"
           tick={{ fontSize: 11, fill: CHART.tick }}
-          tickFormatter={(d) => String(d ?? "").slice(5)}
+          interval="preserveStartEnd"
         />
         <YAxis
           tick={{ fontSize: 11, fill: CHART.tick }}
@@ -45,8 +56,7 @@ export default function PxpipeSavingsChart({ data }) {
           width={48}
         />
         <Tooltip
-          formatter={(v) => [formatTokens(v), "Tokens saved"]}
-          labelFormatter={(d) => d}
+          formatter={(v) => [formatTokens(v), translate("Tokens saved")]}
           contentStyle={{
             background: CHART.tooltipBg,
             border: `1px solid ${CHART.tooltipBorder}`,

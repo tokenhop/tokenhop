@@ -50,10 +50,16 @@ vi.mock("@/lib/auth/gatewayAuth.js", () => ({
   gatewayKeyContext: vi.fn(() => null),
   sanitizeGatewayCapture: vi.fn((x) => x),
 }));
-vi.mock("@/lib/db/repos/settingsRepo.js", () => ({
-  getSettings: vi.fn(async () => ({ requireApiKey: false })),
-  getEffectivePreferences: vi.fn(async () => ({})),
-}));
+vi.mock("@/lib/db/repos/settingsRepo.js", async (importOriginal) => {
+  const actual = await importOriginal();
+  return {
+    ...actual,
+    getSettings: vi.fn(async () => ({ requireApiKey: false })),
+    getEffectivePreferences: vi.fn(async () => ({})),
+    getMultiUserEnabledSettingRaw: vi.fn(async () => false),
+    getMultiUserEnabledSettingRawSync: vi.fn(() => false),
+  };
+});
 
 vi.mock("@/sse/utils/logger.js", () => ({
   nextTag: vi.fn(() => "t"),

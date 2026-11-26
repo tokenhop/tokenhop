@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { probeTimes } from "@/shared/utils/providerHealth.js";
 import {
   applyServerPriorityPut,
@@ -62,10 +62,17 @@ describe("provider detail shares and cooldowns", () => {
   });
 
   it("formats remaining cooldown time in seconds, minutes and hours", () => {
-    expect(formatCooldownRemaining(Date.now() + 45 * 1000)).toMatch(/^\d+s$/);
-    expect(formatCooldownRemaining(Date.now() + 134 * 1000)).toBe("2m 14s");
-    expect(formatCooldownRemaining(Date.now() + 3_700 * 1000)).toBe("1h 1m");
-    expect(formatCooldownRemaining(Date.now() - 1000)).toBe("");
+    vi.useFakeTimers();
+    try {
+      const now = Date.UTC(2026, 0, 1, 12, 0, 0);
+      vi.setSystemTime(now);
+      expect(formatCooldownRemaining(now + 45 * 1000)).toBe("45s");
+      expect(formatCooldownRemaining(now + 134 * 1000)).toBe("2m 14s");
+      expect(formatCooldownRemaining(now + 3_700 * 1000)).toBe("1h 1m");
+      expect(formatCooldownRemaining(now - 1000)).toBe("");
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("validates provider sticky limits before saving", () => {

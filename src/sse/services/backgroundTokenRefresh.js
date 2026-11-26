@@ -10,6 +10,7 @@ import {
 } from "open-sse/services/oauthCredentialManager.js";
 import { isLifetimeAware } from "open-sse/services/tokenLifetime.js";
 import { getReauthRequired, isAccessTokenOnlyExpired } from "open-sse/services/reauthState.js";
+import { proxyOptionsFromConfig } from "../../lib/network/proxyOptions.js";
 
 /**
  * Refresh when expiry is within 30 minutes (or the provider on-request lead, whichever larger).
@@ -100,14 +101,7 @@ async function refreshOne(connection) {
   // strictProxy flag (YAN-651): never fall back to direct when strict is on.
   const { resolveConnectionProxyConfig } = await import("../../lib/network/connectionProxy.js");
   const cfg = await resolveConnectionProxyConfig(connection.providerSpecificData || {});
-  const proxyOptions = {
-    connectionProxyEnabled: cfg.connectionProxyEnabled === true,
-    connectionProxyUrl: cfg.connectionProxyUrl || "",
-    connectionNoProxy: cfg.connectionNoProxy || "",
-    vercelRelayUrl: cfg.vercelRelayUrl || "",
-    strictProxy: cfg.strictProxy === true,
-    connectionProxyPoolId: cfg.proxyPoolId || null,
-  };
+  const proxyOptions = proxyOptionsFromConfig(cfg);
   return checkAndRefreshToken(connection.provider, connection, { force: true, proxyOptions });
 }
 

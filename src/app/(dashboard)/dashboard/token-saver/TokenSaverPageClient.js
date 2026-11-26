@@ -259,7 +259,7 @@ export default function TokenSaverPageClient() {
               />
             }
           >
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-[1.6fr_1fr]">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-[1.6fr_1fr_1fr]">
               <Field
                 label="Headroom URL"
                 hint="Use a local proxy for Start/Stop, or an external sidecar."
@@ -294,6 +294,24 @@ export default function TokenSaverPageClient() {
                       const raw = Math.round(Number(event.target.value));
                       const next = Number.isFinite(raw) && raw > 0 ? raw : 3000;
                       patchSetting({ headroomTimeoutMs: next });
+                    }}
+                    className="font-mono text-[13px]"
+                  />
+                )}
+              </Field>
+              <Field label="Size cap" hint="Skip above this many bytes. 0 = no cap.">
+                {({ inputId, describedBy }) => (
+                  <Input
+                    id={inputId}
+                    aria-describedby={describedBy}
+                    value={String(settings.headroomMaxBodyBytes ?? 262144)}
+                    onChange={(event) =>
+                      setSettings((prev) => ({ ...prev, headroomMaxBodyBytes: event.target.value }))
+                    }
+                    onBlur={(event) => {
+                      const raw = Math.round(Number(event.target.value));
+                      const next = Number.isFinite(raw) && raw >= 0 ? raw : 262144;
+                      patchSetting({ headroomMaxBodyBytes: next });
                     }}
                     className="font-mono text-[13px]"
                   />
