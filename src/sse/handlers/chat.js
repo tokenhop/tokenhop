@@ -13,6 +13,7 @@ import {
 import { getSettings, getEffectivePreferences } from "@/lib/db/index.js";
 import { createChatLookups } from "./chatLookups.js";
 import { comboRotationKey, comboStrategyFor } from "@/lib/comboKeys.js";
+import { comboAffinityKey } from "open-sse/services/comboAffinityOrder.js";
 import { handleChatCore } from "open-sse/handlers/chatCore.js";
 import { DEFAULT_HEADROOM_URL } from "@/lib/headroom/detect";
 import { getTransform as getPxpipeTransform } from "@/lib/pxpipe/loader.js";
@@ -295,9 +296,11 @@ export async function handleChat(request, clientRawRequest = null, options = nul
     }
 
     const headroomFn = comboStrategy === "weighted" ? await loadComboHeadroomFn() : undefined;
-    const pinBridge = await pinBridgeModels(lookups, requiredCapabilities, body, settings, [
-      modelStr,
-    ]);
+    const pinBridge = affinityApplies(cacheAffinity, comboStrategy, options, comboObserver)
+      ? await pinBridgeModels(lookups, requiredCapabilities, body, settings, [modelStr])
+      : [];
+    // Only bridge models outside the combo get adapter stripping: a combo member keeps
+    // its full history whether it serves as the pin, as a normal pick or as a bridge.
     const bridgeOnly = pinBridge.filter((m) => !augmentedModels.includes(m));
     log.info(
       "CHAT",
@@ -432,12 +435,26 @@ function fallbackRecorder(comboName, workspaceId = null) {
 
 // Filter authorization denials BEFORE engine fallback classification. Engine 403s
 // are upstream credential errors; gateway denials must never enter that path.
+/** Whether handleComboChat can pin this conversation (same gate as its pin key). */
+function affinityApplies(cacheAffinity, comboStrategy, options, observer) {
+  return (
+    comboAffinityKey({
+      cacheAffinity,
+      conversationKey: options?.conversationKey ?? null,
+      comboStrategy,
+      comboName: "combo",
+      onAttempt: observer,
+    }) !== null
+  );
+}
+
 /**
  * Capacity-adapter models a pinned combo turn may bridge through when its model cannot
  * read the request's input (YAN-2467). Pool models need not be combo members, so a
  * gateway key's model/combo scope filters them like any other candidate.
  */
 async function pinBridgeModels(lookups, requiredCapabilities, body, settings, path) {
+  // Bridges answer only pinned turns, so the scope lookups run only when one can exist.
   const bridge = capacityAdapterBridgeModels(requiredCapabilities, settings);
   if (!bridge.length || !lookups.gateway) return bridge;
   return allowedGatewayModels(lookups, bridge, body, settings, path);
@@ -652,13 +669,9 @@ async function handleSingleModelChat(
       }
 
       const headroomFn = comboStrategy === "weighted" ? await loadComboHeadroomFn() : undefined;
-      const pinBridge = await pinBridgeModels(
-        lookups,
-        requiredCapabilities,
-        body,
-        chatSettings,
-        nextPath,
-      );
+      const pinBridge = affinityApplies(cacheAffinity, comboStrategy, options, nestedObserver)
+        ? await pinBridgeModels(lookups, requiredCapabilities, body, chatSettings, nextPath)
+        : [];
       const bridgeOnly = pinBridge.filter((m) => !filteredAdapter.includes(m));
       log.info(
         "CHAT",
