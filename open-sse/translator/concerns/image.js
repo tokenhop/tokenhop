@@ -66,7 +66,7 @@ export function detectImageMime(buf) {
 }
 
 /**
- * Fetch a remote image URL and return it as a base64 data URI.
+ * Fetch a remote image URL and return its raw bytes.
  * Hardened against SSRF (private/metadata IPs), memory DoS (size cap),
  * and disguised non-image payloads (magic-byte verification).
  * Returns null on any failure or rejection.
@@ -77,9 +77,9 @@ export function detectImageMime(buf) {
  *   proxyAwareFetch. Direct and HTTP(S)/SOCKS proxy connections target the
  *   validated IP; a configured relay (Vercel/Deno/Cloudflare) would resolve
  *   the hostname itself, so the fetch is refused (returns null).
- * @returns {Promise<{url: string, mimeType: string}|null>}
+ * @returns {Promise<{buf: Buffer, mimeType: string}|null>}
  */
-export async function fetchImageAsBase64(imageUrl, options = {}) {
+export async function fetchImageBytes(imageUrl, options = {}) {
   const {
     signal,
     timeoutMs = FETCH_TIMEOUT_MS,
@@ -152,7 +152,7 @@ export async function fetchImageAsBase64(imageUrl, options = {}) {
     const mimeType = detectImageMime(buf);
     if (!mimeType) return null; // not a recognized image — reject disguised payloads
 
-    return { url: `data:${mimeType};base64,${buf.toString("base64")}`, mimeType };
+    return { buf, mimeType };
   } catch (error) {
     if (error?.code === "ERR_PINNED_RELAY") {
       console.warn("[image] Remote image URL refused: connection relays cannot fetch images");
@@ -161,4 +161,22 @@ export async function fetchImageAsBase64(imageUrl, options = {}) {
   } finally {
     dispatcher.close().catch(() => {});
   }
+}
+
+/**
+ * Fetch a remote image URL and return it as a base64 data URI.
+ * Thin wrapper over fetchImageBytes; same hardening, same options.
+ * Returns null on any failure or rejection.
+ *
+ * @param {string} imageUrl - HTTP(S) URL of the image
+ * @param {object} options - see fetchImageBytes
+ * @returns {Promise<{url: string, mimeType: string}|null>}
+ */
+export async function fetchImageAsBase64(imageUrl, options = {}) {
+  const fetched = await fetchImageBytes(imageUrl, options);
+  if (!fetched) return null;
+  return {
+    url: encodeDataUri(fetched.mimeType, fetched.buf.toString("base64")),
+    mimeType: fetched.mimeType,
+  };
 }
