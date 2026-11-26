@@ -8,6 +8,7 @@ const mocks = vi.hoisted(() => ({
   resolveGatewayAuth: vi.fn(),
   apiType: vi.fn(),
   getModelInfo: vi.fn(),
+  liveModels: vi.fn(),
   gateway: {
     getGatewayConnections: vi.fn(),
     getGatewayCombos: vi.fn(),
@@ -52,6 +53,15 @@ vi.mock("@/sse/services/model.js", async (importOriginal) => ({
 vi.mock("@/lib/auth/gatewayAuth.js", async (importOriginal) => ({
   ...(await importOriginal()),
   resolveGatewayAuth: mocks.resolveGatewayAuth,
+}));
+
+// YAN-1590: the builder adds a synthetic connection for keyless live-catalog
+// providers (opencode), and the real resolver fetches upstream with a 10s
+// timeout. The first success-path test then raced the 5s test timeout on a
+// slow network (later tests hit the module cache). Keep the catalog offline.
+vi.mock("@/lib/providerModels/liveResolvers.js", async (importOriginal) => ({
+  ...(await importOriginal()),
+  resolveLiveModels: mocks.liveModels,
 }));
 
 import { GET as listModels, buildModelsList } from "@/app/api/v1/models/route.js";
@@ -102,6 +112,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   mocks.resolveGatewayAuth.mockResolvedValue({ principal: PRINCIPAL, legacy: false });
   mocks.apiType.mockResolvedValue("completions");
+  mocks.liveModels.mockResolvedValue({ models: [] });
   okayScope();
 });
 
