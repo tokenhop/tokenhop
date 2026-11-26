@@ -11,7 +11,7 @@
  * are fail-open (release).
  */
 
-import { hasMeaningfulToken } from "./streamHelpers.js";
+import { hasMeaningfulToken, refusalOf } from "./streamHelpers.js";
 
 const DEFAULT_MAX_BYTES = 262144;
 const DEFAULT_MAX_MS = 10 * 1000;
@@ -118,7 +118,9 @@ function replayResponse(response, buffered, reader, pending = null) {
 
 /**
  * Peek at the head of a streaming response.
- * @returns {Promise<{outcome:"release"|"empty"|"error", response?, error?}>}
+ * A refusal before any answer token resolves "refused" with a replay of the
+ * stream and the refusal text, so the caller can serve it or skip the member.
+ * @returns {Promise<{outcome:"release"|"refused"|"empty"|"error", response?, error?, refusal?}>}
  */
 export async function probeStreamHead(
   response,
@@ -145,9 +147,17 @@ export async function probeStreamHead(
     return error ? { outcome: "error", error } : { outcome: "empty" };
   };
 
-  // Classify one parsed frame: "meaningful" | { error } | null (keep going).
+  const refused = (refusal) => ({
+    outcome: "refused",
+    refusal,
+    response: replayResponse(response, buffered, reader),
+  });
+
+  // Classify one parsed frame: "meaningful" | { error } | { refusal } | null (keep going).
   const judge = (parsed) => {
     if (isErrorFrame(parsed)) return { error: errorMessage(parsed, "stream error") };
+    const refusal = refusalOf(parsed);
+    if (refusal !== null) return { refusal };
     return isMeaningful(parsed) ? "meaningful" : null;
   };
 
@@ -187,7 +197,8 @@ export async function probeStreamHead(
   };
 
   const deadline = Date.now() + maxMs;
-  const verdictOf = (v) => (v === "done" ? reject() : reject(v.error));
+  const verdictOf = (v) =>
+    v === "done" ? reject() : v.refusal !== undefined ? refused(v.refusal) : reject(v.error);
 
   for (;;) {
     const read = reader.read();

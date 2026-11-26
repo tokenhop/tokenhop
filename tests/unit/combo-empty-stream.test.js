@@ -259,7 +259,6 @@ describe("combo empty-stream fallback", () => {
 describe("empty-stream probe modalities", () => {
   it.each([
     ["audio", { choices: [{ index: 0, delta: { audio: { data: "UklG" } } }] }],
-    ["refusal", { choices: [{ index: 0, delta: { refusal: "no" } }] }],
     [
       "gemini inline image",
       { candidates: [{ content: { parts: [{ inlineData: { data: "iVBO" } }] } }] },
@@ -268,6 +267,15 @@ describe("empty-stream probe modalities", () => {
   ])("%s output is served", async (_l, frameObj) => {
     const out = await probeStreamHead(stream(frame(frameObj) + DONE));
     expect(out.outcome).toBe("release");
+  });
+
+  // YAN-2468: a refusal is never dropped as empty. It resolves "refused" with the
+  // full stream, which the caller serves (or skips on an unpinned combo turn).
+  it("refusal output is kept, flagged refused", async () => {
+    const raw = frame({ choices: [{ index: 0, delta: { refusal: "no" } }] }) + DONE;
+    const out = await probeStreamHead(stream(raw));
+    expect(out.outcome).toBe("refused");
+    expect(await out.response.text()).toBe(raw);
   });
 });
 

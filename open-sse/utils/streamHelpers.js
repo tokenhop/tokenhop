@@ -184,6 +184,28 @@ function tokenKind(item) {
   return null;
 }
 
+/**
+ * Refusal text when a frame is an upstream refusal (YAN-2468): an OpenAI chat
+ * delta carrying only `refusal`, a Responses `response.refusal.delta`, or a Claude
+ * `message_delta` with stop_reason "refusal". Null for any other frame.
+ */
+export function refusalOf(item) {
+  if (item && typeof item === "object" && item.event && item.data) item = item.data;
+  if (!item || typeof item !== "object") return null;
+  if (Array.isArray(item.choices)) {
+    const delta = item.choices[0]?.delta || item.choices[0]?.message;
+    if (!hasText(delta?.refusal) || hasText(delta?.content)) return null;
+    if (Array.isArray(delta?.tool_calls) && delta.tool_calls.length > 0) return null;
+    return delta.refusal;
+  }
+  if (item.type === "response.refusal.delta") return hasText(item.delta) ? item.delta : null;
+  if (item.type === "message_delta" && item.delta?.stop_reason === "refusal") {
+    const explanation = item.delta?.stop_details?.explanation;
+    return hasText(explanation) ? explanation : "Request refused by upstream provider.";
+  }
+  return null;
+}
+
 export function hasMeaningfulToken(item) {
   return tokenKind(item) !== null;
 }

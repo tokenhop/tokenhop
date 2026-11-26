@@ -849,8 +849,12 @@ export async function handleComboChat({
         recordLatency,
         parentAttempt,
         trackServe: Boolean(conversationKey),
+        // YAN-2468: an unpinned turn skips a member that refuses (another model may
+        // answer); a pinned turn, or the last member, serves the refusal as is.
+        refusalFallback: !pinned && i < rotatedModels.length - 1,
       });
-      if (step.outcome === "served") repin(rotatedModels[i]);
+      // A refusal never takes the pin.
+      if (step.outcome === "served" && !step.refused) repin(rotatedModels[i]);
       if (step.outcome !== "next") return step.response;
       agg.add(step);
     }
@@ -939,6 +943,7 @@ async function runMember({
   signalCtrl = null,
   cancelSignal = null,
   trackServe = false,
+  refusalFallback = false,
 }) {
   log.info("COMBO", `Trying model ${index + 1}/${total}: ${modelStr}`);
   const attemptStartedAt = Date.now();
@@ -978,6 +983,7 @@ async function runMember({
   if (cancelSignal && attempt) attempt.signal = cancelSignal;
   attempt?.signal?.addEventListener("abort", () => attempt.close(), { once: true });
   let served = false;
+  let refused = false;
   // Raced requests mutate the body in place (RTK, prefetch, savers): clone.
   let detachAbort = () => {};
   try {
@@ -1018,11 +1024,14 @@ async function runMember({
         (probe.response?.body ?? null)?.cancel?.("hedge loser")?.catch?.(() => {});
         return { outcome: "cancelled", response: cancelledResponse() };
       }
+      // A refusal is served (flagged, never pinned) unless this member may be skipped.
+      const servesRefusal = probe.outcome === "refused" && !refusalFallback;
+      if (servesRefusal) refused = true;
       if (attempt) {
         attempt.probing = false;
         const held = attempt.heldParentSettle;
         attempt.heldParentSettle = null;
-        if (probe.outcome === "release") {
+        if (probe.outcome === "release" || servesRefusal) {
           try {
             held?.();
           } catch {
@@ -1030,8 +1039,30 @@ async function runMember({
           }
         }
       }
-      if (probe.outcome === "release") {
+      if (probe.outcome === "release" || servesRefusal) {
         result = probe.response;
+      } else if (probe.outcome === "refused") {
+        probe.response?.body?.cancel?.("refused")?.catch?.(() => {});
+        attempt?.close();
+        notifyAttempt({
+          model: modelStr,
+          status: result.status,
+          latencyMs: Date.now() - attemptStartedAt,
+          errorType: "refused",
+          outcome: "skipped",
+        });
+        log.warn("COMBO", `Model ${modelStr} refused the request, trying next`);
+        if (onFallback) {
+          try {
+            await onFallback({ model: modelStr, status: 403 });
+          } catch {}
+        }
+        return {
+          outcome: "next",
+          attempt,
+          lastError: `Refused by upstream provider: ${probe.refusal}`,
+          lastStatus: 403,
+        };
       } else {
         const errorType = probe.outcome === "empty" ? "empty-stream" : "stream-error";
         // One failure sample: settle() is a no-op if the drained stream
@@ -1075,11 +1106,11 @@ async function runMember({
         errorType: null,
         outcome: "served",
       });
-      log.info("COMBO", `Model ${modelStr} succeeded`);
+      log.info("COMBO", `Model ${modelStr} ${refused ? "served a refusal" : "succeeded"}`);
       served = true;
       // A raced attempt wins only through raceHedgedPair (the loser's commits drop).
       if (!signalCtrl) attempt?.win();
-      return { outcome: "served", response: result, attempt };
+      return { outcome: "served", response: result, attempt, refused };
     }
 
     detachAbort();
@@ -1475,7 +1506,9 @@ async function checkServedAnswer(res, { signal = null } = {}) {
       maxMs: COMBO_STREAM_PROBE_MAX_MS,
       signal,
     });
-    return probe.outcome === "release"
+    // A refusal is an answer here: it is served as before (YAN-2468 only skips
+    // refusing members of an unpinned combo turn).
+    return probe.outcome === "release" || probe.outcome === "refused"
       ? { empty: false, response: probe.response }
       : { empty: true, response: null };
   }
