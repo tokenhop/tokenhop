@@ -31,6 +31,7 @@ import {
   capabilitiesFromServiceKind,
   getCapabilitiesForModel,
 } from "open-sse/providers/capabilities.js";
+import { canServeVertexVideo } from "open-sse/services/tokenRefresh.js";
 
 const parseOpenAIStyleModels = (data) => {
   if (Array.isArray(data)) return data;
@@ -372,6 +373,12 @@ export async function buildModelsList(kindFilter, options = {}) {
             liveModels
               .map((m) => [stripProviderPrefix(m.id), liveLimits(m)])
               .filter(([, limits]) => limits !== null),
+          );
+        } else if (providerId === "vertex" && !canServeVertexVideo(conn)) {
+          // Static fallback: apply the same Veo gating the live resolver does,
+          // so ADC-only connections don't list video rows they can't serve.
+          rawModelIds = rawModelIds.filter(
+            (modelId) => !staticKindsById.get(modelId)?.includes("video"),
           );
         }
       }

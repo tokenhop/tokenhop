@@ -489,6 +489,41 @@ describe("Vertex dashboard and gateway catalogs", () => {
     },
   );
 
+  // YAN-1593: the static fallback must apply the same Veo gating as the live path.
+  it.each([
+    ["failed", () => new Response("unavailable", { status: 503 })],
+    ["empty", () => Response.json(list())],
+  ])("drops static Veo rows for ADC when the live fetch is %s", async (_label, respond) => {
+    mocks.fetch.mockImplementation(async () => respond());
+    const staticVideo = getModelsByProviderId("vertex").filter((m) => m.kind === "video");
+    expect(staticVideo.length).toBeGreaterThan(0);
+    const alias = getProviderAlias("vertex");
+    await createProviderConnectionUnscoped({
+      provider: "vertex",
+      authType: "apikey",
+      apiKey: JSON.stringify(adc),
+      testStatus: "active",
+    });
+    const videoIds = (await buildModelsList(["video"])).map((m) => m.id);
+    for (const model of staticVideo) expect(videoIds).not.toContain(`${alias}/${model.id}`);
+    expect((await buildModelsList(["llm"])).map((m) => m.id)).toContain(
+      `${alias}/gemini-2.5-flash`,
+    );
+    expect(mocks.fetch).toHaveBeenCalled();
+
+    // A connection the Veo adapter can serve keeps the static video rows.
+    await deleteProviderConnectionsByProviderUnscoped("vertex");
+    clearLiveModelsCache();
+    await createProviderConnectionUnscoped({
+      provider: "vertex",
+      authType: "apikey",
+      apiKey: JSON.stringify(sa),
+      testStatus: "active",
+    });
+    const saVideoIds = (await buildModelsList(["video"])).map((m) => m.id);
+    for (const model of staticVideo) expect(saVideoIds).toContain(`${alias}/${model.id}`);
+  });
+
   it("does not fetch the catalog for an explicit enabledModels selection", async () => {
     await createProviderConnectionUnscoped({
       provider: "vertex",
