@@ -406,7 +406,7 @@ tokenhopはすべての主要AIコーディングツールとシームレスに�
 #### クラウドランタイムに関する注意
 
 - 本番環境ではサーバーサイドのクラウド変数を推奨：
-  - `BASE_URL`（同期スケジューラで使用される内部コールバックURL）
+  - `BASE_URL`（リバースプロキシ・OIDC・SAML 用のダッシュボード公開 origin。直接アクセスでは未設定のまま）
   - `CLOUD_URL`（クラウド同期エンドポイントのベースURL）
 - `NEXT_PUBLIC_BASE_URL` と `NEXT_PUBLIC_CLOUD_URL` は互換性/UI用にまだサポートされていますが、サーバーランタイムは `BASE_URL`/`CLOUD_URL` を優先します。
 - クラウド同期リクエストはタイムアウト + フェイルファスト動作を使用し、クラウドDNS/ネットワークが利用できない場合のUIハングを回避します。
@@ -1010,23 +1010,23 @@ docker stop tokenhop && docker rm tokenhop
 
 ### 環境変数
 
-| 変数                                                 | デフォルト                           | 説明                                                                                      |
-| ---------------------------------------------------- | ------------------------------------ | ----------------------------------------------------------------------------------------- |
-| `JWT_SECRET`                                         | 自動生成（`~/.tokenhop/jwt-secret`） | ダッシュボード認証クッキーのJWT署名シークレット（複数インスタンス間で共有する場合に設定） |
-| `INITIAL_PASSWORD`                                   | `123456`                             | 保存されたハッシュがない場合の初回ログインパスワード                                      |
-| `DATA_DIR`                                           | `~/.tokenhop`                        | メインアプリのデータベース格納場所（`db.json`）                                           |
-| `PORT`                                               | フレームワークデフォルト             | サービスポート（例では`20128`）                                                           |
-| `HOSTNAME`                                           | フレームワークデフォルト             | バインドホスト（Dockerデフォルトは`0.0.0.0`）                                             |
-| `NODE_ENV`                                           | ランタイムデフォルト                 | デプロイ時は`production`に設定                                                            |
-| `BASE_URL`                                           | `http://localhost:20128`             | クラウド同期ジョブで使用されるサーバーサイド内部ベースURL                                 |
-| `CLOUD_URL`                                          | 未設定（空）                         | 自己ホストのクラウド同期エンドポイントのみ。デフォルトなし、未設定なら何も送信されません  |
-| `NEXT_PUBLIC_BASE_URL`                               | `http://localhost:3000`              | 後方互換/公開ベースURL（サーバーランタイムには`BASE_URL`を推奨）                          |
-| `NEXT_PUBLIC_CLOUD_URL`                              | 未設定（空）                         | 後方互換/公開クラウドURL（自己ホストのみ、デフォルトなし）                                |
-| `API_KEY_SECRET`                                     | `endpoint-proxy-api-key-secret`      | 生成されたAPIキーのHMACシークレット                                                       |
-| `MACHINE_ID_SALT`                                    | `endpoint-proxy-salt`                | 安定したマシンIDハッシュのソルト                                                          |
-| `ENABLE_REQUEST_LOGS`                                | `false`                              | `logs/` 配下のリクエスト/レスポンスログを有効化                                           |
-| `AUTH_COOKIE_SECURE`                                 | `false`                              | 認証クッキーに`Secure`を強制（HTTPSリバースプロキシの背後では`true`に設定）               |
-| `HTTP_PROXY`, `HTTPS_PROXY`, `ALL_PROXY`, `NO_PROXY` | 空                                   | アップストリームプロバイダー呼び出し用のオプショナルアウトバウンドプロキシ                |
+| 変数                                                 | デフォルト                           | 説明                                                                                                |
+| ---------------------------------------------------- | ------------------------------------ | --------------------------------------------------------------------------------------------------- |
+| `JWT_SECRET`                                         | 自動生成（`~/.tokenhop/jwt-secret`） | ダッシュボード認証クッキーのJWT署名シークレット（複数インスタンス間で共有する場合に設定）           |
+| `INITIAL_PASSWORD`                                   | `123456`                             | 保存されたハッシュがない場合の初回ログインパスワード                                                |
+| `DATA_DIR`                                           | `~/.tokenhop`                        | メインアプリのデータベース格納場所（`db.json`）                                                     |
+| `PORT`                                               | フレームワークデフォルト             | サービスポート（例では`20128`）                                                                     |
+| `HOSTNAME`                                           | フレームワークデフォルト             | バインドホスト（Dockerデフォルトは`0.0.0.0`）                                                       |
+| `NODE_ENV`                                           | ランタイムデフォルト                 | デプロイ時は`production`に設定                                                                      |
+| `BASE_URL`                                           | 未設定                               | ダッシュボードの公開 origin（リバースプロキシ、OIDC、SAML）。未設定の場合はリクエストの Host を使用 |
+| `CLOUD_URL`                                          | 未設定（空）                         | 自己ホストのクラウド同期エンドポイントのみ。デフォルトなし、未設定なら何も送信されません            |
+| `NEXT_PUBLIC_BASE_URL`                               | 未設定                               | `BASE_URL` 未設定時の公開 origin のフォールバック（同一 origin チェック、OIDC、SAML）               |
+| `NEXT_PUBLIC_CLOUD_URL`                              | 未設定（空）                         | 後方互換/公開クラウドURL（自己ホストのみ、デフォルトなし）                                          |
+| `API_KEY_SECRET`                                     | `endpoint-proxy-api-key-secret`      | 生成されたAPIキーのHMACシークレット                                                                 |
+| `MACHINE_ID_SALT`                                    | `endpoint-proxy-salt`                | 安定したマシンIDハッシュのソルト                                                                    |
+| `ENABLE_REQUEST_LOGS`                                | `false`                              | `logs/` 配下のリクエスト/レスポンスログを有効化                                                     |
+| `AUTH_COOKIE_SECURE`                                 | `false`                              | 認証クッキーに`Secure`を強制（HTTPSリバースプロキシの背後では`true`に設定）                         |
+| `HTTP_PROXY`, `HTTPS_PROXY`, `ALL_PROXY`, `NO_PROXY` | 空                                   | アップストリームプロバイダー呼び出し用のオプショナルアウトバウンドプロキシ                          |
 
 注意事項：
 
