@@ -101,10 +101,18 @@ export function createPinStore({
     mirror("remove", key);
   }
 
-  function insert(key, value, createdAt, version, persistedAt, expiresAt = now() + ttlMs) {
+  function insert(
+    key,
+    value,
+    createdAt,
+    version,
+    persistedAt,
+    expiresAt = now() + ttlMs,
+    durable = true,
+  ) {
     unlink(key);
     const scope = scopeOf(key);
-    const entry = { value, createdAt, expiresAt, scope, version, persistedAt };
+    const entry = { value, createdAt, expiresAt, scope, version, persistedAt, durable };
     map.set(key, entry);
     let set = scopes.get(scope);
     if (!set) scopes.set(scope, (set = new Set()));
@@ -129,8 +137,19 @@ export function createPinStore({
         remove(key);
         return undefined;
       }
-      const renewed = insert(key, entry.value, entry.createdAt, entry.version, entry.persistedAt);
-      if (!(now() - (renewed.persistedAt ?? 0) < touchEveryMs)) persistEntry(key, renewed);
+      const renewed = insert(
+        key,
+        entry.value,
+        entry.createdAt,
+        entry.version,
+        entry.persistedAt,
+        undefined,
+        entry.durable,
+      );
+      // A memory-only entry (an unconfirmed first-turn claim) is never saved by a read.
+      if (renewed.durable && !(now() - (renewed.persistedAt ?? 0) < touchEveryMs)) {
+        persistEntry(key, renewed);
+      }
       return entry.value;
     },
     /** Value when live, without renewing anything. */
@@ -143,12 +162,17 @@ export function createPinStore({
       }
       return entry.value;
     },
-    /** Write; a live entry keeps its createdAt so re-pinning never extends max age. */
-    set(key, value) {
+    /**
+     * Write; a live entry keeps its createdAt so re-pinning never extends max age.
+     * `durable: false` keeps the entry in memory only (an unconfirmed first-turn
+     * claim must not survive a restart); a later durable set persists it.
+     */
+    set(key, value, { durable = true } = {}) {
       const prev = map.get(key);
       const version = Symbol("pinVersion");
-      const entry = insert(key, value, prev && live(key, prev) ? prev.createdAt : now(), version);
-      persistEntry(key, entry);
+      const createdAt = prev && live(key, prev) ? prev.createdAt : now();
+      const entry = insert(key, value, createdAt, version, undefined, undefined, durable);
+      if (durable) persistEntry(key, entry);
       return version;
     },
     /**
@@ -244,10 +268,16 @@ const storeConfig = {
   maxPinsPerScope: CACHE_AFFINITY_MAX_PINS_PER_WORKSPACE,
   maxAgeFor: promptPinMaxAge,
 };
-export const comboPins = createPinStore({
+// One process-wide store on globalThis (like quotaSnapshot.js): Next.js route
+// bundles and the startup hook may load separate copies of this module, and the
+// pins restored at startup must be the ones routing reads.
+const COMBO_PINS_SLOT = Symbol.for("tokenhop.comboPins");
+globalThis[COMBO_PINS_SLOT] ??= createPinStore({
   ...storeConfig,
+  now: () => Date.now(),
   persistence: () => globalThis[COMBO_PIN_PERSISTENCE] || null,
 });
+export const comboPins = globalThis[COMBO_PINS_SLOT];
 export const accountPins = createPinStore(storeConfig);
 /**
  * Provisional account pins (YAN-1222): written at selection so a concurrent first
