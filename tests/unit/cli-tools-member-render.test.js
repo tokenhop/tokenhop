@@ -36,17 +36,36 @@ describe("rendered cards: member vs legacy host (YAN-374)", () => {
   let access;
   let tools;
   let settings;
+  const cards = new Map();
+  const MODEL_CARDS = [
+    ["CopilotToolCard.js", "copilot"],
+    ["OpenCodeToolCard.js", "opencode"],
+    ["CoworkToolCard.js", "cowork"],
+  ];
+  const OTHER_CARDS = [
+    ["ClaudeToolCard.js", "claude"],
+    ["CodexToolCard.js", "codex"],
+    ["ClineToolCard.js", "cline"],
+    ["KiloToolCard.js", "kilo"],
+    ["DefaultToolCard.js", "cursor"],
+    ["DroidToolCard.js", "droid"],
+  ];
   beforeAll(async () => {
     ssr = await createSsr();
     access = await ssr.load("/src/store/cliAccessStore.js");
     settings = await ssr.load("/src/store/toolSettingsStore.js");
     tools = (await ssr.load("/src/shared/constants/cliTools.js")).CLI_TOOLS;
-  });
+    // YAN-2485: keep cold SSR compilation out of the render cases' 5s budget.
+    for (const [file] of [...MODEL_CARDS, ...OTHER_CARDS]) {
+      const mod = await ssr.load(`/src/app/(dashboard)/dashboard/cli-tools/components/${file}`);
+      cards.set(file, mod.default);
+    }
+  }, 30_000);
   afterAll(async () => {
     delete globalThis.__authStatus;
     delete globalThis.__authLoaded;
-    access.useCliAccessStore.setState({ localOnly: false, noHost: false, remoteProbe: false });
-    await ssr.close();
+    access?.useCliAccessStore.setState({ localOnly: false, noHost: false, remoteProbe: false });
+    await ssr?.close();
   });
   const setAccess = ({ auth, noHost, loaded = true }) => {
     globalThis.__authStatus = auth;
@@ -54,10 +73,9 @@ describe("rendered cards: member vs legacy host (YAN-374)", () => {
     access.useCliAccessStore.setState({ localOnly: noHost, noHost, remoteProbe: false });
     settings.useToolSettingsStore.setState({ loaded: true });
   };
-  const card = async (file, toolId, extra = {}) => {
-    const mod = await ssr.load(`/src/app/(dashboard)/dashboard/cli-tools/components/${file}`);
+  const card = (file, toolId, extra = {}) => {
     return renderToStaticMarkup(
-      createElement(mod.default, {
+      createElement(cards.get(file), {
         toolId,
         tool: tools[toolId],
         baseUrl: "http://x",
@@ -68,43 +86,28 @@ describe("rendered cards: member vs legacy host (YAN-374)", () => {
       }),
     );
   };
-  const MODEL_CARDS = [
-    ["CopilotToolCard.js", "copilot"],
-    ["OpenCodeToolCard.js", "opencode"],
-    ["CoworkToolCard.js", "cowork"],
-  ];
 
-  it.each(MODEL_CARDS)(
-    "%s: member with no providers gets free-text model entry",
-    async (file, id) => {
-      setAccess({ auth: MEMBER_AUTH, noHost: true });
-      const html = await card(file, id);
-      // ModelTextAdd renders a text input labelled "Add model" plus an enabled Add button.
-      expect(html).toMatch(/<input[^>]*aria-label="Add model"/);
-    },
-  );
+  it.each(MODEL_CARDS)("%s: member with no providers gets free-text model entry", (file, id) => {
+    setAccess({ auth: MEMBER_AUTH, noHost: true });
+    const html = card(file, id);
+    // ModelTextAdd renders a text input labelled "Add model" plus an enabled Add button.
+    expect(html).toMatch(/<input[^>]*aria-label="Add model"/);
+  });
 
   it.each(MODEL_CARDS)(
     "%s: legacy zero-provider host does NOT get the member input",
-    async (file, id) => {
+    (file, id) => {
       setAccess({ auth: {}, noHost: false });
-      const html = await card(file, id);
+      const html = card(file, id);
       expect(html).not.toMatch(/<input[^>]*aria-label="Add model"/);
     },
   );
 
-  it.each([
-    ["ClaudeToolCard.js", "claude"],
-    ["CodexToolCard.js", "codex"],
-    ["ClineToolCard.js", "cline"],
-    ["KiloToolCard.js", "kilo"],
-    ["DefaultToolCard.js", "cursor"],
-    ["DroidToolCard.js", "droid"],
-  ])(
+  it.each(OTHER_CARDS)(
     "%s: model is a typeable input with no providers (member export never blocked)",
-    async (file, id) => {
+    (file, id) => {
       setAccess({ auth: MEMBER_AUTH, noHost: true });
-      const html = await card(file, id);
+      const html = card(file, id);
       // Either a text input for the model or the Droid add-model input is rendered.
       expect(html).toMatch(
         /<input[^>]*type="text"|<input[^>]*aria-label="(Model|Add model)"|placeholder="provider\/model-id"|Not mapped/,
@@ -112,9 +115,9 @@ describe("rendered cards: member vs legacy host (YAN-374)", () => {
     },
   );
 
-  it("host-capable principal sees the ready-gated skeleton before auth, never a status", async () => {
+  it("host-capable principal sees the ready-gated skeleton before auth, never a status", () => {
     setAccess({ auth: {}, noHost: false, loaded: false });
-    const html = await card("ClaudeToolCard.js", "claude");
+    const html = card("ClaudeToolCard.js", "claude");
     expect(html).not.toContain("Not installed");
     expect(html).not.toContain("Not configured");
   });
