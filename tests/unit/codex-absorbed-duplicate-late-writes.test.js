@@ -59,18 +59,29 @@ const flagRow = (id) =>
     testStatus: "error",
   });
 
-async function absorbScenario(email, accountId) {
+async function prepareAbsorbScenario(email, accountId) {
   const live = await db.createProviderConnectionUnscoped(oauth(email, accountId));
   const legacy = await db.createProviderConnectionUnscoped(legacyRow(email, accountId));
   await flagRow(legacy.id);
-  await db.createProviderConnectionUnscoped({
-    ...oauth(email, accountId),
-    accessToken: `at-fresh-${email}`,
-    refreshToken: `rt-fresh-${email}`,
-    testStatus: "active",
-  });
-  expect(await db.getProviderConnectionByIdUnscoped(legacy.id)).toBeNull();
-  return { K: live.id, L: legacy.id };
+  return {
+    K: live.id,
+    L: legacy.id,
+    absorb: async () => {
+      await db.createProviderConnectionUnscoped({
+        ...oauth(email, accountId),
+        accessToken: `at-fresh-${email}`,
+        refreshToken: `rt-fresh-${email}`,
+        testStatus: "active",
+      });
+      expect(await db.getProviderConnectionByIdUnscoped(legacy.id)).toBeNull();
+    },
+  };
+}
+
+async function absorbScenario(email, accountId) {
+  const { K, L, absorb } = await prepareAbsorbScenario(email, accountId);
+  await absorb();
+  return { K, L };
 }
 
 const flushDetails = () => globalThis.__requestDetailsFlushSync?.();
@@ -95,6 +106,46 @@ describe("YAN-1941: late writes for an absorbed codex duplicate", () => {
     expect(count(roll, L)).toBe(0);
     expect(count(hist, K)).toBe(1);
     expect(count(roll, K)).toBe(1);
+  });
+
+  it("stores usage under the kept id when an absorb commits during the save (YAN-1994)", async () => {
+    const { K, L, absorb } = await prepareAbsorbScenario("racing-usage@example.com", "acct-race-u");
+    const pricingRepo = await import("@/lib/db/repos/pricingRepo.js");
+    const pricingStarted = Promise.withResolvers();
+    const releasePricing = Promise.withResolvers();
+    const lookup = vi.spyOn(pricingRepo, "getPricingForModel").mockImplementationOnce(() => {
+      pricingStarted.resolve();
+      return releasePricing.promise;
+    });
+
+    const history = `SELECT connectionId FROM usageHistory WHERE connectionId IN (?, ?)`;
+    const rollup = `SELECT connectionId FROM usageRollup WHERE connectionId IN (?, ?)`;
+    const save = db.saveRequestUsageUnscoped({
+      provider: "codex",
+      model: "gpt-5",
+      connectionId: L,
+      endpoint: "chat",
+      tokens: { prompt_tokens: 7, completion_tokens: 3 },
+    });
+
+    try {
+      // Pricing starts after the first id lookup. Hold it until the real absorb commits.
+      await Promise.race([pricingStarted.promise, save]);
+      expect(lookup).toHaveBeenCalledWith("codex", "gpt-5");
+      await absorb();
+      expect(adapter.all(history, [K, L])).toEqual([]);
+      expect(adapter.all(rollup, [K, L])).toEqual([]);
+    } finally {
+      releasePricing.resolve(null);
+      try {
+        await save;
+      } finally {
+        lookup.mockRestore();
+      }
+    }
+
+    expect(adapter.all(history, [K, L])).toEqual([{ connectionId: K }]);
+    expect(adapter.all(rollup, [K, L])).toEqual([{ connectionId: K }]);
   });
 
   it("request details buffered for the removed row flush onto the kept row", async () => {
