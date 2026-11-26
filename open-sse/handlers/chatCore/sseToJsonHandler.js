@@ -207,7 +207,7 @@ export async function handleForcedSSEToJson({
     providerRequest: finalBody || translatedBody || null,
   };
 
-  const recordSuccess = createSuccessRecorder({
+  const recorder = createSuccessRecorder({
     ctx,
     provider,
     model,
@@ -240,7 +240,7 @@ export async function handleForcedSSEToJson({
       readResponse,
       customToolNames,
       fimContext,
-      recordSuccess,
+      recorder,
     });
   }
 
@@ -273,7 +273,7 @@ export async function handleForcedSSEToJson({
     if (aggregated.format === FORMATS.CLAUDE) {
       const message = decloakToolNames(aggregated.body, toolNameMap);
       const usage = canonicalizeUsage(extractUsageFromResponse(message));
-      recordSuccess(usage, summarizeClientResponse(message));
+      recorder.recordSuccess(usage, summarizeClientResponse(message));
       return {
         success: true,
         response: new Response(JSON.stringify(message), {
@@ -284,7 +284,7 @@ export async function handleForcedSSEToJson({
 
     const parsed = aggregated.body;
     const usage = parsed.usage || {};
-    recordSuccess(usage, summarizeClientResponse(parsed));
+    recorder.recordSuccess(usage, summarizeClientResponse(parsed));
 
     // Re-attach usage explicitly. This handler already HAS the correct usage — it is
     // the same object written to the usage DB, and for a cached Claude request that DB

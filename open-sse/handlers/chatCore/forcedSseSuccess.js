@@ -2,13 +2,14 @@ import { buildRequestDetail, saveUsageStats, formatDoneLine } from "./requestDet
 import { saveRequestDetailUnscoped } from "../../services/usageSink.js";
 
 /**
- * Build the success recorder of a forced-SSE → JSON aggregation: request log,
- * usage stats, the done line and the request detail. Shared by the Responses
- * branch (responsesSseToJson.js) and the Chat Completions / native Claude
- * branch of handleForcedSSEToJson.
- * @returns {(usage: object, response: object, detailTokens?: object) => void}
- *   `detailTokens` overrides the token counts stored in the request detail
- *   (defaults to `usage`).
+ * Build the success recorder of a forced-SSE → JSON aggregation, shared by
+ * the Responses branch (responsesSseToJson.js) and the Chat Completions /
+ * native Claude branch of handleForcedSSEToJson.
+ * - `recordUsage(usage)`: request log, usage stats and the done line; returns
+ *   the total latency it logged.
+ * - `recordDetail(response, tokens, totalLatency?)`: the request detail;
+ *   measures the latency itself when none is given.
+ * - `recordSuccess(usage, response)`: both, with one shared latency.
  */
 export function createSuccessRecorder({
   ctx,
@@ -26,7 +27,7 @@ export function createSuccessRecorder({
   reqTag,
   log,
 }) {
-  return (usage, response, detailTokens = usage) => {
+  const recordUsage = (usage) => {
     appendLog({ tokens: usage, status: "200 OK" });
     saveUsageStats({
       provider,
@@ -45,12 +46,16 @@ export function createSuccessRecorder({
     const totalLatency = Date.now() - requestStartTime;
     if (log?.line)
       log.line(reqTag, "📊", formatDoneLine({ usage, latency: { total: totalLatency } }));
+    return totalLatency;
+  };
+
+  const recordDetail = (response, tokens, totalLatency = Date.now() - requestStartTime) => {
     saveRequestDetailUnscoped(
       buildRequestDetail(
         {
           ...ctx,
           latency: { ttft: totalLatency, total: totalLatency },
-          tokens: detailTokens,
+          tokens,
           response,
           status: "success",
         },
@@ -58,4 +63,8 @@ export function createSuccessRecorder({
       ),
     ).catch(() => {});
   };
+
+  const recordSuccess = (usage, response) => recordDetail(response, usage, recordUsage(usage));
+
+  return { recordUsage, recordDetail, recordSuccess };
 }

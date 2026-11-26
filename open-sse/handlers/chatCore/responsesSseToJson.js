@@ -77,8 +77,8 @@ const jsonResult = (payload) => ({
 
 /**
  * Aggregate a Responses-API SSE upstream body into the client's JSON format.
- * `recordSuccess` is the shared forced-SSE success recorder
- * (forcedSseSuccess.js).
+ * `recorder` is the shared forced-SSE success recorder
+ * (createSuccessRecorder in forcedSseSuccess.js).
  */
 export async function responsesSseToJson({
   providerResponse,
@@ -89,7 +89,7 @@ export async function responsesSseToJson({
   readResponse = (read) => read(),
   customToolNames,
   fimContext,
-  recordSuccess,
+  recorder,
 }) {
   try {
     const jsonResponse = await readResponse(() =>
@@ -106,9 +106,10 @@ export async function responsesSseToJson({
     const outTokens = usage.output_tokens || 0;
     const reasoningTokens = usage.output_tokens_details?.reasoning_tokens || 0;
 
+    recorder.recordUsage(usage);
+
     const { textContent } = pickAssistantMessageForChatCompletion(jsonResponse.output);
-    recordSuccess(
-      usage,
+    recorder.recordDetail(
       { content: textContent, thinking: null, finish_reason: jsonResponse.status || "unknown" },
       { prompt_tokens: inTokens, completion_tokens: outTokens },
     );
