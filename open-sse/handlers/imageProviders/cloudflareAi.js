@@ -29,32 +29,24 @@ function getDimensions(body) {
   };
 }
 
+// Resolve a caller-supplied image (byte array, data URL, bare base64, or
+// http(s) URL) to `{ buf }` or `{ b64 }`, whichever the input already is, so
+// no value is decoded or encoded more than once. URLs go through the hardened
+// image fetcher.
 async function resolveImageInput(value, proxyOptions) {
-  if (Array.isArray(value)) {
-    return { bytes: value, b64: Buffer.from(value).toString("base64") };
-  }
+  if (Array.isArray(value)) return { buf: Buffer.from(value) };
   if (typeof value !== "string") return null;
   const trimmed = value.trim();
   if (!trimmed) return null;
   if (trimmed.toLowerCase().startsWith("http://") || trimmed.toLowerCase().startsWith("https://")) {
     // Validate and fetch through the hardened image fetcher (DNS pinning,
     // private-IP rejection, no redirects, byte cap, magic-byte check).
-    // Use the fetched Buffer directly: encode b64 once, no decode back.
     const fetched = await fetchImageBytes(trimmed, { proxyOptions });
     if (!fetched) throw new Error("Image input URL could not be fetched");
-    return { bytes: Array.from(fetched.buf), b64: fetched.buf.toString("base64") };
+    return { buf: fetched.buf };
   }
   const match = /^data:image\/[^;]+;base64,(.+)$/i.exec(trimmed);
-  const b64 = match ? match[1] : trimmed;
-  return { bytes: base64ToBytes(b64), b64 };
-}
-
-function base64ToBytes(value) {
-  try {
-    return Array.from(Buffer.from(value, "base64"));
-  } catch {
-    return value;
-  }
+  return { b64: match ? match[1] : trimmed };
 }
 
 function addOptionalFields(target, body, append) {
@@ -72,21 +64,17 @@ async function buildJsonBody(body, proxyOptions) {
     target[key] = value;
   });
 
-  const imageData = await resolveImageInput(body.image, proxyOptions);
-  if (imageData) {
-    req.image_b64 = imageData.b64;
-    req.image = imageData.bytes;
-  }
+  // Each input is sent once, in the one field Workers AI reads for it: the
+  // source image as `image_b64` (base64 string) and the mask as `mask`
+  // (uint8 array; the schema has no base64 mask field).
+  const image = await resolveImageInput(body.image, proxyOptions);
+  if (image) req.image_b64 = image.b64 ?? image.buf.toString("base64");
 
-  const maskData = await resolveImageInput(
+  const mask = await resolveImageInput(
     body.mask_image || body.maskImage || body.mask,
     proxyOptions,
   );
-  if (maskData) {
-    req.mask_b64 = maskData.b64;
-    req.mask = maskData.bytes;
-    req.mask_image = maskData.bytes;
-  }
+  if (mask) req.mask = Array.from(mask.buf ?? Buffer.from(mask.b64, "base64"));
 
   return req;
 }

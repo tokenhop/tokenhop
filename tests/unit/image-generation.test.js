@@ -573,10 +573,50 @@ describe("handleImageGenerationCore", () => {
     );
     const requestBody = JSON.parse(providerCall[1].body);
     expect(requestBody.image_b64).toBe(PNG_1.toString("base64"));
-    expect(requestBody.image).toEqual(Array.from(PNG_1));
-    expect(requestBody.mask_b64).toBe(PNG_2.toString("base64"));
     expect(requestBody.mask).toEqual(Array.from(PNG_2));
-    expect(requestBody.mask_image).toEqual(Array.from(PNG_2));
+  });
+
+  // YAN-2494: each input image reaches Cloudflare once, in the single field
+  // Workers AI reads for it (`image_b64` for the source, `mask` for the mask).
+  it.each([
+    ["data URLs", (buf) => `data:image/png;base64,${buf.toString("base64")}`],
+    ["bare base64", (buf) => buf.toString("base64")],
+    ["byte arrays", (buf) => Array.from(buf)],
+  ])("sends each Cloudflare input image once for %s", async (_label, encode) => {
+    const SOURCE = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 7, 8, 9]);
+    const MASK = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 1, 0, 1]);
+    global.fetch.mockResolvedValueOnce(
+      new Response(JSON.stringify({ result: { image: "base64out" }, success: true }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
+    );
+
+    const result = await handleImageGenerationCore({
+      body: { prompt: "Change to a lion", image: encode(SOURCE), mask: encode(MASK) },
+      modelInfo: {
+        provider: "cloudflare-ai",
+        model: "@cf/runwayml/stable-diffusion-v1-5-inpainting",
+      },
+      credentials: { apiKey: "cf-token", providerSpecificData: { accountId: "cf-account" } },
+      log: null,
+    });
+
+    expect(result.success).toBe(true);
+    expect(global.fetch).toHaveBeenCalledTimes(1);
+    const rawBody = global.fetch.mock.calls[0][1].body;
+    const requestBody = JSON.parse(rawBody);
+
+    expect(Object.keys(requestBody).sort()).toEqual(["image_b64", "mask", "prompt"]);
+    expect(requestBody.image_b64).toBe(SOURCE.toString("base64"));
+    expect(requestBody.mask).toEqual(Array.from(MASK));
+
+    // No second copy of either image under another name or encoding.
+    const occurrences = (needle) => rawBody.split(needle).length - 1;
+    expect(occurrences(SOURCE.toString("base64"))).toBe(1);
+    expect(occurrences(JSON.stringify(Array.from(SOURCE)))).toBe(0);
+    expect(occurrences(JSON.stringify(Array.from(MASK)))).toBe(1);
+    expect(occurrences(MASK.toString("base64"))).toBe(0);
   });
 
   it("handles provider error responses", async () => {
