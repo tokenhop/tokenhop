@@ -21,7 +21,11 @@ export default defineConfig({
     ],
     // Every test file gets its own temp DATA_DIR + HOME under one parent temp
     // dir that is removed after the run (see setup/).
-    globalSetup: [resolve(__dirname, "setup/tempRoot.js")],
+    // nodeVersionGate warns when Node's major differs from .nvmrc (YAN-1993).
+    globalSetup: [
+      resolve(__dirname, "setup/tempRoot.js"),
+      resolve(__dirname, "setup/nodeVersionGate.js"),
+    ],
     setupFiles: [resolve(__dirname, "setup/isolateDataDir.js")],
     // The HOME override only reaches os.homedir() in child processes.
     pool: "forks",

@@ -52,6 +52,8 @@ npx vitest run                          # all tests; auto-discovers tests/vitest
 npx vitest run unit/capabilities.test.js   # single file (path relative to tests/)
 ```
 
+> **Run tests on the `.nvmrc` Node version** (`nvm use`, `fnm use`, or `mise exec node@$(cat .nvmrc) -- npm test`). CI uses it, and the SQLite driver depends on the Node major: better-sqlite3 below 24, node:sqlite from 24. The drivers bind parameters differently (better-sqlite3 rejects numbered `?N` with array binds; use positional `?`), so a query can pass locally on another major and fail in CI. Root `npm test` fails on a major mismatch, and a direct `npx vitest` warns (`tests/setup/nodeVersionGate.js`).
+>
 > `vitest.config.js` resolves the `open-sse`/`@/` aliases from the repo root regardless of where vitest lives.
 >
 > **Always run tests via `npm test`, from `tests/`, or with `-c tests/vitest.config.js`.** Never use another vitest config. That config's setup moves `HOME`/`DATA_DIR` to a temp dir; without it the CLI-tool tests write to and `rm -rf` under your real home (one run deleted a real `~/.config`). The root `vitest.config.mjs` re-exports it so a bare root `npx vitest` is safe, and tests that touch the home dir must go through `tests/helpers/isolatedHome.js`, which throws when `HOME` isn't isolated.
